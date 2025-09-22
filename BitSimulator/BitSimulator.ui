@@ -14,13 +14,13 @@
    <string>BitSimulator</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <widget class="CircuitCanvas" name="widget" native="true">
+   <widget class="CircuitCanvas" name="graphicsView">
     <property name="geometry">
      <rect>
-      <x>180</x>
-      <y>150</y>
-      <width>1081</width>
-      <height>621</height>
+      <x>70</x>
+      <y>30</y>
+      <width>1351</width>
+      <height>801</height>
      </rect>
     </property>
    </widget>
@@ -55,9 +55,8 @@
  <customwidgets>
   <customwidget>
    <class>CircuitCanvas</class>
-   <extends>QWidget</extends>
+   <extends>QGraphicsView</extends>
    <header>CircuitCanvas.h</header>
-   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources/>
