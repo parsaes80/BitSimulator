@@ -25,13 +25,13 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     // Custom interaction
-    QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
+    //QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
 
     // Gate-specific methods
     GType getGateType() const;
     QPointF getInputPin(int index) const;
     QPointF getOutputPin() const;
-
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 private:
     void drawPins(QPainter* painter);
     QString gateTypeToString() const;
@@ -44,7 +44,6 @@ private:
 class WireItem : public QGraphicsLineItem {
 public:
     explicit WireItem(const QLineF& line, QGraphicsItem* parent = nullptr);
-
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 };
 
@@ -62,7 +61,7 @@ public:
     void finishWireConnection(QPointF endPoint);
 
 protected:
-    void drawBackground(QPainter* painter, const QRectF& rect) override;
+    //void drawBackground(QPainter* painter, const QRectF& rect) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;

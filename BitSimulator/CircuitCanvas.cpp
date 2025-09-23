@@ -1,7 +1,7 @@
 #include "CircuitCanvas.h"
 #include <QMouseEvent>
 
-// GateItem Implementation
+//===================== GateItem   ========================
 GateItem::GateItem(GType gateType, QGraphicsItem* parent)
     : QGraphicsItem(parent), m_gateType(gateType) {
     
@@ -29,7 +29,7 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     // Draw gate body
     painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(Qt::yellow);
+    painter->setBrush(Qt::red);
     painter->drawRect(m_rect);
 
     // Draw gate label
@@ -40,17 +40,6 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     drawPins(painter);
 }
 
-QVariant GateItem::itemChange(GraphicsItemChange change, const QVariant& value) {
-    if (change == ItemPositionChange && scene()) {
-        // Snap to grid
-        QPointF newPos = value.toPointF();
-        int gridSize = 20;
-        newPos.setX(qRound(newPos.x() / gridSize) * gridSize);
-        newPos.setY(qRound(newPos.y() / gridSize) * gridSize);
-        return newPos;
-    }
-    return QGraphicsItem::itemChange(change, value);
-}
 
 GType GateItem::getGateType() const {
     return m_gateType;
@@ -84,10 +73,12 @@ QString GateItem::gateTypeToString() const {
     }
     return "GATE";
 }
-
-// WireItem Implementation
-WireItem::WireItem(const QLineF& line, QGraphicsItem* parent)
-    : QGraphicsLineItem(line, parent) {
+void GateItem::mousePressEvent(QGraphicsSceneMouseEvent* event){ 
+    qDebug() << "item mouse handler"; 
+    QGraphicsItem::mousePressEvent(event);
+}
+//===================== Wire Item   ========================
+WireItem::WireItem(const QLineF& line, QGraphicsItem* parent): QGraphicsLineItem(line, parent) {
     
     setPen(QPen(Qt::black, 2));
     setFlag(QGraphicsItem::ItemIsSelectable, true);
@@ -111,7 +102,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     painter->drawEllipse(l.p2(), 3, 3);
 }
 
-// CircuitScene Implementation
+//===================== QGraphicsScene ========================
 CircuitScene::CircuitScene(QObject* parent) 
     : QGraphicsScene(parent), m_connectingWire(false), m_currentWire(nullptr) {
     setSceneRect(0, 0, 2000, 2000); // Large canvas
@@ -155,35 +146,54 @@ void CircuitScene::finishWireConnection(QPointF endPoint) {
     }
 }
 
-void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect) {
-    // Draw grid
-    painter->setPen(QPen(Qt::lightGray, 1, Qt::DotLine));
+//void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect) {
+//    // Draw grid
+//    painter->setPen(QPen(Qt::lightGray, 1, Qt::DotLine));
+//
+//    int gridSize = 20;
+//    int left = int(rect.left()) - (int(rect.left()) % gridSize);
+//    int top = int(rect.top()) - (int(rect.top()) % gridSize);
+//
+//    for (int x = left; x < rect.right(); x += gridSize) {
+//        painter->drawLine(x, rect.top(), x, rect.bottom());
+//    }
+//    for (int y = top; y < rect.bottom(); y += gridSize) {
+//        painter->drawLine(rect.left(), y, rect.right(), y);
+//    }
+//}
 
-    int gridSize = 20;
-    int left = int(rect.left()) - (int(rect.left()) % gridSize);
-    int top = int(rect.top()) - (int(rect.top()) % gridSize);
-
-    for (int x = left; x < rect.right(); x += gridSize) {
-        painter->drawLine(x, rect.top(), x, rect.bottom());
-    }
-    for (int y = top; y < rect.bottom(); y += gridSize) {
-        painter->drawLine(rect.left(), y, rect.right(), y);
-    }
-}
-
+// In CircuitCanvas.cpp - fix the mousePressEvent in CircuitScene:
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
-    if (event->button() == Qt::LeftButton && event->modifiers() & Qt::ControlModifier) {
-        // Start wire connection with Ctrl+Click
+    qDebug() << "Scene mouse handler";
+
+    // Handle our custom cases first
+    if (event->button() == Qt::LeftButton) {
+        QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
+
+        if (!clickedItem) {
+            // Custom behavior: add gate
+            addGate(GType::AND, event->scenePos());
+            event->accept();
+            return; // Don't call parent - we handled it completely
+        }
+    }
+    else if (event->button() == Qt::RightButton) {
+        // Custom behavior: start wire
         startWireConnection(event->scenePos());
+        event->accept();
+        return; // Don't call parent - we handled it completely
     }
-    else {
-        QGraphicsScene::mousePressEvent(event);
-    }
+
+    // For all other cases (left-click on items, middle button, etc.)
+    // use default Qt behavior
+    QGraphicsScene::mousePressEvent(event);
 }
 
 void CircuitScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
     if (m_connectingWire) {
         updateWireConnection(event->scenePos());
+        // Optional: Add debug output (remove if too verbose)
+        // qDebug() << "Updating wire to:" << event->scenePos();
     }
     else {
         QGraphicsScene::mouseMoveEvent(event);
@@ -191,15 +201,17 @@ void CircuitScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void CircuitScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
-    if (m_connectingWire && event->button() == Qt::LeftButton) {
+    if (m_connectingWire && (event->button() == Qt::RightButton || event->button() == Qt::LeftButton)) {
+        // Finish wire connection on either right or left button release
         finishWireConnection(event->scenePos());
+        qDebug() << "Finished wire connection at:" << event->scenePos();
     }
     else {
         QGraphicsScene::mouseReleaseEvent(event);
     }
 }
 
-// CircuitCanvas Implementation
+//=====================QGraphicsView========================
 CircuitCanvas::CircuitCanvas(QWidget* parent) : QGraphicsView(parent) {
     m_scene = new CircuitScene(this);
     setScene(m_scene);
@@ -225,8 +237,9 @@ void CircuitCanvas::clearCanvas() {
 }
 
 void CircuitCanvas::mousePressEvent(QMouseEvent* event) {
-    addGate(GType::AND, event->pos());
-    QGraphicsView::mousePressEvent(event); // Call base class implementation
+    qDebug() << "View mouse handler";
+   // addGate(GType::AND, event->pos());
+   QGraphicsView::mousePressEvent(event); // Call base class implementation
 }
 
 void CircuitCanvas::wheelEvent(QWheelEvent* event) {
