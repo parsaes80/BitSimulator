@@ -20,8 +20,6 @@ public slots:
 
 signals:
     void finished();
-
-
 private:
     bool sim_running = false;
     

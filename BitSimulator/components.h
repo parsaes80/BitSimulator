@@ -13,7 +13,8 @@ using s64 = int64_t;
 
 enum class RType : u8 { SR, JK, D, T };
 enum class GType : u8 {NOT, AND, OR, XOR, NAND, NOR, XNOR };
-
+enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
+enum class PortType : u8 {IN,OUT};
 struct Register {
 	RType regType;
 	u32 inID;   // index into a big inputs[] array
