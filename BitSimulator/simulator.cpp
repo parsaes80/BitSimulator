@@ -1,5 +1,5 @@
 #include "simulator.h"
-#include "components.h"
+#include "general.h"
 #include <QThread>
 #include <QDebug>
 

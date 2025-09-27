@@ -15,6 +15,7 @@ enum class RType : u8 { SR, JK, D, T };
 enum class GType : u8 {NOT, AND, OR, XOR, NAND, NOR, XNOR };
 enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
 enum class PortType : u8 {IN,OUT};
+
 struct Register {
 	RType regType;
 	u32 inID;   // index into a big inputs[] array
@@ -34,7 +35,6 @@ struct Gate {
 	Gate() = default;
 	Gate(GType t, u32 inId, u32 outId, u16 inNum) : gateType(t), inID(inId), outID(outId), numInputs(inNum) {}
 };
-
 
 struct Net {
 	bool value;   // later: make this u64 for parallel sim	

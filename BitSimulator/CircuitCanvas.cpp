@@ -1,5 +1,6 @@
 #include "CircuitCanvas.h"
 #include <QMouseEvent>
+#include <qscrollbar.h>
 //===================== PortItem   ========================
 
 PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
@@ -85,11 +86,6 @@ GateItem::GateItem(GType gateType, QGraphicsItem* parent)
     createPorts();
 }
 
-QRectF GateItem::boundingRect() const
-{
-    return m_rect.adjusted(-2, -2, 2, 2); // Add border for selection
-}
-
 void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     Q_UNUSED(widget)
@@ -108,7 +104,7 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     drawGateShape(painter);
 
     // Draw input/output pins
-    drawPins(painter);
+    //drawPins(painter);
 }
 
 // In CircuitCanvas.cpp - add to GateItem::itemChange
@@ -125,10 +121,6 @@ QVariant GateItem::itemChange(GraphicsItemChange change, const QVariant& value)
     }
 
     return QGraphicsItem::itemChange(change, value);
-}
-GType GateItem::getGateType() const
-{
-    return m_gateType;
 }
 
 void GateItem::drawPins(QPainter* painter)
@@ -430,8 +422,6 @@ void CircuitScene::addGate(GType gateType, QPointF position)
     GateItem* gate = new GateItem(gateType);
     gate->setPos(position);
     addItem(gate);
-
-    emit gateAdded(gate);
 }
 
 // Add to CircuitScene
@@ -537,7 +527,6 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
             addItem(wire);
 
             qDebug() << "Connected ports successfully";
-            emit wireAdded(wire);
         }
         else {
             qDebug() << "Wire connection failed - no valid ports";
@@ -564,18 +553,15 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     // Handle our custom cases first
     if (event->button() == Qt::LeftButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
-
         if (!clickedItem) {
-            // Custom behavior: add gate
-            addGate(GType::AND, event->scenePos());
+            addGate(nextGateType, event->scenePos());
             event->accept();
-            return; // Don't call parent - we handled it completely
+            return;
         }
     } else if (event->button() == Qt::RightButton) {
-        // Custom behavior: start wire
         startWireConnection(event->scenePos());
         event->accept();
-        return; // Don't call parent - we handled it completely
+        return;
     }
 
     // For all other cases (left-click on items, middle button, etc.)
@@ -612,7 +598,7 @@ void CircuitScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 //=====================QGraphicsView========================
 
 CircuitCanvas::CircuitCanvas(QWidget* parent)
-    : QGraphicsView(parent)
+    : QGraphicsView(parent), m_middleMousePressed(false)
 {
     m_scene = new CircuitScene(this);
     setScene(m_scene);
@@ -622,28 +608,55 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     setRenderHint(QPainter::Antialiasing);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-
-    // Connect signals
-    connect(m_scene, &CircuitScene::gateAdded, this, &CircuitCanvas::onGateAdded);
-    connect(m_scene, &CircuitScene::wireAdded, this, &CircuitCanvas::onWireAdded);
-}
-
-void CircuitCanvas::addGate(GType gateType, QPoint position)
-{
-    QPointF scenePos = mapToScene(position);
-    m_scene->addGate(gateType, scenePos);
-}
-
-void CircuitCanvas::clearCanvas()
-{
-    m_scene->clear();
 }
 
 void CircuitCanvas::mousePressEvent(QMouseEvent* event)
 {
+    if (event->button() == Qt::MiddleButton) {
+        // Start camera dragging
+        m_middleMousePressed = true;
+        m_lastPanPoint = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+    
     qDebug() << "View mouse handler";
-    // addGate(GType::AND, event->pos());
     QGraphicsView::mousePressEvent(event); // Call base class implementation
+}
+
+void CircuitCanvas::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_middleMousePressed) {
+        // Calculate movement delta
+        QPoint delta = event->pos() - m_lastPanPoint;
+        m_lastPanPoint = event->pos();
+        
+        // Move the viewport in the same direction as mouse movement
+        QScrollBar* hBar = horizontalScrollBar();
+        QScrollBar* vBar = verticalScrollBar();
+        
+        hBar->setValue(hBar->value() - delta.x());
+        vBar->setValue(vBar->value() - delta.y());
+        
+        event->accept();
+        return;
+    }
+    
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::MiddleButton && m_middleMousePressed) {
+        // Stop camera dragging
+        m_middleMousePressed = false;
+        setCursor(Qt::ArrowCursor);
+        event->accept();
+        return;
+    }
+    
+    QGraphicsView::mouseReleaseEvent(event);
 }
 
 void CircuitCanvas::wheelEvent(QWheelEvent* event)
@@ -673,16 +686,4 @@ void CircuitCanvas::dropEvent(QDropEvent* event)
         addGate(gateType, event->position().toPoint());
         event->acceptProposedAction();
     }
-}
-
-void CircuitCanvas::onGateAdded(GateItem* gate)
-{
-    qDebug() << "Gate added at position:" << gate->pos();
-    emit circuitChanged();
-}
-
-void CircuitCanvas::onWireAdded(WireItem* wire)
-{
-    qDebug() << "Wire added:" << wire->line();
-    emit circuitChanged();
 }

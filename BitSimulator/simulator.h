@@ -1,6 +1,6 @@
 #pragma once
 #include <QObject>
-#include "components.h"
+#include "general.h"
 
 class Simulator : public QObject {
     Q_OBJECT

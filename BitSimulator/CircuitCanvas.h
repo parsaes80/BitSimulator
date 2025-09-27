@@ -13,7 +13,7 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QDebug>
-#include "components.h"
+#include "general.h"
 class WireItem;
 class GateItem;
 
@@ -49,7 +49,7 @@ public:
     explicit GateItem(GType gateType, QGraphicsItem* parent = nullptr);
 
     // Required virtual functions
-    QRectF boundingRect() const override;
+    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     // Custom interaction
@@ -57,7 +57,7 @@ public:
     QString gateTypeToString() const;
 
     // Getters
-    GType getGateType() const;
+    GType getGateType() const { return m_gateType; };
     QPointF getInputPin(int index) const;
     QPointF getOutputPin() const;
 
@@ -81,7 +81,7 @@ private:
     Direction m_direction = Direction::RIGHT;
     double padding = 0;
 
-    QList<PortItem*> m_inputPorts;
+    QVector<PortItem*> m_inputPorts;
     PortItem* m_outputPort = nullptr;
 };
 
@@ -110,17 +110,19 @@ class CircuitScene : public QGraphicsScene {
 public:
     explicit CircuitScene(QObject* parent = nullptr);
 
-    // Add components
     void addGate(GType gateType, QPointF position);
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
+    void startSim() { qDebug() << "startsim"; };
 
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
+public slots:
+    void setNextGateType(GType gatetype) { nextGateType = gatetype; };
 
 private:
     bool m_connectingWire;
@@ -128,9 +130,7 @@ private:
     WireItem* m_currentWire;
     PortItem* m_currentWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
-signals:
-    void gateAdded(GateItem* gate);
-    void wireAdded(WireItem* wire);
+    GType nextGateType = GType::AND;
 };
 
 class CircuitCanvas : public QGraphicsView {
@@ -139,22 +139,23 @@ public:
     explicit CircuitCanvas(QWidget* parent = nullptr);
 
     // Public interface
-    void addGate(GType gateType, QPoint position);
-    void clearCanvas();
+    void addGate(GType gateType, QPoint position) {m_scene->addGate(gateType, mapToScene(position));};
+    void clearCanvas() {m_scene->clear();};
+    
+    CircuitScene* getScene() const { return m_scene; }
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
 
-private slots:
-    void onGateAdded(GateItem* gate);
-    void onWireAdded(WireItem* wire);
-
 private:
     CircuitScene* m_scene;
-
-signals:
-    void circuitChanged();
+    
+    // Camera dragging
+    bool m_middleMousePressed = false;
+    QPoint m_lastPanPoint;
 };

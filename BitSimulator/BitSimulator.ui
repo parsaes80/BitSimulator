@@ -6,22 +6,126 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1486</width>
-    <height>956</height>
+    <width>1552</width>
+    <height>1000</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>BitSimulator</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <widget class="CircuitCanvas" name="graphicsView">
+   <widget class="CircuitCanvas" name="Camera">
     <property name="geometry">
      <rect>
-      <x>70</x>
-      <y>30</y>
-      <width>1351</width>
-      <height>801</height>
+      <x>0</x>
+      <y>80</y>
+      <width>1551</width>
+      <height>851</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="GateButton" name="andButton">
+    <property name="geometry">
+     <rect>
+      <x>60</x>
+      <y>10</y>
+      <width>71</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="GateButton" name="orButton">
+    <property name="geometry">
+     <rect>
+      <x>140</x>
+      <y>10</y>
+      <width>81</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="GateButton" name="nandButton">
+    <property name="geometry">
+     <rect>
+      <x>230</x>
+      <y>10</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="GateButton" name="norButton">
+    <property name="geometry">
+     <rect>
+      <x>330</x>
+      <y>10</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="GateButton" name="notButton">
+    <property name="geometry">
+     <rect>
+      <x>620</x>
+      <y>10</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="GateButton" name="xorButton">
+    <property name="geometry">
+     <rect>
+      <x>430</x>
+      <y>10</y>
+      <width>81</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="GateButton" name="xnorButton">
+    <property name="geometry">
+     <rect>
+      <x>520</x>
+      <y>10</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="startButton">
+    <property name="geometry">
+     <rect>
+      <x>840</x>
+      <y>10</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Start</string>
     </property>
    </widget>
   </widget>
@@ -30,7 +134,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1486</width>
+     <width>1552</width>
      <height>25</height>
     </rect>
    </property>
@@ -57,6 +161,11 @@
    <class>CircuitCanvas</class>
    <extends>QGraphicsView</extends>
    <header>CircuitCanvas.h</header>
+  </customwidget>
+  <customwidget>
+   <class>GateButton</class>
+   <extends>QPushButton</extends>
+   <header>toolbar.h</header>
   </customwidget>
  </customwidgets>
  <resources/>
