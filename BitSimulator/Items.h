@@ -18,8 +18,7 @@
 class WireItem;
 class GateItem;
 
-class PortItem : public QGraphicsEllipseItem
-{
+class PortItem : public QGraphicsEllipseItem{
 public:
     PortItem(PortType portType, int pinIndex = 0, QGraphicsItem* parent = nullptr);
 
@@ -45,19 +44,16 @@ private:
     bool m_highlighted = false;
 };
 
-class GateItem : public QGraphicsObject
-{
+class GateItem : public QGraphicsObject{
     Q_OBJECT
 public:
     explicit GateItem(GType gateType, QGraphicsItem* parent = nullptr);
 
-    // Required virtual functions
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     QString gateTypeToString() const;
 
-    // Getters
     GType getGateType() const { return m_gateType; };
     QPointF getInputPin(int index) const;
     QPointF getOutputPin() const;
@@ -87,23 +83,19 @@ private:
     PortItem* m_outputPort = nullptr;
 };
 
-class WireItem : public QGraphicsObject // Change from QGraphicsLineItem to QGraphicsObject
+class WireItem : public QGraphicsObject
 {
-    Q_OBJECT // Now this will work
-
+    Q_OBJECT
 public:
     WireItem(const QLineF& line, QGraphicsItem* parent = nullptr);
 
-    // Required virtual functions from QGraphicsItem
     QRectF boundingRect() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    // Port connection methods
     void setStartPort(PortItem* port);
     void setEndPort(PortItem* port);
     PortItem* getStartPort() const { return m_startPort; }
     PortItem* getEndPort() const { return m_endPort; }
-
     bool isConnected() const { return m_startPort && m_endPort; }
 
     QLineF line() const { return m_line; }
@@ -113,7 +105,6 @@ public:
         update();
     }
     
-    // Add pen methods
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen)
     {
@@ -127,18 +118,15 @@ public slots:
 private:
     PortItem* m_startPort = nullptr;
     PortItem* m_endPort = nullptr;
-    QLineF m_line; // Store the line ourselves since we're not inheriting from QGraphicsLineItem
-    QPen m_pen; // Add pen member
+    QLineF m_line;
+    QPen m_pen;
 };
 
-class SourceItem : public QGraphicsObject
-{
-    Q_OBJECT // Add this line
-
+class SourceItem : public QGraphicsObject{
+    Q_OBJECT
 public:
     SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
 
-    // Required virtual functions
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 

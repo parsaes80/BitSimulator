@@ -331,7 +331,7 @@ QPointF GateItem::getOutputPin() const
 WireItem::WireItem(const QLineF& line, QGraphicsItem* parent)
     : QGraphicsObject(parent)
     , m_line(line)
-    , m_pen(QPen(Qt::black, 2)) // Initialize pen
+    , m_pen(QPen(Qt::black, 2))
 {
     setFlags(ItemIsSelectable);
 }
