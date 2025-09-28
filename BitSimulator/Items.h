@@ -14,6 +14,7 @@
 #include <QMimeData>
 #include <QDebug>
 #include "general.h"
+
 class WireItem;
 class GateItem;
 
@@ -33,7 +34,7 @@ public:
     void addConnection(WireItem* wire);
     void removeConnection(WireItem* wire);
     QList<WireItem*> getConnections() const { return m_connections; }
-
+    QGraphicsObject* getParentGate() const;
     // Visual feedback
     void setHighlighted(bool highlighted);
 
@@ -46,6 +47,7 @@ private:
 
 class GateItem : public QGraphicsObject
 {
+    Q_OBJECT
 public:
     explicit GateItem(GType gateType, QGraphicsItem* parent = nullptr);
 
@@ -53,8 +55,6 @@ public:
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    // Custom interaction
-    QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
     QString gateTypeToString() const;
 
     // Getters
@@ -66,6 +66,7 @@ public:
     PortItem* getOutputPort() const { return m_outputPort; }
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+
 private:
     void drawPins(QPainter* painter);
     void drawGateShape(QPainter* painter);
@@ -86,13 +87,16 @@ private:
     PortItem* m_outputPort = nullptr;
 };
 
-class WireItem : public QGraphicsLineItem
+class WireItem : public QGraphicsObject // Change from QGraphicsLineItem to QGraphicsObject
 {
+    Q_OBJECT // Now this will work
+
 public:
     WireItem(const QLineF& line, QGraphicsItem* parent = nullptr);
 
+    // Required virtual functions from QGraphicsItem
+    QRectF boundingRect() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    //QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
 
     // Port connection methods
     void setStartPort(PortItem* port);
@@ -102,21 +106,42 @@ public:
 
     bool isConnected() const { return m_startPort && m_endPort; }
 
+    QLineF line() const { return m_line; }
+    void setLine(const QLineF& line)
+    {
+        m_line = line;
+        update();
+    }
+    
+    // Add pen methods
+    QPen pen() const { return m_pen; }
+    void setPen(const QPen& pen)
+    {
+        m_pen = pen;
+        update();
+    }
+
+public slots:
+    void updateWirePosition();
+
 private:
     PortItem* m_startPort = nullptr;
     PortItem* m_endPort = nullptr;
+    QLineF m_line; // Store the line ourselves since we're not inheriting from QGraphicsLineItem
+    QPen m_pen; // Add pen member
 };
 
 class SourceItem : public QGraphicsObject
 {
+    Q_OBJECT // Add this line
+
 public:
-    SourceItem(QGraphicsObject* parent = nullptr);
+    SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
 
     // Required virtual functions
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-public slots:
-    void updateWirePosition(); // Add this method
+
 private:
     void addPorts();
     QVector<PortItem*> m_outPorts;

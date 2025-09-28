@@ -53,6 +53,17 @@ PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshol
     return nearestPort;
 }
 
+void CircuitScene::clearHighlights()
+{
+    // Find all PortItem objects and unhighlight them
+    for (QGraphicsItem* item : items()) {
+        PortItem* port = dynamic_cast<PortItem*>(item);
+        if (port) {
+            port->setHighlighted(false);
+        }
+    }
+}
+
 void CircuitScene::startWireConnection(QPointF startPoint)
 {
     // Find nearest port for magnetic snapping
@@ -109,36 +120,54 @@ void CircuitScene::updateWireConnection(QPointF currentPoint)
 void CircuitScene::finishWireConnection(QPointF endPoint)
 {
     if (m_connectingWire && m_currentWire) {
-        // Clear all highlights
-        for (QGraphicsItem* item : items()) {
-            if (PortItem* port = dynamic_cast<PortItem*>(item)) {
-                port->setHighlighted(false);
-            }
-        }
-
-        removeItem(m_currentWire);
-
         PortItem* endPort = findNearestPort(endPoint);
 
-        // Only create wire if we have valid ports that can connect
-        if (m_currentWireStartPort && endPort &&
-            m_currentWireStartPort->canConnectTo(endPort)) {
+        if (endPort && m_currentWireStartPort && endPort->canConnectTo(m_currentWireStartPort)) {
+            // Set the ports
+            m_currentWire->setStartPort(m_currentWireStartPort);
+            m_currentWire->setEndPort(endPort);
 
-            QPointF startPos = m_currentWireStartPort->mapToScene(QPointF(0, 0));
-            QPointF endPos = endPort->mapToScene(QPointF(0, 0));
+            // Add connections to ports
+            m_currentWireStartPort->addConnection(m_currentWire);
+            endPort->addConnection(m_currentWire);
 
-            WireItem* wire = new WireItem(QLineF(startPos, endPos));
-            wire->setStartPort(m_currentWireStartPort);
-            wire->setEndPort(endPort);
-            addItem(wire);
+            // Connect position change signals to wire update
+            QGraphicsObject* startGate = m_currentWireStartPort->getParentGate();
+            QGraphicsObject* endGate = endPort->getParentGate();
 
-            qDebug() << "Connected ports successfully";
+            if (startGate) {
+                connect(startGate,
+                        &QGraphicsObject::xChanged,
+                        m_currentWire,
+                        &WireItem::updateWirePosition);
+                connect(startGate,
+                        &QGraphicsObject::yChanged,
+                        m_currentWire,
+                        &WireItem::updateWirePosition);
+            }
+
+            if (endGate) {
+                connect(endGate,
+                        &QGraphicsObject::xChanged,
+                        m_currentWire,
+                        &WireItem::updateWirePosition);
+                connect(endGate,
+                        &QGraphicsObject::yChanged,
+                        m_currentWire,
+                        &WireItem::updateWirePosition);
+            }
+
+            // Set final wire appearance
+            m_currentWire->setPen(QPen(Qt::black, 2));
+            m_currentWire->updateWirePosition(); // Initial position update
+        } else {
+            // Remove invalid wire
+            removeItem(m_currentWire);
+            delete m_currentWire;
         }
-        else {
-            qDebug() << "Wire connection failed - no valid ports";
-        }
 
-        delete m_currentWire;
+        // Clean up
+        clearHighlights();
         m_connectingWire = false;
         m_currentWire = nullptr;
         m_currentWireStartPort = nullptr;

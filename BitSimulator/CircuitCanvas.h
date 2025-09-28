@@ -47,6 +47,7 @@ private:
     WireItem* m_currentWire;
     PortItem* m_currentWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
+    void clearHighlights(); // Add this method
 
     GType nextGateType = GType::AND;
     bool nextSource = false;

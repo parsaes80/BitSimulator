@@ -106,21 +106,9 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     // Draw input/output pins
     //drawPins(painter);
 }
-
-// In CircuitCanvas.cpp - add to GateItem::itemChange
-QVariant GateItem::itemChange(GraphicsItemChange change, const QVariant& value)
+QGraphicsObject* PortItem::getParentGate() const
 {
-    if (change == ItemPositionChange && scene()) {
-        // Snap to grid
-        QPointF newPos = value.toPointF();
-        int gridSize = 10;
-        newPos.setX(qRound(newPos.x() / gridSize) * gridSize);
-        newPos.setY(qRound(newPos.y() / gridSize) * gridSize);
-
-        return newPos;
-    }
-
-    return QGraphicsItem::itemChange(change, value);
+    return dynamic_cast<QGraphicsObject*>(parentItem());
 }
 
 void GateItem::drawPins(QPainter* painter)
@@ -341,12 +329,18 @@ QPointF GateItem::getOutputPin() const
 //===================== Wire Item   ========================
 
 WireItem::WireItem(const QLineF& line, QGraphicsItem* parent)
-    : QGraphicsLineItem(line, parent)
+    : QGraphicsObject(parent)
+    , m_line(line)
+    , m_pen(QPen(Qt::black, 2)) // Initialize pen
 {
-    setPen(QPen(Qt::black, 2));
-    setFlag(QGraphicsItem::ItemIsSelectable, true);
-    setFlag(QGraphicsItem::ItemIsMovable, true);
-    setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+    setFlags(ItemIsSelectable);
+}
+QRectF WireItem::boundingRect() const
+{
+    // Create a bounding rect around the line with some padding
+    QRectF rect = QRectF(m_line.p1(), m_line.p2()).normalized();
+    qreal penWidth = m_pen.width();
+    return rect.adjusted(-penWidth / 2, -penWidth / 2, penWidth / 2, penWidth / 2);
 }
 
 // Update WireItem methods
@@ -386,28 +380,45 @@ void WireItem::setEndPort(PortItem* port)
 
 void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    // Change color based on connection state
-    if (isSelected()) {
-        setPen(QPen(Qt::blue, 3));
-    } else if (isConnected()) {
-        setPen(QPen(Qt::darkGreen, 2)); // Connected wires are green
-    } else {
-        setPen(QPen(Qt::red, 2)); // Unconnected wires are red
-    }
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
 
-    QGraphicsLineItem::paint(painter, option, widget);
+    // Use the stored pen, but modify color based on selection
+    QPen currentPen = m_pen;
+    if (isSelected()) {
+        currentPen.setColor(Qt::blue);
+        currentPen.setWidth(3);
+    }
+    
+    painter->setPen(currentPen);
+    painter->drawLine(m_line);
 }
 
+void WireItem::updateWirePosition()
+{
+    if (m_startPort && m_endPort) {
+        // Get the scene positions of both ports
+        QPointF startPos = m_startPort->mapToScene(QPointF(0, 0));
+        QPointF endPos = m_endPort->mapToScene(QPointF(0, 0));
+
+        // Convert to this item's coordinate system
+        QPointF localStartPos = mapFromScene(startPos);
+        QPointF localEndPos = mapFromScene(endPos);
+
+        // Update the wire line
+        setLine(QLineF(localStartPos, localEndPos));
+    }
+}
 //===================== SourceItem ========================
 
-SourceItem::SourceItem(QGraphicsObject* parent)
+SourceItem::SourceItem(QGraphicsItem* parent)
     : QGraphicsObject(parent)
     , m_rect(-15, -15, 30, 30)
 {
     // Enable item flags for interaction
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+    setFlag(QGraphicsItem::ItemIsMovable, true);
+    setFlag(QGraphicsItem::ItemIsSelectable, true);
+    setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
 
     addPorts();
 }
