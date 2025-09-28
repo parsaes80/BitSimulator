@@ -5,6 +5,27 @@
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
+    setupUI();
+    // Create thread and Simulator
+    simThread = new QThread(this);
+    simObj = new Simulator;
+    
+    simObj->moveToThread(simThread);
+    
+    connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
+    connect(simThread, &QThread::started, simObj, &Simulator::SimController);
+
+    simThread->start();
+}
+
+MainWindow::~MainWindow()
+{
+    simThread->quit();
+    simThread->wait();
+}
+// setup button connections to the scene
+void MainWindow::setupUI()
+{
     ui.setupUi(this);
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
@@ -41,24 +62,11 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
             &GateButton::gateTypeSelected,
             ui.Camera->getScene(),
             &CircuitScene::setNextGateType);
-    // Create thread and Simulator
-    simThread = new QThread(this);
-    simObj = new Simulator;
-    
-    simObj->moveToThread(simThread);
-    
-    connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
-    connect(simThread, &QThread::started, simObj, &Simulator::SimController);
-
-    simThread->start();
+    connect(ui.srcButton,
+            &SourceButton::sourceSelected,
+            ui.Camera->getScene(),
+            &CircuitScene::setNextSource);
 }
-
-MainWindow::~MainWindow()
-{
-    simThread->quit();
-    simThread->wait();
-}
-
 void MainWindow::on_startButton_clicked()
 {
     ui.Camera->getScene()->startSim();

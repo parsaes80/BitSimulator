@@ -124,10 +124,10 @@ void GateButton::drawNotGate(QPainter* painter)
 
     double bubbleSize = 6;
 
-    path.moveTo(-15, -8);
-    path.lineTo(-15, 8);
+    path.moveTo(-15, -10);
+    path.lineTo(-15, 10);
     path.lineTo(10, 0);
-    path.lineTo(-15, -8);
+    path.lineTo(-15, -10);
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
@@ -141,4 +141,54 @@ void GateButton::drawNotBubble(QPainter* painter)
     painter->setBrush(Qt::white);
     double bubbleSize = 6;
     painter->drawEllipse(12, -3, bubbleSize, bubbleSize);
+}
+
+//===================== SourceButton ========================
+
+SourceButton::SourceButton(QWidget* parent)
+    : QPushButton(parent)
+{
+    setText("");         // Remove text
+    setCheckable(false);  // Allow toggle state
+    setMinimumSize(60, 40);
+    setMaximumSize(60, 40);
+    
+    // Connect the button click to our slot
+    connect(this, &QPushButton::clicked, this, &SourceButton::onButtonClicked);
+    qDebug() << "SourceButton connection made in constructor";
+}
+
+void SourceButton::paintEvent(QPaintEvent* event)
+{
+    // Draw button background first
+    QPushButton::paintEvent(event);
+
+    // Draw source symbol on top
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Center the drawing area
+    QRect drawRect = rect().adjusted(8, 8, -8, -8);
+    painter.translate(drawRect.center());
+
+    // Scale to fit button
+    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
+    painter.scale(scale, scale);
+
+    // Set styling for source
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
+    painter.setBrush(QColor(255, 100, 100)); // Red color
+    
+    // Draw red square
+    QRectF sourceRect(-12, -10, 24, 20);
+    painter.fillRect(sourceRect, painter.brush());
+    painter.drawRect(sourceRect);
+    
+    // Draw "1" in the center to indicate it's a logic source
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::white, 2));
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setPointSize(12);
+    painter.setFont(font);
+    painter.drawText(sourceRect, Qt::AlignCenter, "1");
 }

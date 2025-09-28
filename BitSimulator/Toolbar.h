@@ -14,9 +14,6 @@ public:
     GateButton(QWidget* parent = nullptr);
     GType getGateType() const { return m_gateType; };
     void setGateType(GType gateType) { m_gateType = gateType; };
-    
-    // Method to connect to scene after construction
-    void connectToScene(class CircuitScene* scene);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -35,4 +32,19 @@ private:
     void drawNotBubble(QPainter* painter);
 
     GType m_gateType;
+};
+class SourceButton : public QPushButton
+{
+    Q_OBJECT
+
+public:
+    SourceButton(QWidget* parent = nullptr);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+public slots:
+    void onButtonClicked() { emit sourceSelected(); };
+signals:
+    void sourceSelected();
 };

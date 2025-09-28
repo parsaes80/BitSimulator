@@ -17,6 +17,7 @@ private slots:
     void on_startButton_clicked();
 
 private:
+    void setupUI();
     Ui::BitSimulatorClass ui;
     QThread *simThread;
     Simulator *simObj;
