@@ -14,7 +14,6 @@ GateButton::GateButton(GType gateType, QWidget* parent)
     
     // Connect the button click to our slot
     connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
-    qDebug() << "Connection made in constructor";
 }
 GateButton::GateButton(QWidget* parent)
     : QPushButton(parent)
@@ -24,7 +23,6 @@ GateButton::GateButton(QWidget* parent)
     setMinimumSize(60, 40);
     setMaximumSize(60, 40);
     connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
-    qDebug() << "Connection made in constructor";
 }
 
 void GateButton::paintEvent(QPaintEvent* event)
@@ -155,7 +153,6 @@ SourceButton::SourceButton(QWidget* parent)
     
     // Connect the button click to our slot
     connect(this, &QPushButton::clicked, this, &SourceButton::onButtonClicked);
-    qDebug() << "SourceButton connection made in constructor";
 }
 
 void SourceButton::paintEvent(QPaintEvent* event)

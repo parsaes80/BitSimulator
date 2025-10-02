@@ -1,7 +1,12 @@
 #include "CircuitCanvas.h"
+#include <QHash> // Add this line
 #include <QMouseEvent>
+#include <QQueue> // Add this line
+#include <QSet>   // Add this line
+#include <QKeyEvent>
+#include <QDebug>
 #include <qscrollbar.h>
-
+#include <vector>
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
@@ -174,6 +179,213 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
     }
 }
 
+void CircuitScene::startSim()
+{
+    ExportGraph graph;
+    graph.clear();
+
+    // Collections to track items and assign IDs
+    QList<GateItem*> gateItems;
+    QList<SourceItem*> sourceItems;
+    QList<WireItem*> wireItems;
+    QHash<PortItem*, u32> portToNetMap; // Maps ports to net indices
+
+    u32 netCounter = 0;
+    u32 wireIndex = 0;
+
+    // Step 1: Find all gates and sources
+    for (QGraphicsItem* item : items()) {
+        if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
+            if (wire->isConnected()) {
+                wireItems.push_back(wire);
+
+                // Create mapping: Wire UI Index → Net ID
+                graph.wireUItoSimMap.push_back(netCounter);
+
+                // Create reverse mapping: Net ID → Wire Pointer
+                if (graph.simToUIMap.size() <= netCounter) {
+                    graph.simToUIMap.resize(netCounter + 1);
+                }
+                graph.simToUIMap[netCounter] = wire;
+
+                // Create the net with ID
+                graph.nets.push_back(Net{false, netCounter});
+
+                // Map both ports to this net
+                PortItem* startPort = wire->getStartPort();
+                PortItem* endPort = wire->getEndPort();
+                if (startPort) portToNetMap[startPort] = netCounter;
+                if (endPort) portToNetMap[endPort] = netCounter;
+
+                netCounter++;
+                wireIndex++;
+            }
+        }
+        else if (GateItem* gate = dynamic_cast<GateItem*>(item)) {
+            gateItems.push_back(gate);
+        }
+        else if (SourceItem* source = dynamic_cast<SourceItem*>(item)) {
+            sourceItems.push_back(source);
+        }
+    }
+
+    // Step 2: Create nets for each unique connection
+    QHash<PortItem*, QList<PortItem*>> connectedPorts; // Groups of connected ports
+
+    // Build connection groups from wires
+    for (WireItem* wire : wireItems) {
+        PortItem* startPort = wire->getStartPort();
+        PortItem* endPort = wire->getEndPort();
+
+        if (startPort && endPort) {
+            if (!connectedPorts.contains(startPort)) {
+                connectedPorts[startPort] = QList<PortItem*>();
+            }
+            if (!connectedPorts.contains(endPort)) {
+                connectedPorts[endPort] = QList<PortItem*>();
+            }
+
+            connectedPorts[startPort].append(endPort);
+            connectedPorts[endPort].append(startPort);
+        }
+    }
+
+    // Assign net IDs to connected port groups
+    QSet<PortItem*> processedPorts;
+    for (auto it = connectedPorts.begin(); it != connectedPorts.end(); ++it) {
+        if (!processedPorts.contains(it.key())) {
+            // Create a new net
+            u32 currentNetId = netCounter++;
+            graph.nets.push_back(Net{false, currentNetId}); // Default to false
+            // BFS to find all connected ports in this net
+            QQueue<PortItem*> portsToProcess;
+            portsToProcess.enqueue(it.key());
+
+            while (!portsToProcess.isEmpty()) {
+                PortItem* currentPort = portsToProcess.dequeue();
+                if (processedPorts.contains(currentPort))
+                    continue;
+
+                processedPorts.insert(currentPort);
+                portToNetMap[currentPort] = currentNetId;
+
+                // Add all connected ports
+                for (PortItem* connectedPort : connectedPorts[currentPort]) {
+                    if (!processedPorts.contains(connectedPort)) {
+                        portsToProcess.enqueue(connectedPort);
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 3: Create Gate structs
+    for (int i = 0; i < gateItems.size(); ++i) {
+        GateItem* gateItem = gateItems[i];
+
+        // Count inputs for this gate type
+        u16 numInputs = 0;
+        switch (gateItem->getGateType()) {
+        case GType::NOT:
+            numInputs = 1;
+            break;
+        case GType::AND:
+        case GType::OR:
+        case GType::XOR:
+        case GType::NAND:
+        case GType::NOR:
+        case GType::XNOR:
+            numInputs = 2;
+            break; // Can be extended for more inputs
+        }
+
+        // Create gate
+        Gate gate(gateItem->getGateType(), 0, 0, numInputs); // inID and outID will be set below
+
+        // Find input and output ports
+        QList<PortItem*> inputPorts;
+        PortItem* outputPort = nullptr;
+
+        // Get ports from the gate (you'll need to add getters to GateItem)
+        for (int pinIndex = 0; pinIndex < numInputs; pinIndex++) {
+            PortItem* inputPort = gateItem->getInputPort(pinIndex);
+            if (inputPort && portToNetMap.contains(inputPort)) {
+                inputPorts.append(inputPort);
+            }
+        }
+
+        outputPort = gateItem->getOutputPort();
+
+        // Map ports to nets
+        std::vector<u32> inputNetIds;
+        for (PortItem* inputPort : inputPorts) {
+            if (portToNetMap.contains(inputPort)) {
+                inputNetIds.push_back(portToNetMap[inputPort]);
+            }
+        }
+
+        u32 outputNetId = 0;
+        if (outputPort && portToNetMap.contains(outputPort)) {
+            outputNetId = portToNetMap[outputPort];
+        }
+
+        // Set the inID to the start index in a flattened input array
+        gate.inID = graph.gateInputs.size(); // This will be the index where this gate's inputs start
+        gate.outID = outputNetId;
+
+        graph.gates.push_back(gate);
+        graph.gateInputs.push_back(inputNetIds);
+        graph.gateOutputs.push_back(outputNetId);
+    }
+
+    // Step 4: Create Source structs
+    for (int i = 0; i < sourceItems.size(); ++i) {
+        SourceItem* sourceItem = sourceItems[i];
+
+        Source source(false); // Default value
+        graph.sources.push_back(source);
+
+        // Find output port and map to net
+        PortItem* outputPort = nullptr; // You'll need to add getter to SourceItem
+        // outputPort = sourceItem->getOutputPort();
+
+        u32 outputNetId = 0;
+        if (outputPort && portToNetMap.contains(outputPort)) {
+            outputNetId = portToNetMap[outputPort];
+        }
+
+        graph.sourceOutputs.push_back(outputNetId);
+    }
+
+    // Step 5: Set totals
+    graph.totalGates = graph.gates.size();
+    graph.totalSources = graph.sources.size();
+    graph.totalNets = graph.nets.size();
+    qDebug() << "startsim emmited";
+    emit startSimSIG(graph);
+};
+void CircuitScene::receiveResult(SimResult result)
+{
+    qDebug() << "Updating UI with simulation step:" << result.simulationStep;
+
+    // Update wire colors based on net values
+    for (size_t i = 0; i < result.netIds.size() && i < result.netValues.size(); i++) {
+        u32 netId = result.netIds[i];
+        bool value = result.netValues[i];
+
+        // Find the corresponding wire in UI
+        if (netId < m_wireMapping.size() && m_wireMapping[netId]) {
+            WireItem* wire = m_wireMapping[netId];
+
+            // Update wire appearance based on value
+            if (value) {
+                wire->setPen(QPen(Qt::red, 3));    // High signal = red
+            } else {
+                wire->setPen(QPen(Qt::black, 2));  // Low signal = black
+            }
+        }
+    }
+}
 void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
 {
     // Draw grid
@@ -247,6 +459,40 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 }
+
+// Add these includes at the top of CircuitCanvas.cpp
+
+
+// Add this method to CircuitCanvas.cpp
+void CircuitCanvas::keyPressEvent(QKeyEvent* event)
+{
+    qDebug() << "Key pressed:" << event->key() << "Text:" << event->text();
+
+    // Track modifier keys
+    m_ctrlPressed = event->modifiers() & Qt::ControlModifier;
+    m_shiftPressed = event->modifiers() & Qt::ShiftModifier;
+
+    switch (event->key()) {
+    case Qt::Key_Delete:
+    case Qt::Key_Backspace:
+    {
+        QList<QGraphicsItem*> selectedItems = m_scene->selectedItems();
+
+        for (QGraphicsItem* item : selectedItems) {
+            // Let the items handle their own deletion (they have keyPressEvent handlers)
+            QKeyEvent deleteEvent(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
+            m_scene->sendEvent(item, &deleteEvent);
+        }
+        event->accept();
+        break;
+    }
+    default:
+        // Pass unhandled keys to parent
+        QGraphicsView::keyPressEvent(event);
+        break;
+    }
+}
+
 
 void CircuitCanvas::mousePressEvent(QMouseEvent* event)
 {

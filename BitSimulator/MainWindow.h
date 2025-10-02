@@ -12,12 +12,13 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
+protected:
+    void closeEvent(QCloseEvent* event) override;
 private slots:
     void on_startButton_clicked();
 
 private:
-    void setupUI();
+    void setup();
     Ui::BitSimulatorClass ui;
     QThread *simThread;
     Simulator *simObj;

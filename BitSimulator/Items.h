@@ -55,9 +55,7 @@ public:
     QString gateTypeToString() const;
 
     GType getGateType() const { return m_gateType; };
-    QPointF getInputPin(int index) const;
-    QPointF getOutputPin() const;
-
+    PortItem* getInputPort(int index) const { return m_inputPorts[index]; }; // Add this
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
 
@@ -129,9 +127,11 @@ public:
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+    PortItem* getOutputPort() const { return m_outPorts[0]; };
 
 private:
     void addPorts();
     QVector<PortItem*> m_outPorts;
+    int portNums = 1;
     QRectF m_rect;
 };

@@ -26,7 +26,7 @@ public:
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
-    void startSim() { qDebug() << "startsim"; };
+    void startSim();
 
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;
@@ -40,15 +40,18 @@ public slots:
         nextGateType = gatetype;
     };
     void setNextSource() { nextSource = true; };
+    void receiveResult(SimResult result);
+signals:
+    void startSimSIG(ExportGraph graph);
 
 private:
+    void clearHighlights();
     bool m_connectingWire;
     QPointF m_wireStartPoint;
     WireItem* m_currentWire;
     PortItem* m_currentWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
-    void clearHighlights(); // Add this method
-
+    std::vector<WireItem*> m_wireMapping;
     GType nextGateType = GType::AND;
     bool nextSource = false;
 };
@@ -58,13 +61,13 @@ class CircuitCanvas : public QGraphicsView {
 public:
     explicit CircuitCanvas(QWidget* parent = nullptr);
 
-    // Public interface
     void addGate(GType gateType, QPoint position) {m_scene->addGate(gateType, mapToScene(position));};
     void clearCanvas() {m_scene->clear();};
     
     CircuitScene* getScene() const { return m_scene; }
 
 protected:
+    void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -74,8 +77,8 @@ protected:
 
 private:
     CircuitScene* m_scene;
-    
-    // Camera dragging
+    bool m_ctrlPressed = false;
+    bool m_shiftPressed = false;
     bool m_middleMousePressed = false;
     QPoint m_lastPanPoint;
 };

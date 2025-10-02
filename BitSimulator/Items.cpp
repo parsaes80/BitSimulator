@@ -68,6 +68,11 @@ void PortItem::setHighlighted(bool highlighted)
     }
 }
 
+QGraphicsObject* PortItem::getParentGate() const
+{
+    return dynamic_cast<QGraphicsObject*>(parentItem());
+}
+
 //===================== GateItem   ========================
 
 GateItem::GateItem(GType gateType, QGraphicsItem* parent)
@@ -105,10 +110,6 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     // Draw input/output pins
     //drawPins(painter);
-}
-QGraphicsObject* PortItem::getParentGate() const
-{
-    return dynamic_cast<QGraphicsObject*>(parentItem());
 }
 
 void GateItem::drawPins(QPainter* painter)
@@ -310,22 +311,6 @@ void GateItem::createPorts()
     m_outputPort->setPos(halfWidth, 0); // Right side, center
 }
 
-// Update the getInputPin and getOutputPin methods to use ports
-QPointF GateItem::getInputPin(int index) const
-{
-    if (index >= 0 && index < m_inputPorts.size()) {
-        return m_inputPorts[index]->mapToScene(QPointF(0, 0));
-    }
-    return QPointF();
-}
-
-QPointF GateItem::getOutputPin() const
-{
-    if (m_outputPort) {
-        return m_outputPort->mapToScene(QPointF(0, 0));
-    }
-    return QPointF();
-}
 //===================== Wire Item   ========================
 
 WireItem::WireItem(const QLineF& line, QGraphicsItem* parent)
@@ -416,9 +401,9 @@ SourceItem::SourceItem(QGraphicsItem* parent)
     , m_rect(-15, -15, 30, 30)
 {
     // Enable item flags for interaction
-    setFlag(QGraphicsItem::ItemIsMovable, true);
-    setFlag(QGraphicsItem::ItemIsSelectable, true);
-    setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+    setFlag(QGraphicsObject::ItemIsMovable, true);
+    setFlag(QGraphicsObject::ItemIsSelectable, true);
+    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
     addPorts();
 }
@@ -446,7 +431,6 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 
 void SourceItem::addPorts()
 {
-    // Add output port on the right side
     PortItem* outputPort = new PortItem(PortType::OUT, -1, this);
     outputPort->setPos(15, 0); // Right side of the circle
     m_outPorts.append(outputPort);

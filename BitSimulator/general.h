@@ -1,5 +1,8 @@
 #pragma once
-#include <utility>
+#include <QMetaType>
+#include <vector>
+
+class WireItem;
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -37,13 +40,61 @@ struct Gate {
 };
 
 struct Net {
-	bool value;   // later: make this u64 for parallel sim	
-	Net() : value(false) {}
-	Net(bool val) : value(val) {}
+    bool value;   // later: make this u64 for parallel sim
+    u32 id;
+    Net() : value(false), id(0) {}  // Default constructor
+    Net(bool val, u32 netId) : value(val), id(netId) {}  // Full constructor
 };
 
 struct Source {
 	bool value;   // later: make this u64 for parallel sim	
 	Source() : value(false) {}
 	Source(bool val) : value(val) {}
+};
+
+// In general.h - replace the empty ExportGraph with this:
+struct ExportGraph
+{
+    // Circuit components
+    std::vector<Gate> gates;
+    std::vector<Source> sources;
+    std::vector<Net> nets;
+
+    // Connection mappings
+    std::vector<std::vector<u32>> gateInputs; // gateInputs[gateIndex] = {netIndex1, netIndex2, ...}
+    std::vector<u32> gateOutputs;             // gateOutputs[gateIndex] = netIndex
+    std::vector<u32> sourceOutputs;           // sourceOutputs[sourceIndex] = netIndex
+
+    std::vector<u32> wireUItoSimMap;    // wireUItoSimMap[wireIndex] = netId
+    std::vector<WireItem*> simToUIMap;  // simToUIMap[netId] = wireItem pointer
+
+    // Metadata
+    u32 totalGates;
+    u32 totalSources;
+    u32 totalNets;
+
+    // Constructor
+    ExportGraph() : totalGates(0), totalSources(0), totalNets(0) {}
+
+    // Helper methods
+    void clear()
+    {
+        gates.clear();
+        sources.clear();
+        nets.clear();
+        gateInputs.clear();
+        gateOutputs.clear();
+        sourceOutputs.clear();
+        totalGates = totalSources = totalNets = 0;
+    }
+};
+
+struct SimResult
+{
+    std::vector<bool> netValues;        // netValues[netId] = true/false
+    std::vector<u32> netIds;            // List of net IDs
+    u32 simulationStep;
+    bool simulationComplete;
+
+    SimResult() : simulationStep(0), simulationComplete(false) {}
 };
