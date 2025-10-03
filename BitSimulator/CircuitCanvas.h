@@ -34,11 +34,7 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 public slots:
-    void setNextGateType(GType gatetype)
-    {
-        nextSource = false;
-        nextGateType = gatetype;
-    };
+    void setNextGateType(GType gatetype){nextSource = false;nextGateType = gatetype;};
     void setNextSource() { nextSource = true; };
     void receiveResult(SimResult result);
 signals:
@@ -51,7 +47,10 @@ private:
     WireItem* m_currentWire;
     PortItem* m_currentWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
-    std::vector<WireItem*> m_wireMapping;
+
+    // Cached mapping from net IDs to wire items for fast UI updates during simulation
+    std::vector<WireItem*> m_simToUIMap;
+
     GType nextGateType = GType::AND;
     bool nextSource = false;
 };

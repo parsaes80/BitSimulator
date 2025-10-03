@@ -1,6 +1,7 @@
 #pragma once
 #include <QMetaType>
 #include <vector>
+#include <unordered_map>
 
 class WireItem;
 
@@ -21,8 +22,8 @@ enum class PortType : u8 {IN,OUT};
 
 struct Register {
 	RType regType;
-	u32 inID;   // index into a big inputs[] array
-	u32 outID;  // index of output net
+	u32 inID;
+	u32 outID;  
 	bool nextValue;
 	
 	Register() = default;
@@ -31,28 +32,28 @@ struct Register {
 
 struct Gate {
 	GType gateType;
-	u32 inID;     // index into a big inputs[] array
-	u32 outID;    // index of output net
-	u16 numInputs; // how many inputs this gate has
+	u32 inID;    
+	u32 outID;    
+	u16 numInputs; 
 	
 	Gate() = default;
 	Gate(GType t, u32 inId, u32 outId, u16 inNum) : gateType(t), inID(inId), outID(outId), numInputs(inNum) {}
 };
 
 struct Net {
-    bool value;   // later: make this u64 for parallel sim
+    bool value;  
     u32 id;
-    Net() : value(false), id(0) {}  // Default constructor
-    Net(bool val, u32 netId) : value(val), id(netId) {}  // Full constructor
+    Net() : value(false), id(0) {}  
+    Net(bool val, u32 netId) : value(val), id(netId) {}  
 };
 
 struct Source {
-	bool value;   // later: make this u64 for parallel sim	
-	Source() : value(false) {}
-	Source(bool val) : value(val) {}
+	bool value;
+	u32 outID;  // Output net ID
+	Source() : value(false), outID(0) {}
+	Source(bool val, u32 outId = 0) : value(val), outID(outId) {}
 };
 
-// In general.h - replace the empty ExportGraph with this:
 struct ExportGraph
 {
     // Circuit components
@@ -60,14 +61,11 @@ struct ExportGraph
     std::vector<Source> sources;
     std::vector<Net> nets;
 
-    // Connection mappings
-    std::vector<std::vector<u32>> gateInputs; // gateInputs[gateIndex] = {netIndex1, netIndex2, ...}
-    std::vector<u32> gateOutputs;             // gateOutputs[gateIndex] = netIndex
-    std::vector<u32> sourceOutputs;           // sourceOutputs[sourceIndex] = netIndex
+    std::vector<u32> gateInputs;        // Flat array: all gate inputs concatenated
 
-    std::vector<u32> wireUItoSimMap;    // wireUItoSimMap[wireIndex] = netId
-    std::vector<WireItem*> simToUIMap;  // simToUIMap[netId] = wireItem pointer
-
+    std::vector<WireItem*> net2wire;    // net2wire[netId] = wireItem pointer
+    std::vector<u32> wire2net;          // wire2net[wireIndex] = netId
+    
     // Metadata
     u32 totalGates;
     u32 totalSources;
@@ -83,8 +81,8 @@ struct ExportGraph
         sources.clear();
         nets.clear();
         gateInputs.clear();
-        gateOutputs.clear();
-        sourceOutputs.clear();
+        net2wire.clear();
+        wire2net.clear();
         totalGates = totalSources = totalNets = 0;
     }
 };
@@ -98,3 +96,4 @@ struct SimResult
 
     SimResult() : simulationStep(0), simulationComplete(false) {}
 };
+

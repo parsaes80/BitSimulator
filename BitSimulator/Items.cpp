@@ -19,7 +19,6 @@ void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     Q_UNUSED(option)
     Q_UNUSED(widget)
 
-    // Change appearance based on state
     if (m_highlighted) {
         setPen(QPen(Qt::yellow, 1));
         setBrush(Qt::yellow);
@@ -40,7 +39,6 @@ bool PortItem::canConnectTo(PortItem* otherPort) const
 {
     if (!otherPort || otherPort == this) return false;
 
-    // Input ports can connect to output ports and vice versa
     return (m_portType == PortType::IN && otherPort->m_portType == PortType::OUT) ||
         (m_portType == PortType::OUT && otherPort->m_portType == PortType::IN);
 }
@@ -49,28 +47,15 @@ void PortItem::addConnection(WireItem* wire)
 {
     if (wire && !m_connections.contains(wire)) {
         m_connections.append(wire);
-        update(); // Refresh appearance
+        update(); 
     }
 }
 
-void PortItem::removeConnection(WireItem* wire)
+void PortItem::removeConnections(WireItem* wire)
 {
     if (m_connections.removeAll(wire) > 0) {
-        update(); // Refresh appearance
+        update(); 
     }
-}
-
-void PortItem::setHighlighted(bool highlighted)
-{
-    if (m_highlighted != highlighted) {
-        m_highlighted = highlighted;
-        update();
-    }
-}
-
-QGraphicsObject* PortItem::getParentGate() const
-{
-    return dynamic_cast<QGraphicsObject*>(parentItem());
 }
 
 //===================== GateItem   ========================
@@ -79,15 +64,12 @@ GateItem::GateItem(GType gateType, QGraphicsItem* parent)
     : QGraphicsObject(parent)
     , m_gateType(gateType)
 {
-    // Enable item flags for interaction
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
-    // Set size
     m_rect = QRectF(-25, -20, 50, 40);
 
-    // Create ports after setting up the gate
     createPorts();
 }
 
@@ -108,21 +90,6 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     drawGateShape(painter);
 
-    // Draw input/output pins
-    //drawPins(painter);
-}
-
-void GateItem::drawPins(QPainter* painter)
-{
-    double width = m_rect.width();
-    double height = m_rect.height();
-    double pinLenght = 5;
-    painter->setPen(QPen(Qt::darkGray, 2));
-    // Input pins
-    painter->drawLine(-width / 2, -height / 4, -width / 2 - pinLenght, -height / 4);
-    painter->drawLine(-width / 2, height / 4, -width / 2 - pinLenght, height / 4);
-    // Output pin
-    painter->drawLine(width / 2, 0, width / 2 + pinLenght, 0);
 }
 
 void GateItem::drawGateShape(QPainter* painter)
@@ -157,7 +124,6 @@ void GateItem::drawGateShape(QPainter* painter)
 
 void GateItem::drawAndGate(QPainter* painter)
 {
-    // AND gate: Rectangle on left, semicircle on right
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -220,7 +186,7 @@ void GateItem::drawNotGate(QPainter* painter)
     double height = m_rect.height();
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double bubbleSize = padding * 3; // Make bubble a bit bigger
+    double bubbleSize = 0; // Make bubble a bit bigger
 
     path.moveTo(-halfWidth, -halfHeight);       // Top left
     path.lineTo(-halfWidth, halfHeight);        // Bottom left
@@ -241,7 +207,7 @@ void GateItem::drawNotBubble(QPainter* painter)
     painter->setBrush(Qt::white);
     double width = m_rect.width();
     double halfWidth = width / 2;
-    double bubbleSize = padding * 3; // Make consistent with NOT gate
+    double bubbleSize = 0; // Make consistent with NOT gate
     
     painter->drawEllipse(halfWidth - bubbleSize/2, -bubbleSize/2, bubbleSize, bubbleSize);
     painter->setBrush(QColor(255, 215, 150)); // Restore original brush
@@ -267,26 +233,11 @@ QString GateItem::gateTypeToString() const
     }
     return "GATE";
 }
-void GateItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
-{
-    qDebug() << "item mouse handler";
-    QGraphicsItem::mousePressEvent(event);
-}
+
+//void GateItem::mousePressEvent(QGraphicsSceneMouseEvent* event){QGraphicsItem::mousePressEvent(event);}
 
 void GateItem::createPorts()
 {
-    // Clear existing ports
-    for (PortItem* port : m_inputPorts) {
-        delete port;
-    }
-    m_inputPorts.clear();
-
-    if (m_outputPort) {
-        delete m_outputPort;
-        m_outputPort = nullptr;
-    }
-
-    // Create input ports based on gate type
     int numInputs = (m_gateType == GType::NOT) ? 1 : 2;
 
     double halfWidth = m_rect.width() / 2;
@@ -314,12 +265,11 @@ void GateItem::createPorts()
 //===================== Wire Item   ========================
 
 WireItem::WireItem(const QLineF& line, QGraphicsItem* parent)
-    : QGraphicsObject(parent)
-    , m_line(line)
-    , m_pen(QPen(Qt::black, 2))
+    : QGraphicsObject(parent), m_line(line), m_pen(QPen(Qt::black, 2))
 {
     setFlags(ItemIsSelectable);
 }
+
 QRectF WireItem::boundingRect() const
 {
     // Create a bounding rect around the line with some padding
@@ -332,7 +282,7 @@ QRectF WireItem::boundingRect() const
 void WireItem::setStartPort(PortItem* port)
 {
     if (m_startPort) {
-        m_startPort->removeConnection(this);
+        m_startPort->removeConnections(this);
     }
 
     m_startPort = port;
@@ -349,7 +299,7 @@ void WireItem::setStartPort(PortItem* port)
 void WireItem::setEndPort(PortItem* port)
 {
     if (m_endPort) {
-        m_endPort->removeConnection(this);
+        m_endPort->removeConnections(this);
     }
 
     m_endPort = port;
@@ -396,8 +346,7 @@ void WireItem::updateWirePosition()
 }
 //===================== SourceItem ========================
 
-SourceItem::SourceItem(QGraphicsItem* parent)
-    : QGraphicsObject(parent)
+SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent)
     , m_rect(-15, -15, 30, 30)
 {
     // Enable item flags for interaction
@@ -422,7 +371,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     // Draw source as a circle
     painter->setPen(QPen(Qt::black, 2));
     painter->setBrush(QColor(255, 100, 100)); // Red color for source
-    painter->drawEllipse(m_rect);
+    painter->drawRect(m_rect);
     
     // Draw "1" or "0" in the center to indicate state
     painter->setPen(QPen(Qt::white, 2));

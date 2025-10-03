@@ -25,21 +25,21 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     // Port connection methods
-    PortType getPortType() const { return m_portType; }
-    int getPinIndex() const { return m_pinIndex; }
+    PortType getPortType() const { return m_portType;}
+    int getPinIndex() const { return m_pinIndex;}
     bool canConnectTo(PortItem* otherPort) const;
 
     // Connection tracking
     void addConnection(WireItem* wire);
-    void removeConnection(WireItem* wire);
+    void removeConnections(WireItem* wire);
     QList<WireItem*> getConnections() const { return m_connections; }
-    QGraphicsObject* getParentGate() const;
-    // Visual feedback
-    void setHighlighted(bool highlighted);
+    QGraphicsObject* getParentGate() const { return dynamic_cast<QGraphicsObject*>(parentItem()); };
+
+    void setHighlighted(bool highlighted) {m_highlighted = highlighted;update();};
 
 private:
     PortType m_portType;
-    int m_pinIndex; // Which input pin this is (0, 1, etc.) or -1 for output
+    int m_pinIndex;
     QList<WireItem*> m_connections;
     bool m_highlighted = false;
 };
@@ -55,14 +55,13 @@ public:
     QString gateTypeToString() const;
 
     GType getGateType() const { return m_gateType; };
-    PortItem* getInputPort(int index) const { return m_inputPorts[index]; }; // Add this
+    PortItem* getInputPort(int index) const { return m_inputPorts[index]; };
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
 
-    void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
-    void drawPins(QPainter* painter);
     void drawGateShape(QPainter* painter);
     void drawAndGate(QPainter* painter);
     void drawOrGate(QPainter* painter);
@@ -75,7 +74,6 @@ private:
     QRectF m_rect;
 
     Direction m_direction = Direction::RIGHT;
-    double padding = 0;
 
     QVector<PortItem*> m_inputPorts;
     PortItem* m_outputPort = nullptr;
@@ -97,18 +95,10 @@ public:
     bool isConnected() const { return m_startPort && m_endPort; }
 
     QLineF line() const { return m_line; }
-    void setLine(const QLineF& line)
-    {
-        m_line = line;
-        update();
-    }
+    void setLine(const QLineF& line){m_line = line;update();}
     
     QPen pen() const { return m_pen; }
-    void setPen(const QPen& pen)
-    {
-        m_pen = pen;
-        update();
-    }
+    void setPen(const QPen& pen){ m_pen = pen;update();}
 
 public slots:
     void updateWirePosition();
@@ -118,6 +108,7 @@ private:
     PortItem* m_endPort = nullptr;
     QLineF m_line;
     QPen m_pen;
+    u32 m_wireID = -1; //should be the same as net ID during sim (assigned at sim start)
 };
 
 class SourceItem : public QGraphicsObject{
@@ -135,3 +126,6 @@ private:
     int portNums = 1;
     QRectF m_rect;
 };
+
+//TODO multiplexer
+//TODO Register

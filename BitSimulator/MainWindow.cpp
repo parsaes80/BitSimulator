@@ -38,6 +38,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     qDebug() << "Simulator thread stopped";
     QMainWindow::closeEvent(event);  // Call parent implementation
 }
+
 void MainWindow::setup()
 {
     ui.setupUi(this);

@@ -191,34 +191,16 @@ void CircuitScene::startSim()
     QHash<PortItem*, u32> portToNetMap; // Maps ports to net indices
 
     u32 netCounter = 0;
-    u32 wireIndex = 0;
 
-    // Step 1: Find all gates and sources
+    qDebug() << "\n========== STARTING CIRCUIT EXPORT ==========";
+    
+    // Step 1: Find all items and validate connections
     for (QGraphicsItem* item : items()) {
         if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
             if (wire->isConnected()) {
                 wireItems.push_back(wire);
-
-                // Create mapping: Wire UI Index → Net ID
-                graph.wireUItoSimMap.push_back(netCounter);
-
-                // Create reverse mapping: Net ID → Wire Pointer
-                if (graph.simToUIMap.size() <= netCounter) {
-                    graph.simToUIMap.resize(netCounter + 1);
-                }
-                graph.simToUIMap[netCounter] = wire;
-
-                // Create the net with ID
-                graph.nets.push_back(Net{false, netCounter});
-
-                // Map both ports to this net
-                PortItem* startPort = wire->getStartPort();
-                PortItem* endPort = wire->getEndPort();
-                if (startPort) portToNetMap[startPort] = netCounter;
-                if (endPort) portToNetMap[endPort] = netCounter;
-
-                netCounter++;
-                wireIndex++;
+            } else {
+                qDebug() << "Warning: Found disconnected wire, skipping";
             }
         }
         else if (GateItem* gate = dynamic_cast<GateItem*>(item)) {
@@ -228,38 +210,71 @@ void CircuitScene::startSim()
             sourceItems.push_back(source);
         }
     }
+    
+    qDebug() << "\n=== Step 1: Items Found ===";
+    qDebug() << "Wires found:" << wireItems.size();
+    qDebug() << "Gates found:" << gateItems.size();
+    qDebug() << "Sources found:" << sourceItems.size();
+    
+    // Calculate expected port count
+    int expectedInputPorts = 0;
+    int expectedOutputPorts = 0;
+    for (GateItem* gate : gateItems) {
+        switch (gate->getGateType()) {
+        case GType::NOT:
+            expectedInputPorts += 1;
+            break;
+        case GType::AND:
+        case GType::OR:
+        case GType::XOR:
+        case GType::NAND:
+        case GType::NOR:
+        case GType::XNOR:
+            expectedInputPorts += 2;
+            break;
+        }
+        expectedOutputPorts += 1; // Each gate has 1 output
+    }
+    expectedOutputPorts += sourceItems.size(); // Each source has 1 output
+    
+    qDebug() << "Expected input ports:" << expectedInputPorts;
+    qDebug() << "Expected output ports:" << expectedOutputPorts;
+    qDebug() << "Total expected ports:" << (expectedInputPorts + expectedOutputPorts);
+    qDebug() << "Wires can connect at most:" << (wireItems.size() * 2) << "ports";
 
-    // Step 2: Create nets for each unique connection
-    QHash<PortItem*, QList<PortItem*>> connectedPorts; // Groups of connected ports
-
-    // Build connection groups from wires
+    // Step 2: Build connection groups from wires efficiently
+    QHash<PortItem*, QSet<PortItem*>> connectedPorts;
+    QHash<WireItem*, u32> wireToNetMap;
+    
     for (WireItem* wire : wireItems) {
         PortItem* startPort = wire->getStartPort();
         PortItem* endPort = wire->getEndPort();
 
-        if (startPort && endPort) {
-            if (!connectedPorts.contains(startPort)) {
-                connectedPorts[startPort] = QList<PortItem*>();
-            }
-            if (!connectedPorts.contains(endPort)) {
-                connectedPorts[endPort] = QList<PortItem*>();
-            }
-
-            connectedPorts[startPort].append(endPort);
-            connectedPorts[endPort].append(startPort);
+        if (!startPort || !endPort) {
+            qDebug() << "Warning: Wire with null ports found, skipping";
+            continue;
         }
+
+        connectedPorts[startPort].insert(endPort);
+        connectedPorts[endPort].insert(startPort);
     }
 
-    // Assign net IDs to connected port groups
+    // Step 3: Create nets using BFS for connected port groups
     QSet<PortItem*> processedPorts;
+    
+    qDebug() << "\n=== Step 3: Creating nets from wires ===";
+    qDebug() << "Total wires to process:" << wireItems.size();
+    qDebug() << "Total ports with connections:" << connectedPorts.size();
+    
     for (auto it = connectedPorts.begin(); it != connectedPorts.end(); ++it) {
         if (!processedPorts.contains(it.key())) {
-            // Create a new net
             u32 currentNetId = netCounter++;
-            graph.nets.push_back(Net{false, currentNetId}); // Default to false
-            // BFS to find all connected ports in this net
+            graph.nets.push_back(Net{false, currentNetId});
+            
             QQueue<PortItem*> portsToProcess;
             portsToProcess.enqueue(it.key());
+            QSet<WireItem*> wiresInThisNet;
+            QSet<PortItem*> portsInThisNet;
 
             while (!portsToProcess.isEmpty()) {
                 PortItem* currentPort = portsToProcess.dequeue();
@@ -268,22 +283,121 @@ void CircuitScene::startSim()
 
                 processedPorts.insert(currentPort);
                 portToNetMap[currentPort] = currentNetId;
+                portsInThisNet.insert(currentPort);
 
-                // Add all connected ports
+                // Find wires connected to this port
+                for (WireItem* wire : wireItems) {
+                    if ((wire->getStartPort() == currentPort || wire->getEndPort() == currentPort) &&
+                        !wiresInThisNet.contains(wire)) {
+                        wiresInThisNet.insert(wire);
+                        wireToNetMap[wire] = currentNetId;
+                    }
+                }
+
+                // Add connected ports to queue
                 for (PortItem* connectedPort : connectedPorts[currentPort]) {
                     if (!processedPorts.contains(connectedPort)) {
                         portsToProcess.enqueue(connectedPort);
                     }
                 }
             }
+            
+            qDebug() << "  Net" << currentNetId << "created with" << wiresInThisNet.size() 
+                     << "wire(s) and" << portsInThisNet.size() << "port(s)";
+        }
+    }
+    
+    qDebug() << "Nets created from wires:" << netCounter;
+
+    // Handle isolated ports (not connected to any wire)
+    qDebug() << "\n=== Step 3b: Handling isolated/unconnected ports ===";
+    
+    QSet<PortItem*> allPorts;
+    int totalGatePorts = 0;
+    int totalSourcePorts = 0;
+    
+    for (GateItem* gate : gateItems) {
+        for (PortItem* port : gate->getInputPorts()) {
+            if (port) {
+                allPorts.insert(port);
+                totalGatePorts++;
+            }
+        }
+        if (PortItem* outputPort = gate->getOutputPort()) {
+            allPorts.insert(outputPort);
+            totalGatePorts++;
+        }
+    }
+    for (SourceItem* source : sourceItems) {
+        if (PortItem* outputPort = source->getOutputPort()) {
+            allPorts.insert(outputPort);
+            totalSourcePorts++;
         }
     }
 
-    // Step 3: Create Gate structs
+    qDebug() << "Total gates:" << gateItems.size();
+    qDebug() << "Total sources:" << sourceItems.size();
+    qDebug() << "Total gate ports:" << totalGatePorts;
+    qDebug() << "Total source ports:" << totalSourcePorts;
+    qDebug() << "Total unique ports:" << allPorts.size();
+    qDebug() << "Ports already in nets:" << portToNetMap.size();
+
+    int isolatedCount = 0;
+    for (PortItem* port : allPorts) {
+        if (!portToNetMap.contains(port)) {
+            u32 isolatedNetId = netCounter++;
+            graph.nets.push_back(Net{false, isolatedNetId});
+            portToNetMap[port] = isolatedNetId;
+            
+            // Determine port type for better debugging
+            QString portInfo = "unknown";
+            if (PortItem* p = port) {
+                portInfo = (p->getPortType() == PortType::IN ? "INPUT" : "OUTPUT");
+                portInfo += " pin " + QString::number(p->getPinIndex());
+            }
+            qDebug() << "  Created isolated net" << isolatedNetId << "for unconnected" << portInfo << "port";
+            isolatedCount++;
+        }
+    }
+    
+    qDebug() << "Total isolated nets created:" << isolatedCount;
+    qDebug() << "Total nets after isolation handling:" << netCounter;
+
+    // Step 4: Create UI mappings for wires
+    graph.wire2net.resize(wireItems.size());
+    graph.net2wire.resize(netCounter, nullptr); // Initialize with nullptr
+    m_simToUIMap.resize(netCounter, nullptr);     // Initialize with nullptr
+    
+    for (int i = 0; i < wireItems.size(); ++i) {
+        WireItem* wire = wireItems[i];
+        if (wireToNetMap.contains(wire)) {
+            u32 netId = wireToNetMap[wire];
+            graph.wire2net[i] = netId;
+            
+            // Only set if not already set (in case multiple wires share a net)
+            // Use the first wire we encounter for each net
+            if (!graph.net2wire[netId]) {
+                graph.net2wire[netId] = wire;
+                m_simToUIMap[netId] = wire;
+            }
+        }
+    }
+    
+    // Debug: Report nets without wires (isolated nets)
+    int isolatedNetCount = 0;
+    for (u32 i = 0; i < netCounter; ++i) {
+        if (!graph.net2wire[i]) {
+            isolatedNetCount++;
+        }
+    }
+    if (isolatedNetCount > 0) {
+        qDebug() << "Note:" << isolatedNetCount << "isolated nets (unconnected ports) have no visual wires";
+    }
+
+    // Step 5: Create Gate structs with FLAT array for inputs (cache-friendly)
     for (int i = 0; i < gateItems.size(); ++i) {
         GateItem* gateItem = gateItems[i];
 
-        // Count inputs for this gate type
         u16 numInputs = 0;
         switch (gateItem->getGateType()) {
         case GType::NOT:
@@ -296,74 +410,111 @@ void CircuitScene::startSim()
         case GType::NOR:
         case GType::XNOR:
             numInputs = 2;
-            break; // Can be extended for more inputs
+            break;
         }
 
-        // Create gate
-        Gate gate(gateItem->getGateType(), 0, 0, numInputs); // inID and outID will be set below
+        Gate gate{gateItem->getGateType(), 0, 0, numInputs};
+        
+        // Set inID to the current size of the flat array (where this gate's inputs start)
+        gate.inID = graph.gateInputs.size();
 
-        // Find input and output ports
-        QList<PortItem*> inputPorts;
-        PortItem* outputPort = nullptr;
-
-        // Get ports from the gate (you'll need to add getters to GateItem)
+        // Add input net IDs directly to the flat array
         for (int pinIndex = 0; pinIndex < numInputs; pinIndex++) {
             PortItem* inputPort = gateItem->getInputPort(pinIndex);
             if (inputPort && portToNetMap.contains(inputPort)) {
-                inputPorts.append(inputPort);
+                graph.gateInputs.push_back(portToNetMap[inputPort]);
+            } else {
+                qDebug() << "Warning: Gate" << i << "pin" << pinIndex << "has no connection";
+                graph.gateInputs.push_back(0); // Default to net 0
             }
         }
 
-        outputPort = gateItem->getOutputPort();
-
-        // Map ports to nets
-        std::vector<u32> inputNetIds;
-        for (PortItem* inputPort : inputPorts) {
-            if (portToNetMap.contains(inputPort)) {
-                inputNetIds.push_back(portToNetMap[inputPort]);
-            }
-        }
-
+        // Get output net ID and store it in the gate struct
         u32 outputNetId = 0;
+        PortItem* outputPort = gateItem->getOutputPort();
         if (outputPort && portToNetMap.contains(outputPort)) {
             outputNetId = portToNetMap[outputPort];
+        } else {
+            qDebug() << "Warning: Gate" << i << "output has no connection";
         }
 
-        // Set the inID to the start index in a flattened input array
-        gate.inID = graph.gateInputs.size(); // This will be the index where this gate's inputs start
         gate.outID = outputNetId;
-
         graph.gates.push_back(gate);
-        graph.gateInputs.push_back(inputNetIds);
-        graph.gateOutputs.push_back(outputNetId);
+        // No need for separate gateOutputs vector - it's in gate.outID!
     }
 
-    // Step 4: Create Source structs
+    // Step 6: Create Source structs
     for (int i = 0; i < sourceItems.size(); ++i) {
         SourceItem* sourceItem = sourceItems[i];
-
-        Source source(false); // Default value
-        graph.sources.push_back(source);
-
-        // Find output port and map to net
-        PortItem* outputPort = nullptr; // You'll need to add getter to SourceItem
-        // outputPort = sourceItem->getOutputPort();
-
+        
+        // Get output net ID
         u32 outputNetId = 0;
+        PortItem* outputPort = sourceItem->getOutputPort();
         if (outputPort && portToNetMap.contains(outputPort)) {
             outputNetId = portToNetMap[outputPort];
+        } else {
+            qDebug() << "Warning: Source" << i << "output has no connection";
         }
-
-        graph.sourceOutputs.push_back(outputNetId);
+        
+        // Create source with output ID directly in the struct
+        Source source{false, outputNetId};
+        graph.sources.push_back(source);
+        // No need for separate sourceOutputs vector - it's in source.outID!
     }
 
-    // Step 5: Set totals
+    // Step 7: Set totals and debug output
     graph.totalGates = graph.gates.size();
     graph.totalSources = graph.sources.size();
     graph.totalNets = graph.nets.size();
-    qDebug() << "startsim emmited";
+
+    qDebug() << "\n========== Circuit Export Summary ==========";
+    qDebug() << "Total Nets:" << graph.totalNets;
+    qDebug() << "Total Wires:" << wireItems.size();
+    qDebug() << "Total Gates:" << graph.totalGates;
+    qDebug() << "Total Sources:" << graph.totalSources;
+    qDebug() << "Flat gate inputs array size:" << graph.gateInputs.size();
+    
+    // Debug: Show net to wire mapping
+    qDebug() << "\nNet to Wire Mapping:";
+    for (u32 i = 0; i < graph.totalNets; ++i) {
+        if (graph.net2wire[i]) {
+            qDebug() << "  Net" << i << "→ WireItem" << (void*)graph.net2wire[i];
+        } else {
+            qDebug() << "  Net" << i << "→ [No Wire - Isolated Port]";
+        }
+    }
+    
+    // Debug: Show gate information
+    qDebug() << "\nGate Information:";
+    for (size_t i = 0; i < graph.gates.size(); ++i) {
+        const Gate& gate = graph.gates[i];
+        qDebug() << "  Gate" << i << "- Type:" << (int)gate.gateType 
+                 << "Inputs:" << gate.numInputs 
+                 << "InID:" << gate.inID 
+                 << "OutID:" << gate.outID;
+        // Show input net IDs
+        QString inputs = "    Input nets: [";
+        for (u16 j = 0; j < gate.numInputs; ++j) {
+            if (j > 0) inputs += ", ";
+            inputs += QString::number(graph.gateInputs[gate.inID + j]);
+        }
+        inputs += "]";
+        qDebug() << inputs;
+    }
+    
+    // Debug: Show source information
+    qDebug() << "\nSource Information:";
+    for (size_t i = 0; i < graph.sources.size(); ++i) {
+        const Source& source = graph.sources[i];
+        qDebug() << "  Source" << i << "- Value:" << source.value << "OutID:" << source.outID;
+    }
+    
+    qDebug() << "==========================================\n";
+    qDebug() << "Emitting startSimSIG...";
+    
     emit startSimSIG(graph);
-};
+}
+
 void CircuitScene::receiveResult(SimResult result)
 {
     qDebug() << "Updating UI with simulation step:" << result.simulationStep;
@@ -373,9 +524,9 @@ void CircuitScene::receiveResult(SimResult result)
         u32 netId = result.netIds[i];
         bool value = result.netValues[i];
 
-        // Find the corresponding wire in UI
-        if (netId < m_wireMapping.size() && m_wireMapping[netId]) {
-            WireItem* wire = m_wireMapping[netId];
+        // Find the corresponding wire in UI using cached mapping
+        if (netId < m_simToUIMap.size() && m_simToUIMap[netId]) {
+            WireItem* wire = m_simToUIMap[netId];
 
             // Update wire appearance based on value
             if (value) {

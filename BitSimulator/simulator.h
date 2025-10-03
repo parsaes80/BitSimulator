@@ -8,7 +8,7 @@ public:
     explicit Simulator(QObject *parent = nullptr);
     
     void clearCircuit();
-    
+  
 public slots:
     void simulate(int numclks);
     void receiveCircuit(ExportGraph graph);
@@ -22,13 +22,13 @@ private:
     std::vector<Net> m_nets;
     std::vector<Gate> m_gates;
     std::vector<Register> m_registers;
-    std::vector<u32> m_gateInputs;
     std::vector<Source> m_sources;
+
+    // Gate inputs use the inID field in Gate struct as index into this array
+    // Gate/Source outputs use the outID field in their respective structs 
+    std::vector<u32> m_gateInputs;     // Flat array: all gate inputs concatenated
+
+    // UI mapping for visual feedback
     std::vector<WireItem*> m_uiWireMap;
-    // ID counters for proper management
-    u32 nextGateinputID = 0;
-    u32 nextNetId = 0;
-    u32 nextGateId = 0;
-    u32 nextRegisterId = 0;
 };
 
