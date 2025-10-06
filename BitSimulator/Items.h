@@ -107,7 +107,6 @@ private:
     PortItem* m_endPort = nullptr;
     QLineF m_line;
     QPen m_pen;
-    u32 m_wireID = -1; //should be the same as net ID during sim (assigned at sim start)
 };
 
 class SourceItem : public QGraphicsObject{

@@ -276,6 +276,7 @@ void CircuitScene::startSim()
     //QList<Net> nets;
 
     std::vector<u32> gateInputs;
+    std::vector<u32> sourceOutputs;
 
     u32 gateInputindex = 0;
 
@@ -293,19 +294,27 @@ void CircuitScene::startSim()
             }
         }
 
-        u32 outNet;
+        u32 outNet = 0;
         if (!gateItem->getOutputPort()->getConnections().isEmpty()) {
             WireItem* outwire = gateItem->getOutputPort()->getConnections()[0];
             outNet = wire2net[outwire];
-        }
-        else {
-            outNet = 0;
-        }        
+        }    
 
         for (auto inputnet : inputnets) { gateInputs.push_back(inputnet);};
 
         gates.push_back(Gate(gateItem->getGateType(), gateInputindex, outNet, inputnets.size()));
         gateInputindex += inputnets.size();
+    }
+
+    u32 outNet = 0;
+
+    for (auto* sourceItem : sourceItems)
+    {
+        if (!sourceItem->getOutputPorts()[0]->getConnections().isEmpty()) {
+            WireItem* outwire = sourceItem->getOutputPorts()[0]->getConnections()[0];
+            outNet = wire2net[outwire];
+        }
+        sources.push_back(Source(false, outNet));
     }
 
     graph.gates = gates;
@@ -321,26 +330,17 @@ void CircuitScene::startSim()
 
 void CircuitScene::receiveResult(SimResult result)
 {
-    qDebug() << "Updating UI with simulation step:" << result.simulationStep;
-
-    // Update wire colors based on net values
-    for (size_t i = 0; i < result.netIds.size() && i < result.netValues.size(); i++) {
-        u32 netId = result.netIds[i];
-        bool value = result.netValues[i];
-
-        // Find the corresponding wire in UI using cached mapping
-        if (netId < wire2net.size() && net2wire[netId]) {
-            WireItem* wire = net2wire[netId];
-
-            // Update wire appearance based on value
-            if (value) {
-                wire->setPen(QPen(Qt::red, 3));    // High signal = red
-            } else {
-                wire->setPen(QPen(Qt::black, 2));  // Low signal = black
-            }
+    for (int i = 1; i < result.netValues.size();i++) {
+        WireItem* wire = net2wire[i];
+        if (result.netValues[i]) {
+            wire->setPen(QPen(Qt::red, 3));    // High signal = red
+        }
+        else {
+            wire->setPen(QPen(Qt::black, 2));  // Low signal = black
         }
     }
 }
+
 void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
 {
     // Draw grid

@@ -40,31 +40,31 @@ struct Gate {
 	Gate(GType t, u32 inId, u32 outId, u16 inNum) : gateType(t), inID(inId), outID(outId), numInputs(inNum) {}
 };
 
-struct Net {
-    bool value;  
-    Net() : value(false) {}  
-    Net(bool val, u32 netId) : value(val){}  
-};
+//struct Net {
+//    bool value;  
+//    Net() : value(false) {}  
+//    Net(bool val, u32 netId) : value(val){}  
+//};
 
 struct Source {
 	bool value;
-	u32 outID;  // Output net ID
-	Source() : value(false), outID(0) {}
-	Source(bool val, u32 outId = 0) : value(val), outID(outId) {}
+	u32 outID;  
+	Source() = default;
+	Source(bool val, u32 outId = 0) : value(val), outID(outId){}
 };
 
 struct ExportGraph
 {
-    // Circuit components
     std::vector<Gate> gates;
     std::vector<Source> sources;
 
-    std::vector<u32> gateInputs;        // Flat array: all gate inputs concatenated
+    std::vector<u32> gateInputs;   
+    std::vector<u32> sourceOutputs;
 
     std::unordered_map <u32, WireItem*> net2wire;    // net2wire[netId] = wireItem pointer
-    std::unordered_map <WireItem*, u32> wire2net;          // wire2net[wireIndex] = netId
+    std::unordered_map <WireItem*, u32> wire2net;    // wire2net[wireIndex] = netId
 
-    // Helper methods
+
     void clear()
     {
         gates.clear();
@@ -77,11 +77,7 @@ struct ExportGraph
 
 struct SimResult
 {
-    std::vector<bool> netValues;        // netValues[netId] = true/false
-    std::vector<u32> netIds;            // List of net IDs
-    u32 simulationStep;
-    bool simulationComplete;
+    std::vector<bool> netValues;  // netValues[netId] = true/false
 
-    SimResult() : simulationStep(0), simulationComplete(false) {}
 };
 
