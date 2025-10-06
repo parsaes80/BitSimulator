@@ -26,7 +26,7 @@ public:
 
     // Port connection methods
     PortType getPortType() const { return m_portType;}
-    int getPinIndex() const { return m_pinIndex;}
+
     bool canConnectTo(PortItem* otherPort) const;
 
     // Connection tracking
@@ -39,7 +39,6 @@ public:
 
 private:
     PortType m_portType;
-    int m_pinIndex;
     QList<WireItem*> m_connections;
     bool m_highlighted = false;
 };
@@ -118,11 +117,11 @@ public:
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    PortItem* getOutputPort() const { return m_outPorts[0]; };
+    QList<PortItem*> getOutputPorts() const { return m_outPorts;};
 
 private:
     void addPorts();
-    QVector<PortItem*> m_outPorts;
+    QList<PortItem*> m_outPorts;
     int portNums = 1;
     QRectF m_rect;
 };

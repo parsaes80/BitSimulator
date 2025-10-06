@@ -42,14 +42,15 @@ signals:
 
 private:
     void clearHighlights();
-    bool m_connectingWire;
-    QPointF m_wireStartPoint;
-    WireItem* m_currentWire;
-    PortItem* m_currentWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
-    // Cached mapping from net IDs to wire items for fast UI updates during simulation
-    std::vector<WireItem*> m_simToUIMap;
+    bool m_connectingWire;
+    QPointF m_wireStartPoint;
+    WireItem* m_currWire = nullptr;
+    PortItem* m_currWireStartPort = nullptr;
+    
+    QHash<WireItem*, u32> wire2net;
+    QHash<u32, WireItem*> net2wire;
 
     GType nextGateType = GType::AND;
     bool nextSource = false;

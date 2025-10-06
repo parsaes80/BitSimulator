@@ -21,7 +21,7 @@ void Simulator::clearCircuit() {
     m_registers.clear();
     m_sources.clear();
     m_gateInputs.clear();
-    m_uiWireMap.clear();
+    m_net2wire.clear();
 }
 
 void Simulator::simulate(const int numclks) {
@@ -35,12 +35,8 @@ void Simulator::simulate(const int numclks) {
 }
 
 void Simulator::receiveCircuit(ExportGraph graph){
-    qDebug() << "\n========== Simulator Received Circuit ==========";
-    qDebug() << "Total Gates:" << graph.totalGates;
-    qDebug() << "Total Sources:" << graph.totalSources;
-    qDebug() << "Total Nets:" << graph.totalNets;
 
-    // Clear existing circuit data
+
     clearCircuit();
 
     // Copy circuit components (gates and sources contain their output IDs)
@@ -48,24 +44,16 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_sources = graph.sources;
     m_nets = graph.nets;
 
-    // Copy connection mappings - cache-friendly flat array
     m_gateInputs = graph.gateInputs;
 
-    // Copy UI mapping for visual feedback
-    m_uiWireMap = graph.net2wire;
-
-    qDebug() << "Copied" << m_nets.size() << "nets," << m_gates.size() << "gates," << m_sources.size() << "sources";
-    qDebug() << "Flat inputs array size:" << m_gateInputs.size();
+    m_net2wire = graph.net2wire;
     
-    // Debug: Count how many nets have wire mappings
     int wiresWithMapping = 0;
-    for (size_t i = 0; i < m_uiWireMap.size(); ++i) {
-        if (m_uiWireMap[i]) {
+    for (size_t i = 0; i < m_net2wire.size(); ++i) {
+        if (m_net2wire[i]) {
             wiresWithMapping++;
         }
     }
-    qDebug() << "Nets with UI wire mappings:" << wiresWithMapping << "/" << m_uiWireMap.size();
-    qDebug() << "===============================================\n";
 
     sim_running = true;
 }

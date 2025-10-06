@@ -12,7 +12,7 @@ public:
 public slots:
     void simulate(int numclks);
     void receiveCircuit(ExportGraph graph);
-    void SimController(); // Parameterless slot for auto-starting
+    void SimController(); 
 
 signals:
     void sendResult(SimResult result);
@@ -24,11 +24,8 @@ private:
     std::vector<Register> m_registers;
     std::vector<Source> m_sources;
 
-    // Gate inputs use the inID field in Gate struct as index into this array
-    // Gate/Source outputs use the outID field in their respective structs 
-    std::vector<u32> m_gateInputs;     // Flat array: all gate inputs concatenated
+    std::vector<u32> m_gateInputs;     
 
-    // UI mapping for visual feedback
-    std::vector<WireItem*> m_uiWireMap;
+    std::unordered_map <u32, WireItem*> m_net2wire;
 };
 

@@ -4,9 +4,8 @@
 //===================== PortItem   ========================
 
 PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
-    : QGraphicsEllipseItem(-4, -4, 8, 8, parent)  // 8x8 circle centered at (0,0)
+    : QGraphicsEllipseItem(-4, -4, 8, 8, parent)  
     , m_portType(portType)
-    , m_pinIndex(pinIndex)
 {
     setFlag(QGraphicsItem::ItemIsSelectable, false);
     setFlag(QGraphicsItem::ItemIsMovable, false);

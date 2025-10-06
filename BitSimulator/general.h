@@ -42,9 +42,8 @@ struct Gate {
 
 struct Net {
     bool value;  
-    u32 id;
-    Net() : value(false), id(0) {}  
-    Net(bool val, u32 netId) : value(val), id(netId) {}  
+    Net() : value(false) {}  
+    Net(bool val, u32 netId) : value(val){}  
 };
 
 struct Source {
@@ -59,31 +58,20 @@ struct ExportGraph
     // Circuit components
     std::vector<Gate> gates;
     std::vector<Source> sources;
-    std::vector<Net> nets;
 
     std::vector<u32> gateInputs;        // Flat array: all gate inputs concatenated
 
-    std::vector<WireItem*> net2wire;    // net2wire[netId] = wireItem pointer
-    std::vector<u32> wire2net;          // wire2net[wireIndex] = netId
-    
-    // Metadata
-    u32 totalGates;
-    u32 totalSources;
-    u32 totalNets;
-
-    // Constructor
-    ExportGraph() : totalGates(0), totalSources(0), totalNets(0) {}
+    std::unordered_map <u32, WireItem*> net2wire;    // net2wire[netId] = wireItem pointer
+    std::unordered_map <WireItem*, u32> wire2net;          // wire2net[wireIndex] = netId
 
     // Helper methods
     void clear()
     {
         gates.clear();
         sources.clear();
-        nets.clear();
         gateInputs.clear();
         net2wire.clear();
         wire2net.clear();
-        totalGates = totalSources = totalNets = 0;
     }
 };
 
