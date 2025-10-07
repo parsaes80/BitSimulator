@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <qscrollbar.h>
 #include <vector>
+extern GlobalMap map;
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
@@ -197,15 +198,12 @@ void CircuitScene::startSim()
     //    connections.insert(QPair(startItem, endItem));
     //}
 
-    //QHash<GateItem*, u32> gate2Id;
-    //QHash<SourceItem*, u32> source2Id;
+    for (int i = 0; i < gateItems.size(); i++) { map.gate2Idx[gateItems[i]] = i; map.Idx2gate[i] = gateItems[i]; }
+    for (int i = 0; i < sourceItems.size(); i++) { map.source2Idx[sourceItems[i]] = i; map.Idx2source[i] = sourceItems[i];}
 
-    //for (int i = 0; i < gateItems.size(); i++)   {gate2Id[gateItems[i]] = i;}
-    //for (int i = 0; i < sourceItems.size(); i++) {source2Id[sourceItems[i]] = i;}
-
+    // wire,net mapping 
     QHash<PortItem*, u32> outputPortToNet;
     u32 netCounter = 1; 
-
     for (WireItem* wire : wireItems) {
         PortItem* startPort = wire->getStartPort();
 
@@ -216,78 +214,27 @@ void CircuitScene::startSim()
 
         // All wires from the same output port get the same net ID
         u32 netId = outputPortToNet[startPort];
-        wire2net[wire] = netId;
+        map.wire2net[wire] = netId;
 
         // Store first wire for each net (for UI mapping)
-        net2wire[netId].append(wire);
+        map.net2wire[netId].push_back(wire);
     }
-
-        // ===== DEBUG: Print wire2net hash table =====
-    qDebug() << "\n========== wire2net Hash Table ==========";
-    qDebug() << "Total entries:" << wire2net.size();
-    
-    for (auto it = wire2net.begin(); it != wire2net.end(); ++it) {
-        WireItem* wire = it.key();
-        u32 netId = it.value();
-        
-        // Get port information for better debugging
-        PortItem* startPort = wire->getStartPort();
-        PortItem* endPort = wire->getEndPort();
-        
-        QString startInfo = "NULL";
-        QString endInfo = "NULL";
-        
-        if (startPort) {
-            QGraphicsObject* startGate = startPort->getParentGate();
-            if (auto* gate = dynamic_cast<GateItem*>(startGate)) {
-                int gateIdx = gateItems.indexOf(gate);
-                startInfo = QString("Gate%1_OUT").arg(gateIdx);
-            } else if (auto* source = dynamic_cast<SourceItem*>(startGate)) {
-                int sourceIdx = sourceItems.indexOf(source);
-                startInfo = QString("Source%1_OUT").arg(sourceIdx);
-            }
-        }
-        
-        if (endPort) {
-            QGraphicsObject* endGate = endPort->getParentGate();
-            if (auto* gate = dynamic_cast<GateItem*>(endGate)) {
-                int gateIdx = gateItems.indexOf(gate);
-                int pinIdx = gate->getInputPorts().indexOf(endPort);
-                endInfo = QString("Gate%1_IN%2").arg(gateIdx).arg(pinIdx);
-            }
-        }
-        
-        qDebug() << "Wire" << wire << "(" << startInfo << "->" << endInfo << ") -> Net" << netId;
-    }
-    
-    qDebug() << "\n========== net2wire Reverse Mapping ==========";
-    for (auto it = net2wire.begin(); it != net2wire.end(); ++it) {
-        u32 netId = it.key();
-        QList<WireItem*> wires = it.value();
-        qDebug() << "Net" << netId << "-> Wires:" << wires.size();
-        for (WireItem* wire : wires) {
-            qDebug() << "  -" << wire;
-        }
-    }
-    qDebug() << "==========================================\n";
-
 
     std::vector<Gate> gates;
     std::vector<Source> sources;
-    //QList<Net> nets;
 
     std::vector<u32> gateInputs;
-    std::vector<u32> sourceOutputs;
+    //std::vector<u32> sourceOutputs;
 
+    // Wire,Gate Mapping
     u32 gateInputindex = 0;
-
     for (auto* gateItem : gateItems)
     {
         QList<u32> inputnets;
         for (auto port:gateItem->getInputPorts()) {
             if (!port->getConnections().isEmpty()) {
                 WireItem* inputWire = port->getConnections()[0];
-                u32 netID = wire2net[inputWire];
+                u32 netID = map.wire2net[inputWire];
                 inputnets.append(netID);
             }
             else {
@@ -298,7 +245,7 @@ void CircuitScene::startSim()
         u32 outNet = 0;
         if (!gateItem->getOutputPort()->getConnections().isEmpty()) {
             WireItem* outwire = gateItem->getOutputPort()->getConnections()[0];
-            outNet = wire2net[outwire];
+            outNet = map.wire2net[outwire];
         }    
 
         for (auto inputnet : inputnets) { gateInputs.push_back(inputnet);};
@@ -307,46 +254,46 @@ void CircuitScene::startSim()
         gateInputindex += inputnets.size();
     }
 
+    //Wire, Source Mapping
     u32 outNet = 0;
-
     for (auto* sourceItem : sourceItems)
     {
         if (!sourceItem->getOutputPorts()[0]->getConnections().isEmpty()) {
             WireItem* outwire = sourceItem->getOutputPorts()[0]->getConnections()[0];
-            outNet = wire2net[outwire];
+            outNet = map.wire2net[outwire];
         }
-        sources.push_back(Source(false, outNet));
+        std::vector<bool> cycleValues;
+        for (auto value : sourceItem->getValues()) { cycleValues.push_back(value);};
+        sources.push_back(Source(outNet, cycleValues));
     }
 
     graph.gates = gates;
     graph.sources = sources;
-
     graph.gateInputs = gateInputs;
-    
-    //convert QT to stl types
-    for (auto it = wire2net.begin(); it != wire2net.end(); ++it) {graph.wire2net[it.key()] = it.value();}
-    for (auto it = net2wire.begin(); it != net2wire.end(); ++it) {
-        u32 netId = it.key();
-        const QList<WireItem*>& qtWireList = it.value();
-        graph.net2wire[netId] = std::vector<WireItem*>(qtWireList.begin(), qtWireList.end());
-    }
-    
     emit startSimSIG(graph);
 }
 
 void CircuitScene::receiveResult(SimResult result)
 {
     for (int i = 1; i < result.netValues.size();i++) {
-        QList<WireItem*> wires = net2wire[i];
+        std::vector<WireItem*> wires = map.net2wire[i];
         for (auto* wire : wires) {
             if (result.netValues[i]) {
                 wire->setPen(QPen(Qt::red, 3));    // High signal = red
+                wire->getEndPort()->setValue(true);
+                wire->getStartPort()->setValue(true);
             }
             else {
                 wire->setPen(QPen(Qt::black, 2));  // Low signal = black
+                wire->getEndPort()->setValue(false);
+                wire->getStartPort()->setValue(false);
             }
         }
+    }
 
+    for (int i = 0; i < result.sourcesCurrIdx.size(); i++) {
+        auto source = map.Idx2source[i];
+        source->setIdx(result.sourcesCurrIdx[i]);    
     }
 }
 
@@ -356,7 +303,6 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     painter->fillRect(rect, QColor(10, 200, 200));
 }
 
-// In CircuitCanvas.cpp - fix the mousePressEvent in CircuitScene:
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
     qDebug() << "Scene mouse handler";
@@ -378,8 +324,6 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
         return;
     }
 
-    // For all other cases (left-click on items, middle button, etc.)
-    // use default Qt behavior
     QGraphicsScene::mousePressEvent(event);
 }
 
@@ -387,8 +331,7 @@ void CircuitScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
     if (m_connectingWire) {
         updateWireConnection(event->scenePos());
-        // Optional: Add debug output (remove if too verbose)
-        // qDebug() << "Updating wire to:" << event->scenePos();
+
     } else {
         QGraphicsScene::mouseMoveEvent(event);
     }
@@ -402,7 +345,6 @@ void CircuitScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
         QGraphicsScene::mouseReleaseEvent(event);
     }
 
-    // Force update after any mouse release to clear selection trails
     update();
 }
 

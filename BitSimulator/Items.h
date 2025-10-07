@@ -24,20 +24,21 @@ public:
 
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    // Port connection methods
     PortType getPortType() const { return m_portType;}
 
     bool canConnectTo(PortItem* otherPort) const;
 
-    // Connection tracking
     void addConnection(WireItem* wire);
     void removeConnections(WireItem* wire);
+
     QList<WireItem*> getConnections() const { return m_connections; }
     QGraphicsObject* getParentGate() const { return dynamic_cast<QGraphicsObject*>(parentItem()); };
-
     void setHighlighted(bool highlighted) {m_highlighted = highlighted;update();};
+    bool getValue() const { return m_value; };
+    void setValue(bool value) { m_value = value; };
 
 private:
+    bool m_value = false;
     PortType m_portType;
     QList<WireItem*> m_connections;
     bool m_highlighted = false;
@@ -116,16 +117,21 @@ public:
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    QList<PortItem*> getOutputPorts() const { return m_outPorts; };
-    bool getValue() { return m_value; };
-    void setValue(bool value) { m_value = value; };
+    QList<PortItem*> getOutputPorts() const { return m_outPorts;};
+    u8 getIdx() const { return m_currIdx; };
+    void setIdx(u8 value) { m_currIdx = value; };
+
+    QList<bool> getValues() const { return m_cycleValues; };
+    void setValues(QList<bool> values) { m_cycleValues = values; };
 private:
     void addPorts();
-    QList<PortItem*> m_outPorts;
 
-    bool m_value = false;
-    QList<bool> m_valuesCycle;
+    u8 m_currIdx;
+    QList<bool> m_cycleValues;
+
+    QList<PortItem*> m_outPorts;
     int portNums = 1;
+
     QRectF m_rect;
 };
 

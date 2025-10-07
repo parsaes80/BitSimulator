@@ -20,7 +20,7 @@ MainWindow::~MainWindow()
     simThread->quit();
     simThread->wait();
 }
-// Add this method to MainWindow.cpp
+
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     qDebug() << "Closing application - stopping simulator thread...";
@@ -36,7 +36,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     }
 
     qDebug() << "Simulator thread stopped";
-    QMainWindow::closeEvent(event);  // Call parent implementation
+    QMainWindow::closeEvent(event); 
 }
 
 void MainWindow::setup()
@@ -50,24 +50,24 @@ void MainWindow::setup()
     ui.xorButton->setGateType(GType::XOR);
     ui.xnorButton->setGateType(GType::XNOR);
     ui.notButton->setGateType(GType::NOT);
-    connect(ui.andButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.orButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.notButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.nandButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.norButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.xorButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.xnorButton,&GateButton::gateTypeSelected,ui.Camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.srcButton,&SourceButton::sourceSelected,ui.Camera->getScene(),&CircuitScene::setNextSource);
+    connect(ui.andButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.orButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.notButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.nandButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.norButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.xorButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.xnorButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
+    connect(ui.srcButton,&SourceButton::sourceSelected,ui.camera->getScene(),&CircuitScene::setNextSource);
 
-    connect(ui.Camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim
+    connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
-    connect(simObj, &Simulator::sendResult,ui.Camera->getScene(),&CircuitScene::receiveResult);
+    connect(simObj, &Simulator::sendResult,ui.camera->getScene(),&CircuitScene::receiveResult);
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
 }
 void MainWindow::on_startButton_clicked()
 {
-    ui.Camera->getScene()->startSim();
+    ui.camera->getScene()->startSim();
 }

@@ -4,6 +4,8 @@
 #include <unordered_map>
 
 class WireItem;
+class GateItem;
+class SourceItem;
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -21,9 +23,9 @@ enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
 enum class PortType : u8 {IN,OUT};
 
 struct Register {
-	RType regType;
 	u32 inID;
 	u32 outID;  
+	RType regType;
 	bool nextValue;
 	
 	Register() = default;
@@ -31,26 +33,22 @@ struct Register {
 };
 
 struct Gate {
-	GType gateType;
 	u32 inID;    
 	u32 outID;    
 	u16 numInputs; 
-	
+	GType gateType;
 	Gate() = default;
 	Gate(GType t, u32 inId, u32 outId, u16 inNum) : gateType(t), inID(inId), outID(outId), numInputs(inNum) {}
 };
 
-//struct Net {
-//    bool value;  
-//    Net() : value(false) {}  
-//    Net(bool val, u32 netId) : value(val){}  
-//};
-
 struct Source {
-	bool value;
-	u32 outID;  
+	
+	u32 outID;
+	std::vector<bool> cycleValues;
+	u8 currentIndex = -1;
+
 	Source() = default;
-	Source(bool val, u32 outId = 0) : value(val), outID(outId){}
+	Source(u32 outID,std::vector<bool> cycleValues) :outID(outID), cycleValues(cycleValues){}
 };
 
 struct ExportGraph
@@ -59,25 +57,29 @@ struct ExportGraph
     std::vector<Source> sources;
 
     std::vector<u32> gateInputs;   
-    std::vector<u32> sourceOutputs;
-
-    std::unordered_map <u32, std::vector<WireItem*>> net2wire;    // net2wire[netId] = wireItem pointer
-    std::unordered_map <WireItem*, u32> wire2net;    // wire2net[wireIndex] = netId
-
+    //std::vector<u32> sourceCycleValues;
 
     void clear()
     {
         gates.clear();
         sources.clear();
         gateInputs.clear();
-        net2wire.clear();
-        wire2net.clear();
     }
 };
 
 struct SimResult
 {
     std::vector<bool> netValues;  // netValues[netId] = true/false
-
+	std::vector<u8> sourcesCurrIdx;
 };
 
+struct GlobalMap {
+	std::unordered_map <u32, std::vector<WireItem*>> net2wire;
+	std::unordered_map <WireItem*, u32> wire2net;    
+
+	std::unordered_map <GateItem*, u32> gate2Idx;
+	std::unordered_map <SourceItem*, u32> source2Idx;
+
+	std::unordered_map <u32, GateItem*> Idx2gate;
+	std::unordered_map <u32, SourceItem*> Idx2source;
+};

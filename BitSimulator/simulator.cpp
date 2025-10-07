@@ -6,6 +6,9 @@
 #include <QEventLoop>
 #include <queue>
 
+extern bool sim_running;
+extern GlobalMap map;
+
 Simulator::Simulator(QObject *parent) : QObject(parent) {
     sim_running = false;
 
@@ -22,7 +25,6 @@ void Simulator::clearCircuit() {
     m_registers.clear();
     m_sources.clear();
     m_gateInputs.clear();
-    m_net2wire.clear();
 }
 
 void Simulator::simulate(const int numclks) {
@@ -32,8 +34,15 @@ void Simulator::simulate(const int numclks) {
 
     std::queue<u32> eventQueue;
 
-    for (auto source : m_sources) {
-        m_nets[source.outID] = !m_nets[source.outID];
+    for (auto& source : m_sources) {
+        // Check bounds BEFORE incrementing and accessing
+        source.currentIndex++;
+        if (source.currentIndex >= source.cycleValues.size()) {
+            source.currentIndex = 0;  // Wrap around to beginning
+        }
+        auto oldValue = m_nets[source.outID];
+        m_nets[source.outID] = source.cycleValues[source.currentIndex];
+        
         eventQueue.push(source.outID);
     }
 
@@ -71,7 +80,7 @@ void Simulator::simulate(const int numclks) {
                 u32 inputNetId = m_gateInputs[gate.inID + i];
                 bool inputValue = (inputNetId < m_nets.size()) ? m_nets[inputNetId] : false;
                 inputs.push_back(inputValue);
-                qDebug() << "    Input" << i << ": Net" << inputNetId << "=" << inputValue;
+                qDebug() << "Input" << i << ": Net" << inputNetId << "=" << inputValue;
             }
 
             // ===== FIX 3: Evaluate gate logic ONCE with all inputs =====
@@ -154,6 +163,10 @@ void Simulator::simulate(const int numclks) {
     }
     qDebug() << "=========== ONE CLOCK COMPLETED ==========";
     SimResult result;
+
+    for (int i = 0; i < m_sources.size(); i++) {
+        result.sourcesCurrIdx.push_back(m_sources[i].currentIndex);
+    }
     result.netValues = m_nets;
     emit sendResult(result);
 }
@@ -167,10 +180,7 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
     m_gateInputs = graph.gateInputs;
 
-    m_net2wire = graph.net2wire;
-    m_wire2net = graph.wire2net;
-
-    auto numNets = m_net2wire.size();
+    auto numNets = map.net2wire.size();
     for (int i = 0; i <= numNets; i++) { m_nets.push_back(false);};
 
     sim_running = true;
@@ -179,6 +189,6 @@ void Simulator::receiveCircuit(ExportGraph graph){
 void Simulator::SimController() {
 
     auto timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {simulate(100);}});
-    timer->start(100); 
+    connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {simulate(10);}});
+    timer->start(1000); 
 }

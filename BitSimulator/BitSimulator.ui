@@ -14,7 +14,7 @@
    <string>BitSimulator</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <widget class="CircuitCanvas" name="Camera">
+   <widget class="CircuitCanvas" name="camera">
     <property name="geometry">
      <rect>
       <x>0</x>

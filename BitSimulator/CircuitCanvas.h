@@ -49,9 +49,6 @@ private:
     WireItem* m_currWire = nullptr;
     PortItem* m_currWireStartPort = nullptr;
     
-    QHash<WireItem*, u32> wire2net;
-    QHash<u32, QList<WireItem*>> net2wire;
-
     GType nextGateType = GType::AND;
     bool nextSource = false;
 };

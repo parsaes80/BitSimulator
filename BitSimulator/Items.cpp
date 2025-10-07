@@ -3,6 +3,8 @@
 #include <qscrollbar.h>
 //===================== PortItem   ========================
 
+extern bool sim_running;
+
 PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
     : QGraphicsEllipseItem(-4, -4, 8, 8, parent)  
     , m_portType(portType)
@@ -15,21 +17,30 @@ PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
 
 void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    Q_UNUSED(option)
-    Q_UNUSED(widget)
-
-    if (m_highlighted) {
-        setPen(QPen(Qt::yellow, 1));
-        setBrush(Qt::yellow);
-    }
-    else if (!m_connections.isEmpty()) {
-        setPen(QPen(Qt::green, 1));
-        setBrush(Qt::green);
-    }
-    else {
-        setPen(QPen(Qt::black, 1));
-        setBrush(Qt::black);
-    }
+        if (!sim_running) {
+            if (m_highlighted) {
+                setPen(QPen(Qt::yellow, 1));
+                setBrush(Qt::yellow);
+            }
+            else if (!m_connections.isEmpty()) {
+                setPen(QPen(Qt::green, 1));
+                setBrush(Qt::green);
+            }
+            else {
+                setPen(QPen(Qt::black, 1));
+                setBrush(Qt::black);
+            }
+        }
+        else {
+            if (m_value) {
+                setPen(QPen(Qt::red, 1));
+                setBrush(Qt::red);
+            }
+            else {
+                setPen(QPen(Qt::black, 1));
+                setBrush(Qt::black);
+            }
+        }
 
     QGraphicsEllipseItem::paint(painter, option, widget);
 }
@@ -59,9 +70,7 @@ void PortItem::removeConnections(WireItem* wire)
 
 //===================== GateItem   ========================
 
-GateItem::GateItem(GType gateType, QGraphicsItem* parent)
-    : QGraphicsObject(parent)
-    , m_gateType(gateType)
+GateItem::GateItem(GType gateType, QGraphicsItem* parent):QGraphicsObject(parent),m_gateType(gateType)
 {
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
@@ -74,8 +83,6 @@ GateItem::GateItem(GType gateType, QGraphicsItem* parent)
 
 void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    Q_UNUSED(widget)
-
     // Draw selection highlight
     if (option->state & QStyle::State_Selected) {
         painter->setPen(QPen(Qt::blue, 3));
@@ -314,9 +321,6 @@ void WireItem::setEndPort(PortItem* port)
 
 void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    Q_UNUSED(option);
-    Q_UNUSED(widget);
-
     // Use the stored pen, but modify color based on selection
     QPen currentPen = m_pen;
     if (isSelected()) {
@@ -345,21 +349,26 @@ void WireItem::updateWirePosition()
 }
 //===================== SourceItem ========================
 
-SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent)
-    , m_rect(-15, -15, 30, 30)
+SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent), m_rect(-15, -15, 30, 30)
 {
     // Enable item flags for interaction
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
+    m_cycleValues.clear();
+    m_cycleValues.append(false); 
+    m_cycleValues.append(true);
+    m_cycleValues.append(false);
+    m_cycleValues.append(true);
+    m_cycleValues.append(true);
+    m_currIdx = 0;
+
     addPorts();
 }
 
 void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    Q_UNUSED(widget)
-
     // Draw selection highlight
     if (option->state & QStyle::State_Selected) {
         painter->setPen(QPen(Qt::blue, 3));
@@ -367,9 +376,8 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
         painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
     }
 
-    
     painter->setPen(QPen(Qt::black, 2));
-    if (m_value) {
+    if (m_cycleValues[m_currIdx]) {
         painter->setBrush(QColor(255, 150, 150)); 
         painter->drawRect(m_rect);
 
@@ -389,6 +397,6 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 void SourceItem::addPorts()
 {
     PortItem* outputPort = new PortItem(PortType::OUT, -1, this);
-    outputPort->setPos(15, 0); // Right side of the circle
+    outputPort->setPos(15, 0);
     m_outPorts.append(outputPort);
 }

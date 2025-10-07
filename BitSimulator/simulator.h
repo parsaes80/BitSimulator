@@ -17,7 +17,7 @@ public slots:
 signals:
     void sendResult(SimResult result);
 private:
-    bool sim_running = false;
+    
 
     std::vector<bool> m_nets;
     std::vector<Gate> m_gates;
@@ -27,7 +27,5 @@ private:
     std::vector<u32> m_gateInputs;     
     std::vector<u32> m_sourceOutputs;
      
-    std::unordered_map <u32, std::vector<WireItem*>> m_net2wire;
-    std::unordered_map <WireItem*, u32> m_wire2net;
 };
 
