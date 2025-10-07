@@ -61,7 +61,7 @@ struct ExportGraph
     std::vector<u32> gateInputs;   
     std::vector<u32> sourceOutputs;
 
-    std::unordered_map <u32, WireItem*> net2wire;    // net2wire[netId] = wireItem pointer
+    std::unordered_map <u32, std::vector<WireItem*>> net2wire;    // net2wire[netId] = wireItem pointer
     std::unordered_map <WireItem*, u32> wire2net;    // wire2net[wireIndex] = netId
 
 

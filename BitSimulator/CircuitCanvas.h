@@ -50,7 +50,7 @@ private:
     PortItem* m_currWireStartPort = nullptr;
     
     QHash<WireItem*, u32> wire2net;
-    QHash<u32, WireItem*> net2wire;
+    QHash<u32, QList<WireItem*>> net2wire;
 
     GType nextGateType = GType::AND;
     bool nextSource = false;

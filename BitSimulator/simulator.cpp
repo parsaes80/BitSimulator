@@ -61,17 +61,75 @@ void Simulator::simulate(const int numclks) {
                 continue; // This gate doesn't use the changed net
             }
 
-            // ===== Compute gate output (assuming all gates are AND) =====
-            bool newOutput = true; // AND gate starts with true
+            qDebug() << "  Evaluating Gate" << gateIdx << "type:" << (int)gate.gateType;
 
-            qDebug() << "  Gate" << gateIdx << "(AND) inputs:";
+            // Gather all inputs first
+            std::vector<bool> inputs;
+            inputs.reserve(gate.numInputs);
+
             for (u16 i = 0; i < gate.numInputs; i++) {
                 u32 inputNetId = m_gateInputs[gate.inID + i];
                 bool inputValue = (inputNetId < m_nets.size()) ? m_nets[inputNetId] : false;
+                inputs.push_back(inputValue);
+                qDebug() << "    Input" << i << ": Net" << inputNetId << "=" << inputValue;
+            }
 
-                newOutput = newOutput && inputValue; // AND operation
+            // ===== FIX 3: Evaluate gate logic ONCE with all inputs =====
+            bool newOutput;
 
-                qDebug() << "Input" << i << ": Net" << inputNetId << "=" << inputValue;
+            switch (gate.gateType) {
+            case GType::AND:
+                newOutput = true;
+                for (bool input : inputs) {
+                    newOutput = newOutput && input;
+                }
+                break;
+
+            case GType::OR:
+                newOutput = false;
+                for (bool input : inputs) {
+                    newOutput = newOutput || input;
+                }
+                break;
+
+            case GType::NAND:
+                newOutput = true;
+                for (bool input : inputs) {
+                    newOutput = newOutput && input;
+                }
+                newOutput = !newOutput;  // Negate at the end
+                break;
+
+            case GType::NOR:
+                newOutput = false;
+                for (bool input : inputs) {
+                    newOutput = newOutput || input;
+                }
+                newOutput = !newOutput;  // Negate at the end
+                break;
+
+            case GType::XOR:
+                newOutput = false;
+                for (bool input : inputs) {
+                    newOutput = newOutput ^ input;
+                }
+                break;
+
+            case GType::XNOR:
+                newOutput = false;
+                for (bool input : inputs) {
+                    newOutput = newOutput ^ input;
+                }
+                newOutput = !newOutput;  // Negate at the end
+                break;
+
+            case GType::NOT:
+                newOutput = !inputs[0];
+                break;
+
+            default:
+                qDebug() << "    Unknown gate type!";
+                break;
             }
 
             qDebug() << "  Gate" << gateIdx << "output: Net" << gate.outID << "=" << newOutput;
@@ -85,7 +143,6 @@ void Simulator::simulate(const int numclks) {
                     // Output changed - update net and queue it
                     m_nets[outputNetId] = newOutput;
                     eventQueue.push(outputNetId);
-                    m_nets[outputNetId] = true;
                     qDebug() << "    -> Output changed from" << oldValue<< "to" << newOutput << "- queued Net" << outputNetId;   
                 }
                 else {
@@ -95,7 +152,7 @@ void Simulator::simulate(const int numclks) {
         }
         propagationStep++;
     }
-
+    qDebug() << "=========== ONE CLOCK COMPLETED ==========";
     SimResult result;
     result.netValues = m_nets;
     emit sendResult(result);
@@ -123,5 +180,5 @@ void Simulator::SimController() {
 
     auto timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {simulate(100);}});
-    timer->start(1000); 
+    timer->start(100); 
 }

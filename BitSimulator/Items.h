@@ -116,11 +116,15 @@ public:
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    QList<PortItem*> getOutputPorts() const { return m_outPorts;};
-
+    QList<PortItem*> getOutputPorts() const { return m_outPorts; };
+    bool getValue() { return m_value; };
+    void setValue(bool value) { m_value = value; };
 private:
     void addPorts();
     QList<PortItem*> m_outPorts;
+
+    bool m_value = false;
+    QList<bool> m_valuesCycle;
     int portNums = 1;
     QRectF m_rect;
 };

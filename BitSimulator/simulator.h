@@ -26,8 +26,8 @@ private:
 
     std::vector<u32> m_gateInputs;     
     std::vector<u32> m_sourceOutputs;
-
-    std::unordered_map <u32, WireItem*> m_net2wire;
+     
+    std::unordered_map <u32, std::vector<WireItem*>> m_net2wire;
     std::unordered_map <WireItem*, u32> m_wire2net;
 };
 

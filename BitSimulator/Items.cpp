@@ -367,14 +367,23 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
         painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
     }
 
-    // Draw source as a circle
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(255, 100, 100)); // Red color for source
-    painter->drawRect(m_rect);
     
-    // Draw "1" or "0" in the center to indicate state
-    painter->setPen(QPen(Qt::white, 2));
-    painter->drawText(m_rect, Qt::AlignCenter, "1");
+    painter->setPen(QPen(Qt::black, 2));
+    if (m_value) {
+        painter->setBrush(QColor(255, 150, 150)); 
+        painter->drawRect(m_rect);
+
+        // Draw "1" or "0" in the center to indicate state
+        painter->setPen(QPen(Qt::white, 2));
+        painter->drawText(m_rect, Qt::AlignCenter, "1");
+    }
+    else {
+        painter->setBrush(QColor(255, 255, 255)); 
+        painter->drawRect(m_rect);
+
+        painter->setPen(QPen(Qt::black, 2));
+        painter->drawText(m_rect, Qt::AlignCenter, "0");
+    }
 }
 
 void SourceItem::addPorts()

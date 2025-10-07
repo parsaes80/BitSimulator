@@ -219,9 +219,7 @@ void CircuitScene::startSim()
         wire2net[wire] = netId;
 
         // Store first wire for each net (for UI mapping)
-        if (!net2wire.contains(netId)) {
-            net2wire[netId] = wire;
-        }
+        net2wire[netId].append(wire);
     }
 
         // ===== DEBUG: Print wire2net hash table =====
@@ -265,8 +263,11 @@ void CircuitScene::startSim()
     qDebug() << "\n========== net2wire Reverse Mapping ==========";
     for (auto it = net2wire.begin(); it != net2wire.end(); ++it) {
         u32 netId = it.key();
-        WireItem* wire = it.value();
-        qDebug() << "Net" << netId << "-> Wire" << wire;
+        QList<WireItem*> wires = it.value();
+        qDebug() << "Net" << netId << "-> Wires:" << wires.size();
+        for (WireItem* wire : wires) {
+            qDebug() << "  -" << wire;
+        }
     }
     qDebug() << "==========================================\n";
 
@@ -321,9 +322,14 @@ void CircuitScene::startSim()
     graph.sources = sources;
 
     graph.gateInputs = gateInputs;
-
+    
+    //convert QT to stl types
     for (auto it = wire2net.begin(); it != wire2net.end(); ++it) {graph.wire2net[it.key()] = it.value();}
-    for (auto it = net2wire.begin(); it != net2wire.end(); ++it) {graph.net2wire[it.key()] = it.value();}
+    for (auto it = net2wire.begin(); it != net2wire.end(); ++it) {
+        u32 netId = it.key();
+        const QList<WireItem*>& qtWireList = it.value();
+        graph.net2wire[netId] = std::vector<WireItem*>(qtWireList.begin(), qtWireList.end());
+    }
     
     emit startSimSIG(graph);
 }
@@ -331,13 +337,16 @@ void CircuitScene::startSim()
 void CircuitScene::receiveResult(SimResult result)
 {
     for (int i = 1; i < result.netValues.size();i++) {
-        WireItem* wire = net2wire[i];
-        if (result.netValues[i]) {
-            wire->setPen(QPen(Qt::red, 3));    // High signal = red
+        QList<WireItem*> wires = net2wire[i];
+        for (auto* wire : wires) {
+            if (result.netValues[i]) {
+                wire->setPen(QPen(Qt::red, 3));    // High signal = red
+            }
+            else {
+                wire->setPen(QPen(Qt::black, 2));  // Low signal = black
+            }
         }
-        else {
-            wire->setPen(QPen(Qt::black, 2));  // Low signal = black
-        }
+
     }
 }
 
