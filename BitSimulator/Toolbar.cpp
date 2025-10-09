@@ -9,22 +9,15 @@ GateButton::GateButton(GType gateType, QWidget* parent)
 {
     setText("");        // Remove text
     setCheckable(false); // Allow toggle state
-    setMinimumSize(60, 40);
-    setMaximumSize(60, 40);
     
-    // Connect the button click to our slot
     connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
 }
-GateButton::GateButton(QWidget* parent)
-    : QPushButton(parent)
+GateButton::GateButton(QWidget* parent): QPushButton(parent)
 {
     setText("");         // Remove text
     setCheckable(false); // Allow toggle state
-    setMinimumSize(60, 40);
-    setMaximumSize(60, 40);
     connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
 }
-
 void GateButton::paintEvent(QPaintEvent* event)
 {
     // Draw button background first
@@ -34,18 +27,26 @@ void GateButton::paintEvent(QPaintEvent* event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    // Center the drawing area
-    QRect drawRect = rect().adjusted(8, 8, -8, -8);
-    painter.translate(drawRect.center());
+    // Use 75% of button size for gate drawing
+    QRect buttonRect = rect();
+    double gateWidth = buttonRect.width() * 0.75;
+    double gateHeight = buttonRect.height() * 0.75;
+    
+    // Center the gate in the button
+    QRectF gateRect(
+        (buttonRect.width() - gateWidth) / 2,
+        (buttonRect.height() - gateHeight) / 2,
+        gateWidth,
+        gateHeight
+    );
+    
+    painter.translate(gateRect.center());
+    painter.scale(1.0, 1.0);  // No additional scaling needed
 
-    // Scale to fit button
-    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
-    painter.scale(scale, scale);
-
-    drawGateSymbol(&painter);
+    drawGateSymbol(&painter, gateWidth, gateHeight);
 }
 
-void GateButton::drawGateSymbol(QPainter* painter)
+void GateButton::drawGateSymbol(QPainter* painter, double width, double height)
 {
     // Set common styling for all gates
     painter->setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
@@ -53,103 +54,120 @@ void GateButton::drawGateSymbol(QPainter* painter)
     
     switch (m_gateType) {
     case GType::AND:
-        drawAndGate(painter);
+        drawAndGate(painter, width, height);
         break;
     case GType::OR:
-        drawOrGate(painter);
+        drawOrGate(painter, width, height);
         break;
     case GType::XOR:
-        drawXorGate(painter);
+        drawXorGate(painter, width, height);
         break;
     case GType::NAND:
-        drawAndGate(painter);
-        drawNotBubble(painter);
+        drawAndGate(painter, width, height);
+        drawNotBubble(painter, width, height);
         break;
     case GType::NOR:
-        drawOrGate(painter);
-        drawNotBubble(painter);
+        drawOrGate(painter, width, height);
+        drawNotBubble(painter, width, height);
         break;
     case GType::XNOR:
-        drawXorGate(painter);
-        drawNotBubble(painter);
+        drawXorGate(painter, width, height);
+        drawNotBubble(painter, width, height);
         break;
     case GType::NOT:
-        drawNotGate(painter);
+        drawNotGate(painter, width, height);
         break;
     }
 }
 
-void GateButton::drawAndGate(QPainter* painter)
-{
-    QPainterPath path;
-
-    path.moveTo(-15, -10);
-    path.lineTo(-5, -10);
-    path.arcTo(-5, -10, 15, 20, 90, -180);
-    path.lineTo(-15, 10);
-    path.closeSubpath();
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-}
-
-void GateButton::drawOrGate(QPainter* painter)
+void GateButton::drawAndGate(QPainter* painter, double width, double height)
 {
     QPainterPath path;
     
-    path.moveTo(-15, -10);
-    path.quadTo(-7, 0, -15, 10);
-    path.lineTo(5, 10);
-    path.quadTo(15, 0, 5, -10);
-    path.lineTo(-15, -10);
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    double arcWidth = width * 0.4;  // 40% of total width for the arc
+
+    path.moveTo(-halfWidth, -halfHeight);
+    path.lineTo(-halfWidth + arcWidth, -halfHeight);
+    path.arcTo(-halfWidth + arcWidth, -halfHeight, arcWidth, height, 90, -180);
+    path.lineTo(-halfWidth, halfHeight);
+    path.closeSubpath();
+    
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 }
 
-void GateButton::drawXorGate(QPainter* painter)
+void GateButton::drawOrGate(QPainter* painter, double width, double height)
 {
-    drawOrGate(painter);
+    QPainterPath path;
+    
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    
+    path.moveTo(-halfWidth, -halfHeight);
+    path.quadTo(-halfWidth * 0.3, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth * 0.6, halfHeight);
+    path.quadTo(halfWidth, 0, halfWidth * 0.6, -halfHeight);
+    path.lineTo(-halfWidth, -halfHeight);
+    
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
+}
+
+void GateButton::drawXorGate(QPainter* painter, double width, double height)
+{
+    drawOrGate(painter, width, height);
+
+    painter->setBrush(Qt::NoBrush);
 
     QPainterPath extraLine;
     
-    extraLine.moveTo(-18, -8);
-    extraLine.quadTo(-12, 0, -18, 8);
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    double offset = width * 0.08;  // Small offset from the main gate
+    
+    extraLine.moveTo(-halfWidth - offset, -halfHeight * 0.8);
+    extraLine.quadTo(-halfWidth * 0.4, 0, -halfWidth - offset, halfHeight * 0.8);
     painter->drawPath(extraLine);
 }
 
-void GateButton::drawNotGate(QPainter* painter)
+void GateButton::drawNotGate(QPainter* painter, double width, double height)
 {
     QPainterPath path;
+    
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    double bubbleRadius = width * 0.08;  // Bubble size relative to width
 
-    double bubbleSize = 6;
-
-    path.moveTo(-15, -10);
-    path.lineTo(-15, 10);
-    path.lineTo(10, 0);
-    path.lineTo(-15, -10);
+    path.moveTo(-halfWidth, -halfHeight);
+    path.lineTo(-halfWidth, halfHeight);
+    path.lineTo(halfWidth - bubbleRadius * 2, 0);
+    path.lineTo(-halfWidth, -halfHeight);
+    
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
     // Draw NOT bubble at the tip
     painter->setBrush(Qt::white);
-    painter->drawEllipse(10, -3, bubbleSize, bubbleSize);
+    painter->drawEllipse(QRectF(halfWidth - bubbleRadius * 2, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
 }
 
-void GateButton::drawNotBubble(QPainter* painter)
+void GateButton::drawNotBubble(QPainter* painter, double width, double height)
 {
     painter->setBrush(Qt::white);
-    double bubbleSize = 6;
-    painter->drawEllipse(12, -3, bubbleSize, bubbleSize);
+    double bubbleRadius = width * 0.08;  // Bubble size relative to width
+    double QuarterWidth = width / 4;
+    
+    painter->drawEllipse(QRectF(QuarterWidth + bubbleRadius, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
 }
 
 //===================== SourceButton ========================
 
-SourceButton::SourceButton(QWidget* parent)
-    : QPushButton(parent)
+SourceButton::SourceButton(QWidget* parent) : QPushButton(parent)
 {
     setText("");         // Remove text
     setCheckable(false);  // Allow toggle state
-    setMinimumSize(60, 40);
-    setMaximumSize(60, 40);
     
     // Connect the button click to our slot
     connect(this, &QPushButton::clicked, this, &SourceButton::onButtonClicked);
@@ -188,4 +206,61 @@ void SourceButton::paintEvent(QPaintEvent* event)
     font.setPointSize(12);
     painter.setFont(font);
     painter.drawText(sourceRect, Qt::AlignCenter, "1");
+}
+
+
+//===================== RegisterButton ========================
+
+RegisterButton::RegisterButton(QWidget* parent) : QPushButton(parent) {
+    setText("");         // Remove text
+    setCheckable(false);  // Allow toggle state
+
+    // Connect the button click to our slot
+    connect(this, &QPushButton::clicked, this, &RegisterButton::onButtonClicked);
+}
+
+void RegisterButton::paintEvent(QPaintEvent* event)
+{
+    // Draw button background first
+    QPushButton::paintEvent(event);
+
+    // Draw register symbol on top
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Center the drawing area
+    QRect drawRect = rect().adjusted(8, 8, -8, -8);
+    painter.translate(drawRect.center());
+
+    // Scale to fit button
+    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
+    painter.scale(scale, scale);
+
+    // Set styling for register
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
+    painter.setBrush(QColor(100, 150, 255)); // Blue color (different from source)
+    
+    // Draw rectangle that's taller than wide (register shape)
+    QRectF registerRect(-10, -14, 20, 28);  // Width: 20, Height: 28 (taller)
+    painter.fillRect(registerRect, painter.brush());
+    painter.drawRect(registerRect);
+    
+    // Draw "R" in the center to indicate it's a register
+    painter.setPen(QPen(Qt::white, 2));
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setPointSize(12);
+    painter.setFont(font);
+    painter.drawText(registerRect, Qt::AlignCenter, "R");
+    
+    // Optional: Draw a small clock symbol (triangle) at bottom
+    painter.setPen(QPen(Qt::white, 1.5));
+    painter.setBrush(Qt::white);
+    QPainterPath clockTriangle;
+    clockTriangle.moveTo(-3, 10);   // Left point
+    clockTriangle.lineTo(3, 10);    // Right point  
+    clockTriangle.lineTo(0, 7);     // Top point
+    clockTriangle.closeSubpath();
+    painter.fillPath(clockTriangle, painter.brush());
+    painter.drawPath(clockTriangle);
 }

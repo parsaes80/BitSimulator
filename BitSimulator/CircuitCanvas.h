@@ -23,10 +23,13 @@ public:
 
     void addGate(GType gateType, QPointF position);
     void addSource(QPointF position);
+    void addRegister(RType RegType, QPointF position);
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
     void startSim();
+    QList<bool> getSrcCycleValues() const {return m_nextSrcCycleValues;};
+    void setSrcCycleValues(QList<bool>& input){m_nextSrcCycleValues = input;}
 
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;
@@ -34,23 +37,29 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 public slots:
-    void setNextGateType(GType gatetype){nextSource = false;nextGateType = gatetype;};
-    void setNextSource() { nextSource = true; };
+    void setNextGateType(GType gatetype) { m_nextIsGate = true; m_nextIsSource = false; m_nextIsRegister = false; m_nextGateType = gatetype; };
+    void setNextSource() { m_nextIsRegister = false; m_nextIsSource = true; m_nextIsGate = false; };
+    void setNextRegister() { m_nextIsRegister = true; m_nextIsSource = false; m_nextIsGate = false;};
     void receiveResult(SimResult result);
 signals:
     void startSimSIG(ExportGraph graph);
 
 private:
     void clearHighlights();
-    PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
     bool m_connectingWire;
     QPointF m_wireStartPoint;
     WireItem* m_currWire = nullptr;
     PortItem* m_currWireStartPort = nullptr;
-    
-    GType nextGateType = GType::AND;
-    bool nextSource = false;
+    PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
+
+    GType m_nextGateType = GType::AND;
+    RType m_nextRegType = RType::D;
+    bool m_nextIsGate = true;
+    bool m_nextIsSource = false;
+    bool m_nextIsRegister = false;
+
+    QList<bool> m_nextSrcCycleValues = { false,true };
 };
 
 class CircuitCanvas : public QGraphicsView {

@@ -27,10 +27,10 @@
    <widget class="GateButton" name="andButton">
     <property name="geometry">
      <rect>
-      <x>60</x>
+      <x>50</x>
       <y>10</y>
-      <width>71</width>
-      <height>51</height>
+      <width>81</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -43,7 +43,7 @@
       <x>140</x>
       <y>10</y>
       <width>81</width>
-      <height>51</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -56,7 +56,7 @@
       <x>230</x>
       <y>10</y>
       <width>91</width>
-      <height>51</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -69,7 +69,7 @@
       <x>330</x>
       <y>10</y>
       <width>91</width>
-      <height>51</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -81,8 +81,8 @@
      <rect>
       <x>620</x>
       <y>10</y>
-      <width>91</width>
-      <height>51</height>
+      <width>101</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -95,7 +95,7 @@
       <x>430</x>
       <y>10</y>
       <width>81</width>
-      <height>51</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -108,7 +108,7 @@
       <x>520</x>
       <y>10</y>
       <width>91</width>
-      <height>51</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -118,10 +118,10 @@
    <widget class="QPushButton" name="startButton">
     <property name="geometry">
      <rect>
-      <x>950</x>
+      <x>1050</x>
       <y>10</y>
       <width>91</width>
-      <height>51</height>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -131,10 +131,33 @@
    <widget class="SourceButton" name="srcButton">
     <property name="geometry">
      <rect>
-      <x>780</x>
+      <x>840</x>
       <y>10</y>
       <width>91</width>
-      <height>51</height>
+      <height>61</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QTextEdit" name="srcvalues">
+    <property name="geometry">
+     <rect>
+      <x>940</x>
+      <y>20</y>
+      <width>101</width>
+      <height>41</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="RegisterButton" name="regButton">
+    <property name="geometry">
+     <rect>
+      <x>730</x>
+      <y>10</y>
+      <width>91</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="text">
@@ -178,10 +201,15 @@
   <customwidget>
    <class>GateButton</class>
    <extends>QPushButton</extends>
-   <header>toolbar.h</header>
+   <header>Toolbar.h</header>
   </customwidget>
   <customwidget>
    <class>SourceButton</class>
+   <extends>QPushButton</extends>
+   <header>Toolbar.h</header>
+  </customwidget>
+  <customwidget>
+   <class>RegisterButton</class>
    <extends>QPushButton</extends>
    <header>Toolbar.h</header>
   </customwidget>

@@ -11,9 +11,7 @@ extern GlobalMap map;
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
-    : QGraphicsScene(parent)
-    , m_connectingWire(false)
-    , m_currWire(nullptr)
+    : QGraphicsScene(parent), m_connectingWire(false), m_currWire(nullptr)
 {
     setSceneRect(0, 0, 2000, 2000); // Large canvas
 
@@ -32,9 +30,14 @@ void CircuitScene::addGate(GType gateType, QPointF position)
 }
 void CircuitScene::addSource(QPointF position)
 {
-    SourceItem* source = new SourceItem();
+    SourceItem* source = new SourceItem(m_nextSrcCycleValues);
     source->setPos(position);
     addItem(source);
+}
+void CircuitScene::addRegister(RType RegType, QPointF position) {
+    RegisterItem* Reg = new RegisterItem(RegType);
+    Reg->setPos(position);
+    addItem(Reg);
 }
 // Add to CircuitScene
 PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshold)
@@ -177,7 +180,7 @@ void CircuitScene::startSim()
     QList<GateItem*> gateItems;
     QList<SourceItem*> sourceItems;
     QList<WireItem*> wireItems;
-    
+    QList<RegisterItem*> registerItems;
     for (QGraphicsItem* item : items()) {
         if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
             wireItems.push_back(wire);
@@ -187,6 +190,9 @@ void CircuitScene::startSim()
         }
         else if (SourceItem* source = dynamic_cast<SourceItem*>(item)) {
             sourceItems.push_back(source);
+        }
+        else if (RegisterItem* reg = dynamic_cast<RegisterItem*>(item)) {
+            registerItems.push_back(reg);
         }
     }
     
@@ -200,6 +206,7 @@ void CircuitScene::startSim()
 
     for (int i = 0; i < gateItems.size(); i++) { map.gate2Idx[gateItems[i]] = i; map.Idx2gate[i] = gateItems[i]; }
     for (int i = 0; i < sourceItems.size(); i++) { map.source2Idx[sourceItems[i]] = i; map.Idx2source[i] = sourceItems[i];}
+    for (int i = 0; i < sourceItems.size(); i++) { map.reg2Idx[registerItems[i]] = i; map.Idx2reg[i] = registerItems[i];}
 
     // wire,net mapping 
     QHash<PortItem*, u32> outputPortToNet;
@@ -222,7 +229,7 @@ void CircuitScene::startSim()
 
     std::vector<Gate> gates;
     std::vector<Source> sources;
-
+    std::vector<Register> registers;
     std::vector<u32> gateInputs;
     //std::vector<u32> sourceOutputs;
 
@@ -255,20 +262,35 @@ void CircuitScene::startSim()
     }
 
     //Wire, Source Mapping
-    u32 outNet = 0;
+    u32 outNet;
     for (auto* sourceItem : sourceItems)
-    {
+    {   
+        outNet = 0;
         if (!sourceItem->getOutputPorts()[0]->getConnections().isEmpty()) {
             WireItem* outwire = sourceItem->getOutputPorts()[0]->getConnections()[0];
             outNet = map.wire2net[outwire];
         }
         std::vector<bool> cycleValues;
-        for (auto value : sourceItem->getValues()) { cycleValues.push_back(value);};
+        for (auto value : sourceItem->getValues()) {cycleValues.push_back(value);};
         sources.push_back(Source(outNet, cycleValues));
     }
-
+    u32 inNet;
+    for (auto* regItem : registerItems)
+    {
+        outNet = 0; inNet = 0;
+        if (!regItem->getOutputPort()->getConnections().isEmpty()) {
+            WireItem* outwire = regItem->getOutputPort()->getConnections()[0];
+            outNet = map.wire2net[outwire];
+        }
+        if (!regItem->getInputPort()->getConnections().isEmpty()) {
+            WireItem* inwire = regItem->getInputPort()->getConnections()[0];
+            inNet = map.wire2net[inwire];
+        }
+        registers.push_back(Register(RType::D, inNet, outNet));
+    }
     graph.gates = gates;
     graph.sources = sources;
+    graph.registers = registers;
     graph.gateInputs = gateInputs;
     emit startSimSIG(graph);
 }
@@ -311,10 +333,12 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     if (event->button() == Qt::LeftButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
         if (!clickedItem) {
-            if (nextSource) {
+            if (m_nextIsSource) 
                 addSource(event->scenePos());
-            } else
-                addGate(nextGateType, event->scenePos());
+            else if(m_nextIsGate)
+                addGate(m_nextGateType, event->scenePos());
+            else if(m_nextIsRegister)
+                addRegister(m_nextRegType, event->scenePos());
             event->accept();
             return;
         }
@@ -363,10 +387,6 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 }
 
-// Add these includes at the top of CircuitCanvas.cpp
-
-
-// Add this method to CircuitCanvas.cpp
 void CircuitCanvas::keyPressEvent(QKeyEvent* event)
 {
     qDebug() << "Key pressed:" << event->key() << "Text:" << event->text();

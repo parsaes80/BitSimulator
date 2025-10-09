@@ -58,6 +58,7 @@ void MainWindow::setup()
     connect(ui.xorButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
     connect(ui.xnorButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
     connect(ui.srcButton,&SourceButton::sourceSelected,ui.camera->getScene(),&CircuitScene::setNextSource);
+    connect(ui.regButton, &RegisterButton::RegSelected, ui.camera->getScene(), &CircuitScene::setNextRegister);
 
     connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
@@ -67,7 +68,56 @@ void MainWindow::setup()
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
 }
+
 void MainWindow::on_startButton_clicked()
 {
     ui.camera->getScene()->startSim();
+}
+
+void MainWindow::on_srcvalues_textChanged() {
+    auto scene = ui.camera->getScene();
+    QString text = ui.srcvalues->toPlainText();
+
+    QList<bool> values;
+    bool isValid = true;
+    QString cleanText;  // For displaying cleaned version
+
+    // Parse and clean text
+    for (QChar c : text) {
+        if (c == '0') {
+            values.append(false);
+            cleanText += '0';
+        }
+        else if (c == '1') {
+            values.append(true);
+            cleanText += '1';
+        }
+        else if (c.isSpace() || c == ',' || c == '-') {
+            // Allow separators but don't include in cleanText
+            continue;
+        }
+        else {
+            isValid = false;
+            break;
+        }
+    }
+
+    if (isValid && !values.isEmpty()) {
+        // Valid input
+        ui.srcvalues->setStyleSheet("");
+        scene->setSrcCycleValues(values);
+
+        // Update status label (if you have one)
+        QString statusText = QString("Pattern: %1 (%2 bits)")
+            .arg(cleanText)
+            .arg(values.size());
+        //ui.statusLabel->setText(statusText);  // Optional status display
+
+        qDebug() << statusText;
+    }
+    else {
+        // Invalid input
+        ui.srcvalues->setStyleSheet("QTextEdit { background-color: #ffcccc; }");
+        // ui.statusLabel->setText("Invalid input - use only 0s and 1s");
+    }
 }

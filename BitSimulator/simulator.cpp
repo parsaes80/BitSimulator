@@ -27,7 +27,7 @@ void Simulator::clearCircuit() {
     m_gateInputs.clear();
 }
 
-void Simulator::simulate(const int numclks) {
+void Simulator::tick() {
     sim_running = true;
 
     qDebug() << "Starting simulation with" << m_nets.size() << "nets," << m_gates.size() << "gates,"<< m_registers.size() << "registers";
@@ -40,7 +40,7 @@ void Simulator::simulate(const int numclks) {
         if (source.currentIndex >= source.cycleValues.size()) {
             source.currentIndex = 0;  // Wrap around to beginning
         }
-        auto oldValue = m_nets[source.outID];
+        bool oldValue = m_nets[source.outID];
         m_nets[source.outID] = source.cycleValues[source.currentIndex];
         
         eventQueue.push(source.outID);
@@ -161,6 +161,7 @@ void Simulator::simulate(const int numclks) {
         }
         propagationStep++;
     }
+
     qDebug() << "=========== ONE CLOCK COMPLETED ==========";
     SimResult result;
 
@@ -177,6 +178,7 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
     m_gates = graph.gates;
     m_sources = graph.sources;
+    m_registers = graph.registers;
 
     m_gateInputs = graph.gateInputs;
 
@@ -189,6 +191,6 @@ void Simulator::receiveCircuit(ExportGraph graph){
 void Simulator::SimController() {
 
     auto timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {simulate(10);}});
-    timer->start(1000); 
+    connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {tick();}});
+    timer->start(100); 
 }

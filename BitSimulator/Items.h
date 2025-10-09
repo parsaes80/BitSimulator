@@ -79,6 +79,32 @@ private:
     PortItem* m_outputPort = nullptr;
 };
 
+class SourceItem : public QGraphicsObject {
+    Q_OBJECT
+public:
+    SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
+    SourceItem(QList<bool>& cycleValues, QGraphicsItem* parent = nullptr);
+
+    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+    QList<PortItem*> getOutputPorts() const { return m_outPorts; };
+    u8 getIdx() const { return m_currIdx; };
+    void setIdx(u8 value) { m_currIdx = value; };
+
+    QList<bool> getValues() const { return m_cycleValues; };
+    void setValues(QList<bool> values) { m_cycleValues = values; };
+private:
+    void addPorts();
+
+    u8 m_currIdx;
+    QList<bool> m_cycleValues;
+
+    QList<PortItem*> m_outPorts;
+    int portNums = 1;
+
+    QRectF m_rect;
+};
+
 class WireItem : public QGraphicsObject
 {
     Q_OBJECT
@@ -110,30 +136,30 @@ private:
     QPen m_pen;
 };
 
-class SourceItem : public QGraphicsObject{
+class RegisterItem : public QGraphicsObject {
     Q_OBJECT
 public:
-    SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
+    explicit RegisterItem(RType RegType, QGraphicsItem* parent= nullptr);
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    QList<PortItem*> getOutputPorts() const { return m_outPorts;};
-    u8 getIdx() const { return m_currIdx; };
-    void setIdx(u8 value) { m_currIdx = value; };
 
-    QList<bool> getValues() const { return m_cycleValues; };
-    void setValues(QList<bool> values) { m_cycleValues = values; };
+    RType getRegType() const { return m_RegType; };
+    PortItem* getInputPort() const { return m_inputPorts; };
+    PortItem* getOutputPort() const { return m_outputPort; }
+
+    //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+
 private:
-    void addPorts();
+    void createPorts();
 
-    u8 m_currIdx;
-    QList<bool> m_cycleValues;
-
-    QList<PortItem*> m_outPorts;
-    int portNums = 1;
-
+    RType m_RegType;
     QRectF m_rect;
+
+    Direction m_direction = Direction::RIGHT;
+
+    PortItem* m_inputPorts = nullptr;
+    PortItem* m_outputPort = nullptr;
 };
 
 //TODO multiplexer
-//TODO Register

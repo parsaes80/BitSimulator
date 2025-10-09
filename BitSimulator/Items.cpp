@@ -356,17 +356,21 @@ SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent), m_rect(-
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
-    m_cycleValues.clear();
-    m_cycleValues.append(false); 
-    m_cycleValues.append(true);
+    m_currIdx = 0;
     m_cycleValues.append(false);
-    m_cycleValues.append(true);
-    m_cycleValues.append(true);
+    addPorts();
+}
+SourceItem::SourceItem(QList<bool>& cycleValues,QGraphicsItem* parent) : QGraphicsObject(parent), m_rect(-15, -15, 30, 30), m_cycleValues(cycleValues)
+{
+    // Enable item flags for interaction
+    setFlag(QGraphicsObject::ItemIsMovable, true);
+    setFlag(QGraphicsObject::ItemIsSelectable, true);
+    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+
     m_currIdx = 0;
 
     addPorts();
 }
-
 void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     // Draw selection highlight
@@ -399,4 +403,84 @@ void SourceItem::addPorts()
     PortItem* outputPort = new PortItem(PortType::OUT, -1, this);
     outputPort->setPos(15, 0);
     m_outPorts.append(outputPort);
+}
+
+//===================== RegisterItem ========================
+
+RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent) {
+    setFlag(QGraphicsObject::ItemIsMovable, true);
+    setFlag(QGraphicsObject::ItemIsSelectable, true);
+    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+
+    m_rect = QRectF(-20, -25, 40, 50);
+
+    createPorts();
+}
+
+void RegisterItem::createPorts()
+{
+    int numInputs = (m_RegType == RType::D) ? 1 : 2;
+
+    double halfWidth = m_rect.width() / 2;
+    double halfHeight = m_rect.height() / 2;
+
+    for (int i = 0; i < numInputs; i++) {
+        PortItem* inputPort = new PortItem(PortType::IN, i, this);
+
+        // Position input ports on the left side
+        //if (numInputs == 1) {
+        inputPort->setPos(-halfWidth, 0); // Center for single input (NOT gate)
+        //}
+        //else {
+        //    inputPort->setPos(-halfWidth, -halfHeight / 2 + i * halfHeight); // Top and bottom for dual inputs
+        //}
+
+        m_inputPorts =inputPort;
+    }
+
+    // Create output port
+    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    m_outputPort->setPos(halfWidth, 0); // Right side, center
+}
+
+void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) {
+    // Draw selection highlight
+    if (option->state & QStyle::State_Selected) {
+        painter->setPen(QPen(Qt::blue, 3));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
+    }
+
+    // Set styling for register
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(100, 150, 255)); // Blue color (like in RegisterButton)
+    
+    // Draw rectangle that fills the entire m_rect
+    painter->fillRect(m_rect, painter->brush());
+    painter->drawRect(m_rect);
+    
+    // Draw "R" in the center to indicate it's a register
+    painter->setPen(QPen(Qt::white, 2));
+    QFont font = painter->font();
+    font.setBold(true);
+    font.setPointSize(14);  // Slightly larger since m_rect is bigger
+    painter->setFont(font);
+    painter->drawText(m_rect, Qt::AlignCenter, "R");
+    
+    // Draw a small clock symbol (triangle) at the bottom
+    painter->setPen(QPen(Qt::white, 1.5));
+    painter->setBrush(Qt::white);
+    QPainterPath clockTriangle;
+    
+    // Position clock triangle at bottom center of m_rect
+    double bottomY = m_rect.bottom() - 8;  // 8 pixels from bottom
+    double centerX = m_rect.center().x();
+    
+    clockTriangle.moveTo(centerX - 4, bottomY);     // Left point
+    clockTriangle.lineTo(centerX + 4, bottomY);     // Right point  
+    clockTriangle.lineTo(centerX, bottomY - 4);     // Top point
+    clockTriangle.closeSubpath();
+    
+    painter->fillPath(clockTriangle, painter->brush());
+    painter->drawPath(clockTriangle);
 }

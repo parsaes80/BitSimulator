@@ -24,12 +24,12 @@ signals:
     void gateTypeSelected(GType gateType);
 
 private:
-    void drawGateSymbol(QPainter* painter);
-    void drawAndGate(QPainter* painter);
-    void drawOrGate(QPainter* painter);
-    void drawXorGate(QPainter* painter);
-    void drawNotGate(QPainter* painter);
-    void drawNotBubble(QPainter* painter);
+    void drawGateSymbol(QPainter* painter, double width, double height);
+    void drawAndGate(QPainter* painter, double width, double height);
+    void drawOrGate(QPainter* painter, double width, double height);
+    void drawXorGate(QPainter* painter, double width, double height);
+    void drawNotGate(QPainter* painter, double width, double height);
+    void drawNotBubble(QPainter* painter, double width, double height);
 
     GType m_gateType;
 };
@@ -47,4 +47,19 @@ public slots:
     void onButtonClicked() { emit sourceSelected(); };
 signals:
     void sourceSelected();
+};
+class RegisterButton : public QPushButton
+{
+    Q_OBJECT
+
+public:
+    RegisterButton(QWidget* parent = nullptr);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+public slots:
+    void onButtonClicked() { emit RegSelected();};
+signals:
+    void RegSelected();
 };

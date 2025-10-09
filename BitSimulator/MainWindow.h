@@ -18,6 +18,8 @@ protected:
 private slots:
     void on_startButton_clicked();
 
+    void on_srcvalues_textChanged();
+
 private:
     void setup();
     Ui::BitSimulatorClass ui;

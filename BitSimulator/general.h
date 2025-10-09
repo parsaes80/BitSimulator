@@ -6,6 +6,7 @@
 class WireItem;
 class GateItem;
 class SourceItem;
+class RegisterItem;
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -26,10 +27,10 @@ struct Register {
 	u32 inID;
 	u32 outID;  
 	RType regType;
-	bool nextValue;
-	
+	bool storedValue = false;
+
 	Register() = default;
-	Register(RType t, u32 inId, u32 outId, bool next = false) : regType(t), inID(inId), outID(outId), nextValue(next) {}
+	Register(RType t, u32 inId, u32 outId) : regType(t), inID(inId), outID(outId) {}
 };
 
 struct Gate {
@@ -46,7 +47,6 @@ struct Source {
 	u32 outID;
 	std::vector<bool> cycleValues;
 	u8 currentIndex = -1;
-
 	Source() = default;
 	Source(u32 outID,std::vector<bool> cycleValues) :outID(outID), cycleValues(cycleValues){}
 };
@@ -55,6 +55,7 @@ struct ExportGraph
 {
     std::vector<Gate> gates;
     std::vector<Source> sources;
+	std::vector<Register> registers;
 
     std::vector<u32> gateInputs;   
     //std::vector<u32> sourceCycleValues;
@@ -78,8 +79,11 @@ struct GlobalMap {
 	std::unordered_map <WireItem*, u32> wire2net;    
 
 	std::unordered_map <GateItem*, u32> gate2Idx;
-	std::unordered_map <SourceItem*, u32> source2Idx;
-
 	std::unordered_map <u32, GateItem*> Idx2gate;
+
+	std::unordered_map <SourceItem*, u32> source2Idx; 
 	std::unordered_map <u32, SourceItem*> Idx2source;
+
+	std::unordered_map <RegisterItem*, u32> reg2Idx;
+	std::unordered_map <u32, RegisterItem*> Idx2reg;
 };
