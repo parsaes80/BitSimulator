@@ -270,16 +270,31 @@ void GateItem::createPorts()
 
 //===================== Wire Item   ========================
 
-WireItem::WireItem(const QLineF& line, QGraphicsItem* parent)
-    : QGraphicsObject(parent), m_line(line), m_pen(QPen(Qt::black, 2))
+WireItem::WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent)
+    : localStartPos(startpos), localEndPos(endpos), QGraphicsObject(parent), m_pen(QPen(Qt::black, 2))
 {
     setFlags(ItemIsSelectable);
 }
 
 QRectF WireItem::boundingRect() const
 {
-    // Create a bounding rect around the line with some padding
-    QRectF rect = QRectF(m_line.p1(), m_line.p2()).normalized();
+    // Handle case where positions aren't set yet
+    if (localStartPos.isNull() && localEndPos.isNull()) {
+        return QRectF(0, 0, 1, 1);  // Minimal fallback
+    }
+
+    // Calculate midpoint for orthogonal wire
+    qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
+
+    // Find bounding rectangle that encompasses all three line segments
+    qreal left = qMin(localStartPos.x(), qMin(midX, localEndPos.x()));
+    qreal right = qMax(localStartPos.x(), qMax(midX, localEndPos.x()));
+    qreal top = qMin(localStartPos.y(), localEndPos.y());
+    qreal bottom = qMax(localStartPos.y(), localEndPos.y());
+
+    QRectF rect(left, top, right - left, bottom - top);
+
+    // Add padding for pen width
     qreal penWidth = m_pen.width();
     return rect.adjusted(-penWidth / 2, -penWidth / 2, penWidth / 2, penWidth / 2);
 }
@@ -295,10 +310,7 @@ void WireItem::setStartPort(PortItem* port)
 
     if (m_startPort) {
         m_startPort->addConnection(this);
-        // Update wire position to port location
-        QLineF currentLine = line();
-        currentLine.setP1(m_startPort->mapToScene(QPointF(0, 0)));
-        setLine(currentLine);
+
     }
 }
 
@@ -312,10 +324,6 @@ void WireItem::setEndPort(PortItem* port)
 
     if (m_endPort) {
         m_endPort->addConnection(this);
-        // Update wire position to port location
-        QLineF currentLine = line();
-        currentLine.setP2(m_endPort->mapToScene(QPointF(0, 0)));
-        setLine(currentLine);
     }
 }
 
@@ -323,29 +331,52 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 {
     // Use the stored pen, but modify color based on selection
     QPen currentPen = m_pen;
-    if (isSelected()) {
-        currentPen.setColor(Qt::blue);
-        currentPen.setWidth(3);
+
+    // Color based on simulation state
+    if (!sim_running) {
+        if (isSelected()) {
+            currentPen.setColor(Qt::blue);
+            currentPen.setWidth(3);
+        }
+        else {
+            currentPen.setColor(Qt::black);
+        }
     }
-    
+    else {
+        // During simulation, color based on wire value
+        if (m_value) {
+            currentPen.setColor(Qt::red);   // High signal
+        }
+        else {
+            currentPen.setColor(Qt::black); // Low signal
+        }
+
+        if (isSelected()) {
+            currentPen.setWidth(3);
+        }
+    }
+
     painter->setPen(currentPen);
-    painter->drawLine(m_line);
+
+    // Calculate the middle point horizontally between start and end
+    qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
+
+    // Draw orthogonal path: horizontal -> vertical -> horizontal
+    painter->drawLine(localStartPos.x(), localStartPos.y(), midX, localStartPos.y());          // Horizontal from start to middle
+    painter->drawLine(midX, localStartPos.y(), midX, localEndPos.y());                        // Vertical from start height to end height
+    painter->drawLine(midX, localEndPos.y(), localEndPos.x(), localEndPos.y());               // Horizontal from middle to end
 }
 
 void WireItem::updateWirePosition()
-{
-    if (m_startPort && m_endPort) {
-        // Get the scene positions of both ports
-        QPointF startPos = m_startPort->mapToScene(QPointF(0, 0));
-        QPointF endPos = m_endPort->mapToScene(QPointF(0, 0));
+{  
+    // Get the scene positions of both ports
+    QPointF startPos = m_startPort->mapToScene(QPointF(0, 0));
+    QPointF endPos = m_endPort->mapToScene(QPointF(0, 0));
 
-        // Convert to this item's coordinate system
-        QPointF localStartPos = mapFromScene(startPos);
-        QPointF localEndPos = mapFromScene(endPos);
-
-        // Update the wire line
-        setLine(QLineF(localStartPos, localEndPos));
-    }
+    // Convert to this item's coordinate system
+    localStartPos = mapFromScene(startPos);
+    localEndPos = mapFromScene(endPos);
+    
 }
 //===================== SourceItem ========================
 

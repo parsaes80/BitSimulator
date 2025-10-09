@@ -109,7 +109,7 @@ class WireItem : public QGraphicsObject
 {
     Q_OBJECT
 public:
-    WireItem(const QLineF& line, QGraphicsItem* parent = nullptr);
+    WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent = nullptr);
 
     QRectF boundingRect() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
@@ -120,9 +120,9 @@ public:
     PortItem* getEndPort() const { return m_endPort; }
     bool isConnected() const { return m_startPort && m_endPort; }
 
-    QLineF line() const { return m_line; }
-    void setLine(const QLineF& line){m_line = line;update();}
-    
+    void setStartPos(QPointF& pos) { localStartPos = pos;}
+    void setEndPos(QPointF& pos) { localEndPos = pos;}
+    void setValue(bool val) { m_value = val;}
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
@@ -130,10 +130,12 @@ public slots:
     void updateWirePosition();
 
 private:
+    bool m_value = false;
     PortItem* m_startPort = nullptr;
     PortItem* m_endPort = nullptr;
-    QLineF m_line;
-    QPen m_pen;
+    QPointF localStartPos;
+    QPointF localEndPos;
+    QPen m_pen;  //need pen because of outside access
 };
 
 class RegisterItem : public QGraphicsObject {

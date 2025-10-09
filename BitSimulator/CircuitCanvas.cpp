@@ -90,7 +90,7 @@ void CircuitScene::startWireConnection(QPointF startPoint)
         m_currWireStartPort = nullptr;
     }
 
-    m_currWire = new WireItem(QLineF(m_wireStartPoint, m_wireStartPoint));
+    m_currWire = new WireItem(m_wireStartPoint, m_wireStartPoint);
     m_currWire->setPen(QPen(Qt::red, 2, Qt::DashLine));
     addItem(m_currWire);
 }
@@ -122,7 +122,8 @@ void CircuitScene::updateWireConnection(QPointF currentPoint)
             m_currWire->setPen(QPen(Qt::red, 2, Qt::DashLine)); // Red otherwise
         }
 
-        m_currWire->setLine(QLineF(m_wireStartPoint, endPoint));
+        m_currWire->setStartPos(m_wireStartPoint);
+        m_currWire->setStartPos(endPoint);
     }
 }
 
@@ -301,12 +302,12 @@ void CircuitScene::receiveResult(SimResult result)
         std::vector<WireItem*> wires = map.net2wire[i];
         for (auto* wire : wires) {
             if (result.netValues[i]) {
-                wire->setPen(QPen(Qt::red, 3));    // High signal = red
+                wire->setValue(true);    // High signal = red
                 wire->getEndPort()->setValue(true);
                 wire->getStartPort()->setValue(true);
             }
             else {
-                wire->setPen(QPen(Qt::black, 2));  // Low signal = black
+                wire->setValue(false);     // Low signal = black
                 wire->getEndPort()->setValue(false);
                 wire->getStartPort()->setValue(false);
             }
