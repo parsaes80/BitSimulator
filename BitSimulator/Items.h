@@ -147,11 +147,12 @@ public:
     RType getRegType() const { return m_RegType; };
     PortItem* getInputPort() const { return m_inputPorts; };
     PortItem* getOutputPort() const { return m_outputPort; }
-
+    void setValue(bool value) { m_value = value;};
     //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
     void createPorts();
+    bool m_value = false;
 
     RType m_RegType;
     QRectF m_rect;

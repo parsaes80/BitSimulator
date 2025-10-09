@@ -72,6 +72,7 @@ struct SimResult
 {
     std::vector<bool> netValues;  // netValues[netId] = true/false
 	std::vector<u8> sourcesCurrIdx;
+	std::vector<bool> registerValues;
 };
 
 struct GlobalMap {

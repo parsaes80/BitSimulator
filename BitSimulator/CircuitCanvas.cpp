@@ -206,7 +206,7 @@ void CircuitScene::startSim()
 
     for (int i = 0; i < gateItems.size(); i++) { map.gate2Idx[gateItems[i]] = i; map.Idx2gate[i] = gateItems[i]; }
     for (int i = 0; i < sourceItems.size(); i++) { map.source2Idx[sourceItems[i]] = i; map.Idx2source[i] = sourceItems[i];}
-    for (int i = 0; i < sourceItems.size(); i++) { map.reg2Idx[registerItems[i]] = i; map.Idx2reg[i] = registerItems[i];}
+    for (int i = 0; i < registerItems.size(); i++) { map.reg2Idx[registerItems[i]] = i; map.Idx2reg[i] = registerItems[i];}
 
     // wire,net mapping 
     QHash<PortItem*, u32> outputPortToNet;
@@ -316,6 +316,10 @@ void CircuitScene::receiveResult(SimResult result)
     for (int i = 0; i < result.sourcesCurrIdx.size(); i++) {
         auto source = map.Idx2source[i];
         source->setIdx(result.sourcesCurrIdx[i]);    
+    }
+    for (int i = 0; i < result.registerValues.size(); i++) {
+        auto reg = map.Idx2reg[i];
+        reg->setValue(result.registerValues[i]);
     }
 }
 

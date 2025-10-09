@@ -453,8 +453,10 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 
     // Set styling for register
     painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(100, 150, 255)); // Blue color (like in RegisterButton)
-    
+    if(m_value)
+        painter->setBrush(QColor(100, 150, 255)); // Blue color (like in RegisterButton)
+    else
+        painter->setBrush(QColor(255, 255, 255));
     // Draw rectangle that fills the entire m_rect
     painter->fillRect(m_rect, painter->brush());
     painter->drawRect(m_rect);

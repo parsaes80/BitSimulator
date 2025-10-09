@@ -32,8 +32,18 @@ void Simulator::tick() {
 
     qDebug() << "Starting simulation with" << m_nets.size() << "nets," << m_gates.size() << "gates,"<< m_registers.size() << "registers";
 
-    std::queue<u32> eventQueue;
+    std::set<u32> eventQueue;
 
+    for (auto& reg : m_registers) {
+        bool oldValue = m_nets[reg.outID];
+        m_nets[reg.outID] = reg.storedValue;  // Output the stored value
+
+        qDebug() << "Register" << &reg - &m_registers[0]
+            << "outputs stored value" << reg.storedValue
+            << "-> Net" << reg.outID;
+       
+        eventQueue.insert(reg.outID);
+    }
     for (auto& source : m_sources) {
         // Check bounds BEFORE incrementing and accessing
         source.currentIndex++;
@@ -43,15 +53,17 @@ void Simulator::tick() {
         bool oldValue = m_nets[source.outID];
         m_nets[source.outID] = source.cycleValues[source.currentIndex];
         
-        eventQueue.push(source.outID);
+        eventQueue.insert(source.outID);
     }
 
     int propagationStep = 0;
     int maxSteps = 1000; // Safety limit to prevent infinite loops
 
     while (!eventQueue.empty() && propagationStep < maxSteps) {
-        u32 changedNetId = eventQueue.front();
-        eventQueue.pop();
+         auto it = eventQueue.begin();
+         u32 changedNetId = *it;
+         eventQueue.erase(it);
+
         // Find all gates that have this net as an input
         for (size_t gateIdx = 0; gateIdx < m_gates.size(); gateIdx++) {
             Gate& gate = m_gates[gateIdx];
@@ -151,7 +163,7 @@ void Simulator::tick() {
                 if (oldValue != newOutput) {
                     // Output changed - update net and queue it
                     m_nets[outputNetId] = newOutput;
-                    eventQueue.push(outputNetId);
+                    eventQueue.insert(outputNetId);
                     qDebug() << "    -> Output changed from" << oldValue<< "to" << newOutput << "- queued Net" << outputNetId;   
                 }
                 else {
@@ -161,13 +173,19 @@ void Simulator::tick() {
         }
         propagationStep++;
     }
-
+    for (auto& reg : m_registers) {
+        reg.storedValue = m_nets[reg.inID];  // Store for next clock cycle
+    }
     qDebug() << "=========== ONE CLOCK COMPLETED ==========";
     SimResult result;
 
     for (int i = 0; i < m_sources.size(); i++) {
         result.sourcesCurrIdx.push_back(m_sources[i].currentIndex);
     }
+    for (int i = 0; i < m_registers.size(); i++) {
+        result.registerValues.push_back(m_registers[i].storedValue);
+    }
+
     result.netValues = m_nets;
     emit sendResult(result);
 }
@@ -192,5 +210,5 @@ void Simulator::SimController() {
 
     auto timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {tick();}});
-    timer->start(100); 
+    timer->start(1000); 
 }
