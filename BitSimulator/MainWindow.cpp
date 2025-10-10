@@ -42,6 +42,9 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::setup()
 {
     ui.setupUi(this);
+    ui.slider->setRange(1, 10000);  // 1ms to 1000ms
+    ui.slider->setValue(3350);
+    on_slider_valueChanged(3350);
     // setup button connections to the scene
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
@@ -64,6 +67,7 @@ void MainWindow::setup()
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
     connect(simObj, &Simulator::sendResult,ui.camera->getScene(),&CircuitScene::receiveResult);
+    connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
@@ -106,18 +110,39 @@ void MainWindow::on_srcvalues_textChanged() {
         // Valid input
         ui.srcvalues->setStyleSheet("");
         scene->setSrcCycleValues(values);
-
-        // Update status label (if you have one)
-        QString statusText = QString("Pattern: %1 (%2 bits)")
-            .arg(cleanText)
-            .arg(values.size());
-        //ui.statusLabel->setText(statusText);  // Optional status display
-
-        qDebug() << statusText;
     }
     else {
         // Invalid input
+        values.clear();
+        values.append(0);
+        scene->setSrcCycleValues(values);
         ui.srcvalues->setStyleSheet("QTextEdit { background-color: #ffcccc; }");
         // ui.statusLabel->setText("Invalid input - use only 0s and 1s");
     }
+}
+
+void MainWindow::on_slider_valueChanged(int value) {
+    double minInput = 1.0;      // Slider minimum
+    double maxInput = 10000.0;  // Slider maximum
+    double minOutput = 1.0;     // Fastest speed (1ms)
+    double maxOutput = 1000.0; // Slowest speed (10000ms)
+
+    // Normalize input to [0, 1] range
+    double normalizedInput = (value - minInput) / (maxInput - minInput);
+
+    // Invert so higher slider values = faster speed (lower ms)
+    double invertedInput = 1.0 - normalizedInput;
+
+    // Apply logarithmic scaling
+    double logMin = std::log(minOutput);
+    double logMax = std::log(maxOutput);
+    double logResult = logMin + invertedInput * (logMax - logMin);
+
+    // Convert back from log space
+    int result = static_cast<int>(std::round(std::exp(logResult)));
+
+    // Clamp to valid range
+    result = qBound(1, result, 10000);
+
+    emit sendTimerPeriod(result);
 }

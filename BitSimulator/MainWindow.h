@@ -20,6 +20,9 @@ private slots:
 
     void on_srcvalues_textChanged();
 
+    void on_slider_valueChanged(int value);
+signals:
+    void sendTimerPeriod(int milliseconds);
 private:
     void setup();
     Ui::BitSimulatorClass ui;

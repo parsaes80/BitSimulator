@@ -5,7 +5,7 @@
 #include <QTimer>
 #include <QEventLoop>
 #include <queue>
-
+#include <chrono> 
 extern bool sim_running;
 extern GlobalMap map;
 
@@ -30,18 +30,11 @@ void Simulator::clearCircuit() {
 void Simulator::tick() {
     sim_running = true;
 
-    qDebug() << "Starting simulation with" << m_nets.size() << "nets," << m_gates.size() << "gates,"<< m_registers.size() << "registers";
-
     std::set<u32> eventQueue;
 
     for (auto& reg : m_registers) {
         bool oldValue = m_nets[reg.outID];
-        m_nets[reg.outID] = reg.storedValue;  // Output the stored value
-
-        qDebug() << "Register" << &reg - &m_registers[0]
-            << "outputs stored value" << reg.storedValue
-            << "-> Net" << reg.outID;
-       
+        m_nets[reg.outID] = reg.storedValue;  // Output the stored value    
         eventQueue.insert(reg.outID);
     }
     for (auto& source : m_sources) {
@@ -82,8 +75,6 @@ void Simulator::tick() {
                 continue; // This gate doesn't use the changed net
             }
 
-            qDebug() << "  Evaluating Gate" << gateIdx << "type:" << (int)gate.gateType;
-
             // Gather all inputs first
             std::vector<bool> inputs;
             inputs.reserve(gate.numInputs);
@@ -92,10 +83,9 @@ void Simulator::tick() {
                 u32 inputNetId = m_gateInputs[gate.inID + i];
                 bool inputValue = (inputNetId < m_nets.size()) ? m_nets[inputNetId] : false;
                 inputs.push_back(inputValue);
-                qDebug() << "Input" << i << ": Net" << inputNetId << "=" << inputValue;
+                
             }
-
-            // ===== FIX 3: Evaluate gate logic ONCE with all inputs =====
+            // ===== Evaluate gate logic ONCE with all inputs =====
             bool newOutput;
 
             switch (gate.gateType) {
@@ -105,55 +95,47 @@ void Simulator::tick() {
                     newOutput = newOutput && input;
                 }
                 break;
-
             case GType::OR:
                 newOutput = false;
                 for (bool input : inputs) {
                     newOutput = newOutput || input;
                 }
                 break;
-
             case GType::NAND:
                 newOutput = true;
                 for (bool input : inputs) {
                     newOutput = newOutput && input;
                 }
-                newOutput = !newOutput;  // Negate at the end
+                newOutput = !newOutput;  
                 break;
-
             case GType::NOR:
                 newOutput = false;
                 for (bool input : inputs) {
                     newOutput = newOutput || input;
                 }
-                newOutput = !newOutput;  // Negate at the end
+                newOutput = !newOutput;  
                 break;
-
             case GType::XOR:
                 newOutput = false;
                 for (bool input : inputs) {
                     newOutput = newOutput ^ input;
                 }
                 break;
-
             case GType::XNOR:
                 newOutput = false;
                 for (bool input : inputs) {
                     newOutput = newOutput ^ input;
                 }
-                newOutput = !newOutput;  // Negate at the end
+                newOutput = !newOutput;  
                 break;
 
             case GType::NOT:
                 newOutput = !inputs[0];
                 break;
 
-            default:
-                qDebug() << "    Unknown gate type!";
+            default:               
                 break;
             }
-
-            qDebug() << "  Gate" << gateIdx << "output: Net" << gate.outID << "=" << newOutput;
 
             // ===== Check if output changed =====
             u32 outputNetId = gate.outID;
@@ -164,10 +146,6 @@ void Simulator::tick() {
                     // Output changed - update net and queue it
                     m_nets[outputNetId] = newOutput;
                     eventQueue.insert(outputNetId);
-                    qDebug() << "    -> Output changed from" << oldValue<< "to" << newOutput << "- queued Net" << outputNetId;   
-                }
-                else {
-                    qDebug() << "    -> Output unchanged (" << newOutput << ")";
                 }
             }
         }
@@ -176,7 +154,7 @@ void Simulator::tick() {
     for (auto& reg : m_registers) {
         reg.storedValue = m_nets[reg.inID];  // Store for next clock cycle
     }
-    qDebug() << "=========== ONE CLOCK COMPLETED ==========";
+
     SimResult result;
 
     for (int i = 0; i < m_sources.size(); i++) {
@@ -206,9 +184,28 @@ void Simulator::receiveCircuit(ExportGraph graph){
     sim_running = true;
 }
 
-void Simulator::SimController() {
+void Simulator::setTimerPeriod(int milliseconds) {
+    m_timer->setInterval(milliseconds);
+}
 
-    auto timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this]() {if (sim_running) {tick();}});
-    timer->start(1000); 
+void Simulator::SimController() {
+    m_timer = new QTimer(this);
+        connect(m_timer, &QTimer::timeout, this, [this]() {
+        if (sim_running) {
+            // Start timing
+            auto startTime = std::chrono::high_resolution_clock::now();
+            
+            // Execute the tick
+            tick();
+            
+            // End timing and calculate duration
+            auto endTime = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+            
+            // Print execution time
+            qDebug() << "Tick execution time:" << duration.count() << "microseconds (" 
+                     << duration.count() / 1000.0 << "ms)";
+        }
+    });
+    m_timer->start(100);  
 }

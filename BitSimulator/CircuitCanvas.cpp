@@ -332,8 +332,6 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
-    qDebug() << "Scene mouse handler";
-
     // Handle our custom cases first
     if (event->button() == Qt::LeftButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
@@ -394,8 +392,6 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
 
 void CircuitCanvas::keyPressEvent(QKeyEvent* event)
 {
-    qDebug() << "Key pressed:" << event->key() << "Text:" << event->text();
-
     // Track modifier keys
     m_ctrlPressed = event->modifiers() & Qt::ControlModifier;
     m_shiftPressed = event->modifiers() & Qt::ShiftModifier;
@@ -432,8 +428,7 @@ void CircuitCanvas::mousePressEvent(QMouseEvent* event)
         event->accept();
         return;
     }
-    
-    qDebug() << "View mouse handler";
+   
     QGraphicsView::mousePressEvent(event); // Call base class implementation
 }
 

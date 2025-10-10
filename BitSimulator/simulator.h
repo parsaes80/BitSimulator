@@ -12,11 +12,12 @@ public slots:
     void tick();
     void receiveCircuit(ExportGraph graph);
     void SimController(); 
-
+    void setTimerPeriod(int milliseconds);
 signals:
     void sendResult(SimResult result);
 private:
-    
+    QTimer* m_timer = nullptr;
+
     std::vector<bool> m_nets;
     std::vector<Gate> m_gates;
     std::vector<Register> m_registers;
