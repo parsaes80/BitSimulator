@@ -1,5 +1,5 @@
 #pragma once
-#include <QMetaType>
+
 #include <vector>
 #include <unordered_map>
 

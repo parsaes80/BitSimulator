@@ -13,7 +13,7 @@ extern GlobalMap map;
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent), m_connectingWire(false), m_currWire(nullptr)
 {
-    setSceneRect(0, 0, 2000, 2000); // Large canvas
+    setSceneRect(0, 0, 4000, 2000); // Large canvas
 
     // Force full scene update on any change
     connect(this, &QGraphicsScene::changed, this, [this]() { update(); });
@@ -330,27 +330,38 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     painter->fillRect(rect, QColor(10, 200, 200));
 }
 
-void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
-{
+void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     // Handle our custom cases first
     if (event->button() == Qt::LeftButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
         if (!clickedItem) {
-            if (m_nextIsSource) 
-                addSource(event->scenePos());
-            else if(m_nextIsGate)
-                addGate(m_nextGateType, event->scenePos());
-            else if(m_nextIsRegister)
-                addRegister(m_nextRegType, event->scenePos());
+            // Only add items if we didn't click on an existing item
+            std::visit([&](auto&& arg) {
+                using T = std::decay_t<decltype(arg)>;
+
+                if constexpr (std::is_same_v<T, GType>) {
+                    addGate(arg, event->scenePos());
+                }
+                else if constexpr (std::is_same_v<T, RType>) {
+                    addRegister(arg, event->scenePos());
+                }
+                else if constexpr (std::is_same_v<T, bool>) {
+                    addSource(event->scenePos());
+                }
+                }, m_nextItem);
+
             event->accept();
             return;
         }
-    } else if (event->button() == Qt::RightButton) {
+    }
+    else if (event->button() == Qt::RightButton) {
+        // Right click starts wire connection
         startWireConnection(event->scenePos());
         event->accept();
         return;
     }
 
+    // Pass other events to base class
     QGraphicsScene::mousePressEvent(event);
 }
 

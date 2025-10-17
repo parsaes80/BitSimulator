@@ -15,6 +15,7 @@
 #include <QDebug>
 #include "general.h"
 #include "Items.h"
+#include <variant>
 
 class CircuitScene : public QGraphicsScene {
     Q_OBJECT
@@ -37,9 +38,17 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 public slots:
-    void setNextGateType(GType gatetype) { m_nextIsGate = true; m_nextIsSource = false; m_nextIsRegister = false; m_nextGateType = gatetype; };
-    void setNextSource() { m_nextIsRegister = false; m_nextIsSource = true; m_nextIsGate = false; };
-    void setNextRegister() { m_nextIsRegister = true; m_nextIsSource = false; m_nextIsGate = false;};
+    void setNextGateType(GType gatetype) {
+        m_nextItem = gatetype;
+    };
+
+    void setNextSource() {
+        m_nextItem = true;  // Use bool to represent source
+    };
+
+    void setNextRegister(RType regType = RType::D) {
+        m_nextItem = regType;
+    };
     void receiveResult(SimResult result);
 signals:
     void startSimSIG(ExportGraph graph);
@@ -53,11 +62,7 @@ private:
     PortItem* m_currWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
-    GType m_nextGateType = GType::AND;
-    RType m_nextRegType = RType::D;
-    bool m_nextIsGate = true;
-    bool m_nextIsSource = false;
-    bool m_nextIsRegister = false;
+    std::variant<GType, RType, bool> m_nextItem = GType::AND;  // bool for source
 
     QList<bool> m_nextSrcCycleValues = { false,true };
 };

@@ -48,6 +48,7 @@ public slots:
 signals:
     void sourceSelected();
 };
+
 class RegisterButton : public QPushButton
 {
     Q_OBJECT
@@ -59,7 +60,7 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit RegSelected();};
+    void onButtonClicked() { emit RegSelected(RType::D);};
 signals:
-    void RegSelected();
+    void RegSelected(RType regType);
 };
