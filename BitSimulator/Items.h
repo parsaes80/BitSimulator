@@ -128,7 +128,6 @@ public:
 
 public slots:
     void updateWirePosition();
-
 private:
     bool m_value = false;
     PortItem* m_startPort = nullptr;
@@ -147,8 +146,10 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     RType getRegType() const { return m_RegType; };
-    PortItem* getInputPort() const { return m_inputPorts; };
+    PortItem* getInputPort() const { return m_inputPort; };
     PortItem* getOutputPort() const { return m_outputPort; }
+    PortItem* getReadEnablePort() const { return m_readEnbPort; }
+    PortItem* getClkPort() const { return m_clkPort; }
     void setValue(bool value) { m_value = value;};
     //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 
@@ -161,7 +162,9 @@ private:
 
     Direction m_direction = Direction::RIGHT;
 
-    PortItem* m_inputPorts = nullptr;
+    PortItem* m_inputPort = nullptr;
+    PortItem* m_clkPort = nullptr;
+    PortItem* m_readEnbPort = nullptr;
     PortItem* m_outputPort = nullptr;
 };
 

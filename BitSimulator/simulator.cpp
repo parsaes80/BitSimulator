@@ -151,8 +151,36 @@ void Simulator::tick() {
         }
         propagationStep++;
     }
+    // Update your register processing in tick():
     for (auto& reg : m_registers) {
-        reg.storedValue = m_nets[reg.inID];  // Store for next clock cycle
+        bool currentClock =  m_nets[reg.clkID];
+        bool currentEnable = m_nets[reg.enableID];
+
+        // Determine behavior based on connections
+        bool hasClockConnection = (reg.clkID != 0);  // 0 means not connected
+        bool hasEnableConnection = (reg.enableID != 0);
+
+        if (hasClockConnection) {
+            // FLIP-FLOP BEHAVIOR (edge-triggered) (clk connected)
+            bool risingEdge = !reg.prevClkState && currentClock;
+
+            if (risingEdge) {
+                // Check enable if connected, otherwise always enabled
+                bool enabled = !hasEnableConnection || currentEnable;
+
+                if (enabled) {                   
+                    reg.storedValue = m_nets[reg.inID];          
+                }
+            }
+            reg.prevClkState = currentClock;
+        }
+        else if (hasEnableConnection && currentEnable) {
+            // LATCH BEHAVIOR (level-triggered) (clk not connected)
+            reg.storedValue = m_nets[reg.inID];
+        }
+        else {
+            reg.storedValue = m_nets[reg.inID];
+        }
     }
 
     SimResult result;
@@ -203,9 +231,9 @@ void Simulator::SimController() {
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
             
             // Print execution time
-            qDebug() << "Tick execution time:" << duration.count() << "microseconds (" 
-                     << duration.count() / 1000.0 << "ms)";
+            //qDebug() << "Tick execution time:" << duration.count() << "microseconds (" 
+                     //<< duration.count() / 1000.0 << "ms)";
         }
-    });
+        });
     m_timer->start(100);  
 }

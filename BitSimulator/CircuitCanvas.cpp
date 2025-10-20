@@ -234,6 +234,11 @@ void CircuitScene::startSim()
     std::vector<u32> gateInputs;
     //std::vector<u32> sourceOutputs;
 
+    auto getNetId = [&](PortItem* port) -> u32 {
+        return (port && !port->getConnections().isEmpty()) ?
+            map.wire2net[port->getConnections()[0]] : 0;
+    };
+
     // Wire,Gate Mapping
     u32 gateInputindex = 0;
     for (auto* gateItem : gateItems)
@@ -275,19 +280,17 @@ void CircuitScene::startSim()
         for (auto value : sourceItem->getValues()) {cycleValues.push_back(value);};
         sources.push_back(Source(outNet, cycleValues));
     }
-    u32 inNet;
+
+    u32 inNet, readEnbNet, clkNet;
     for (auto* regItem : registerItems)
     {
-        outNet = 0; inNet = 0;
-        if (!regItem->getOutputPort()->getConnections().isEmpty()) {
-            WireItem* outwire = regItem->getOutputPort()->getConnections()[0];
-            outNet = map.wire2net[outwire];
-        }
-        if (!regItem->getInputPort()->getConnections().isEmpty()) {
-            WireItem* inwire = regItem->getInputPort()->getConnections()[0];
-            inNet = map.wire2net[inwire];
-        }
-        registers.push_back(Register(RType::D, inNet, outNet));
+        outNet = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
+        clkNet = getNetId(regItem->getClkPort());
+        readEnbNet = getNetId(regItem->getReadEnablePort());
+        inNet = getNetId(regItem->getInputPort());
+        outNet = getNetId(regItem->getOutputPort());
+        // Update constructor call to include read enable
+        registers.push_back(Register(RType::D, inNet, outNet, clkNet,readEnbNet));
     }
     graph.gates = gates;
     graph.sources = sources;
@@ -324,12 +327,6 @@ void CircuitScene::receiveResult(SimResult result)
     }
 }
 
-void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
-{
-    // Draw grid
-    painter->fillRect(rect, QColor(10, 200, 200));
-}
-
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     // Handle our custom cases first
     if (event->button() == Qt::LeftButton) {
@@ -348,7 +345,8 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
                 else if constexpr (std::is_same_v<T, bool>) {
                     addSource(event->scenePos());
                 }
-                }, m_nextItem);
+                }, 
+                m_nextItem);
 
             event->accept();
             return;
@@ -370,7 +368,7 @@ void CircuitScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
     if (m_connectingWire) {
         updateWireConnection(event->scenePos());
 
-    } else {
+    } else { 
         QGraphicsScene::mouseMoveEvent(event);
     }
 }

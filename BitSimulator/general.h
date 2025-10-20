@@ -26,11 +26,15 @@ enum class PortType : u8 {IN,OUT};
 struct Register {
 	u32 inID;
 	u32 outID;  
+	u32 clkID;
+	u32 enableID;
 	RType regType;
 	bool storedValue = false;
-
+	bool prevClkState = false;
 	Register() = default;
-	Register(RType t, u32 inId, u32 outId) : regType(t), inID(inId), outID(outId) {}
+	Register(RType t, u32 inId, u32 outId, u32 clkId, u32 enId)
+		: regType(t), inID(inId), outID(outId), clkID(clkId), enableID(enId) {
+	}
 };
 
 struct Gate {

@@ -460,15 +460,19 @@ void RegisterItem::createPorts()
 
         // Position input ports on the left side
         //if (numInputs == 1) {
-        inputPort->setPos(-halfWidth, 0); // Center for single input (NOT gate)
+        inputPort->setPos(-halfWidth, -halfHeight /2); // Center for single input (NOT gate)
         //}
         //else {
         //    inputPort->setPos(-halfWidth, -halfHeight / 2 + i * halfHeight); // Top and bottom for dual inputs
         //}
 
-        m_inputPorts =inputPort;
+        m_inputPort =inputPort;
     }
+    m_clkPort = new PortItem(PortType::IN, numInputs, this);
+    m_clkPort->setPos(-halfWidth, 0); // Right side, center
 
+    m_readEnbPort = new PortItem(PortType::IN, numInputs+1, this);
+    m_readEnbPort->setPos(-halfWidth, halfHeight/2); // Right side, center
     // Create output port
     m_outputPort = new PortItem(PortType::OUT, -1, this);
     m_outputPort->setPos(halfWidth, 0); // Right side, center

@@ -25,34 +25,31 @@ public:
     void addGate(GType gateType, QPointF position);
     void addSource(QPointF position);
     void addRegister(RType RegType, QPointF position);
+
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
+
     void startSim();
+
     QList<bool> getSrcCycleValues() const {return m_nextSrcCycleValues;};
     void setSrcCycleValues(QList<bool>& input){m_nextSrcCycleValues = input;}
 
 protected:
-    void drawBackground(QPainter* painter, const QRectF& rect) override;
+    void drawBackground(QPainter* painter, const QRectF& rect) override {
+        painter->fillRect(rect, QColor(10, 100, 100));};// Draw background color
+
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 public slots:
-    void setNextGateType(GType gatetype) {
-        m_nextItem = gatetype;
-    };
+    void setNextGateType(GType gatetype) {m_nextItem = gatetype;};
+    void setNextSource() {m_nextItem = true;  };// Use bool to represent source
+    void setNextRegister(RType regType = RType::D) {m_nextItem = regType;};
 
-    void setNextSource() {
-        m_nextItem = true;  // Use bool to represent source
-    };
-
-    void setNextRegister(RType regType = RType::D) {
-        m_nextItem = regType;
-    };
     void receiveResult(SimResult result);
 signals:
     void startSimSIG(ExportGraph graph);
-
 private:
     void clearHighlights();
 
