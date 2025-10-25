@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QTimer>
 #include "general.h"
 
 class Simulator : public QObject {

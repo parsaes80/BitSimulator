@@ -145,7 +145,7 @@ public:
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    RType getRegType() const { return m_RegType; };
+    RType getRegType() const { return m_regType; };
     PortItem* getInputPort() const { return m_inputPort; };
     PortItem* getOutputPort() const { return m_outputPort; }
     PortItem* getReadEnablePort() const { return m_readEnbPort; }
@@ -157,7 +157,7 @@ private:
     void createPorts();
     bool m_value = false;
 
-    RType m_RegType;
+    RType m_regType;
     QRectF m_rect;
 
     Direction m_direction = Direction::RIGHT;

@@ -443,14 +443,14 @@ RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent) {
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
-    m_rect = QRectF(-20, -25, 40, 50);
+    m_rect = QRectF(-20, -30, 40, 60);
 
     createPorts();
 }
 
 void RegisterItem::createPorts()
 {
-    int numInputs = (m_RegType == RType::D) ? 1 : 2;
+    int numInputs = (m_regType == RType::D) ? 1 : 2;
 
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
@@ -459,12 +459,12 @@ void RegisterItem::createPorts()
         PortItem* inputPort = new PortItem(PortType::IN, i, this);
 
         // Position input ports on the left side
-        //if (numInputs == 1) {
-        inputPort->setPos(-halfWidth, -halfHeight /2); // Center for single input (NOT gate)
-        //}
-        //else {
-        //    inputPort->setPos(-halfWidth, -halfHeight / 2 + i * halfHeight); // Top and bottom for dual inputs
-        //}
+        if (numInputs == 1) {
+            inputPort->setPos(-halfWidth, -halfHeight /2); // Center for single input (NOT gate)
+        }
+        else {
+            inputPort->setPos(-halfWidth, -halfHeight / 2 + i * halfHeight); // Top and bottom for dual inputs
+        }
 
         m_inputPort =inputPort;
     }
