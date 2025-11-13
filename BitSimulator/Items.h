@@ -39,9 +39,10 @@ public:
 
 private:
     bool m_value = false;
+    int m_pinIndex = 0;
+    bool m_highlighted = false;
     PortType m_portType;
     QList<WireItem*> m_connections;
-    bool m_highlighted = false;
 };
 
 class GateItem : public QGraphicsObject{
@@ -138,7 +139,7 @@ private:
 };
 
 class RegisterItem : public QGraphicsObject {
-    Q_OBJECT
+    //Q_OBJECT
 public:
     explicit RegisterItem(RType RegType, QGraphicsItem* parent= nullptr);
 
@@ -146,7 +147,8 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     RType getRegType() const { return m_regType; };
-    PortItem* getInputPort() const { return m_inputPort; };
+    PortItem* getInputPort() const { return m_inputPortOne; };
+    PortItem* getInputPortTwo() const { return m_inputPortTwo; };
     PortItem* getOutputPort() const { return m_outputPort; }
     PortItem* getReadEnablePort() const { return m_readEnbPort; }
     PortItem* getClkPort() const { return m_clkPort; }
@@ -162,10 +164,32 @@ private:
 
     Direction m_direction = Direction::RIGHT;
 
-    PortItem* m_inputPort = nullptr;
+    PortItem* m_inputPortOne = nullptr;
+    PortItem* m_inputPortTwo = nullptr;
+
     PortItem* m_clkPort = nullptr;
     PortItem* m_readEnbPort = nullptr;
+    
     PortItem* m_outputPort = nullptr;
 };
 
-//TODO multiplexer
+class MuxItem : public QGraphicsObject {
+public:
+    explicit MuxItem(MType MuxType, QGraphicsItem* parent= nullptr);
+    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    QList<PortItem*> getInputPorts() const { return m_inputDataPorts; }
+    QList<PortItem*> getAddressPorts() const { return m_inputAddressPorts; }
+    PortItem* getOutputPort() const { return m_outputPort; }
+
+private:
+    void createPorts();
+
+    MType m_muxType;
+    QRectF m_rect;
+
+    QVector<PortItem*> m_inputDataPorts;
+    QVector<PortItem*> m_inputAddressPorts;
+    PortItem* m_outputPort = nullptr;
+};

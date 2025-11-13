@@ -25,7 +25,7 @@ public:
     void addGate(GType gateType, QPointF position);
     void addSource(QPointF position);
     void addRegister(RType RegType, QPointF position);
-
+    void addMux(MType MuxType, QPointF position);
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
@@ -45,7 +45,8 @@ protected:
 public slots:
     void setNextGateType(GType gatetype) {m_nextItem = gatetype;};
     void setNextSource() {m_nextItem = true;  };// Use bool to represent source
-    void setNextRegister(RType regType = RType::D) {m_nextItem = regType;};
+    void setNextRegister(RType regType) {m_nextItem = regType;};
+    void setNextMux(MType muxType) {m_nextItem = muxType;};
 
     void receiveResult(SimResult result);
 signals:
@@ -59,7 +60,7 @@ private:
     PortItem* m_currWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
-    std::variant<GType, RType, bool> m_nextItem = GType::AND;  // bool for source
+    std::variant<GType, RType, MType,bool> m_nextItem = GType::AND;  // bool for source
 
     QList<bool> m_nextSrcCycleValues = { false,true };
 };

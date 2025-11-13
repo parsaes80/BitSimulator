@@ -64,3 +64,19 @@ public slots:
 signals:
     void RegSelected(RType regType);
 };
+
+class MuxButton : public QPushButton
+{
+    Q_OBJECT
+
+public:
+    MuxButton(QWidget* parent = nullptr);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+public slots:
+    void onButtonClicked() { emit MuxSelected(MType::MUX);};
+signals:
+    void MuxSelected(MType muxType);
+};

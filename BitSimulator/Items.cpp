@@ -6,7 +6,8 @@
 extern bool sim_running;
 
 PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
-    : QGraphicsEllipseItem(-4, -4, 8, 8, parent)  
+    : QGraphicsEllipseItem(-4, -4, 8, 8, parent)
+    ,m_pinIndex(pinIndex)
     , m_portType(portType)
 {
     setFlag(QGraphicsItem::ItemIsSelectable, false);
@@ -438,7 +439,7 @@ void SourceItem::addPorts()
 
 //===================== RegisterItem ========================
 
-RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent) {
+RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent):m_regType(RegType) {
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
@@ -450,28 +451,32 @@ RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent) {
 
 void RegisterItem::createPorts()
 {
-    int numInputs = (m_regType == RType::D) ? 1 : 2;
+    int numInputs = (m_regType == RType::D || m_regType == RType::T) ? 1 : 2;
 
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
 
-    for (int i = 0; i < numInputs; i++) {
-        PortItem* inputPort = new PortItem(PortType::IN, i, this);
 
-        // Position input ports on the left side
-        if (numInputs == 1) {
-            inputPort->setPos(-halfWidth, -halfHeight /2); // Center for single input (NOT gate)
-        }
-        else {
-            inputPort->setPos(-halfWidth, -halfHeight / 2 + i * halfHeight); // Top and bottom for dual inputs
-        }
-
-        m_inputPort =inputPort;
+    // Position input ports on the left side
+    if (numInputs == 1) {
+        PortItem* inputPort1 = new PortItem(PortType::IN, 0, this);
+        inputPort1->setPos(-halfWidth, (halfHeight / 2) - halfHeight);
+        m_inputPortOne =inputPort1;
     }
-    m_clkPort = new PortItem(PortType::IN, numInputs, this);
+    else {
+        PortItem* inputPort1 = new PortItem(PortType::IN, 0, this);
+        inputPort1->setPos(-halfWidth, - halfHeight + halfHeight / 8);
+        m_inputPortOne =inputPort1;
+
+        PortItem* inputPort2 = new PortItem(PortType::IN, 1, this);
+        inputPort2->setPos(-halfWidth, -halfHeight / 2 );
+        m_inputPortTwo =inputPort2;
+    }
+
+    m_clkPort = new PortItem(PortType::IN, numInputs+1, this);
     m_clkPort->setPos(-halfWidth, 0); // Right side, center
 
-    m_readEnbPort = new PortItem(PortType::IN, numInputs+1, this);
+    m_readEnbPort = new PortItem(PortType::IN, numInputs+2, this);
     m_readEnbPort->setPos(-halfWidth, halfHeight/2); // Right side, center
     // Create output port
     m_outputPort = new PortItem(PortType::OUT, -1, this);
@@ -520,4 +525,71 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
     
     painter->fillPath(clockTriangle, painter->brush());
     painter->drawPath(clockTriangle);
+}
+
+//===================== MuxItem ========================
+
+MuxItem::MuxItem(MType MuxType, QGraphicsItem* parent): m_muxType(MuxType) {
+
+    setFlag(QGraphicsObject::ItemIsMovable, true);
+    setFlag(QGraphicsObject::ItemIsSelectable, true);
+    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+
+    m_rect = QRectF(-20, -30, 40, 60);
+
+    createPorts();
+}
+
+
+void MuxItem::createPorts()
+{
+    int numInputs = 2;
+
+    double halfWidth = m_rect.width() / 2;
+    double halfHeight = m_rect.height() / 2;
+    double diffHeight = m_rect.height() / (numInputs + 1);
+    double currHeight = -halfHeight;
+    double currWidth  = halfWidth;
+
+    //data ports
+    for (int i = 0; i < numInputs; i++) {
+        currHeight += diffHeight;
+        PortItem* inputPort = new PortItem(PortType::IN, i, this);
+        inputPort->setPos(-halfWidth, currHeight);
+        m_inputDataPorts.append(inputPort);
+    }
+
+    numInputs = static_cast<int>(ceil(log(numInputs)));
+    double diffWidth = m_rect.width() / (numInputs + 1);
+
+    //address ports
+    for (int i = 0; i < numInputs; i++) {
+        currWidth -= diffWidth;
+        PortItem* inputPort = new PortItem(PortType::IN, m_inputDataPorts.size() + i , this);
+        inputPort->setPos(currWidth, halfHeight);
+        m_inputAddressPorts.append(inputPort);
+    }
+
+    // Create output port
+    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    m_outputPort->setPos(halfWidth, 0); // Right side, center
+}
+
+void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget){
+        QPainterPath path;
+        double width = m_rect.width();
+        double height = m_rect.height();
+        double halfWidth = width / 2;
+        double halfHeight = height / 2;
+        double qurtHeight = halfHeight / 2;
+
+        path.moveTo(-halfWidth,-halfHeight);
+        path.lineTo(halfWidth,-qurtHeight);
+        path.lineTo(halfWidth,qurtHeight);
+        path.lineTo(-halfWidth,halfHeight);
+        path.lineTo(-halfWidth,-halfHeight);
+        painter->setBrush(QColor(255, 215, 150));
+        painter->setPen(QPen(Qt::black, 4));
+        painter->drawPath(path);
+        painter->fillPath(path, painter->brush());     
 }

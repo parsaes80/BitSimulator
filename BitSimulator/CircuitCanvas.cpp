@@ -39,6 +39,11 @@ void CircuitScene::addRegister(RType RegType, QPointF position) {
     Reg->setPos(position);
     addItem(Reg);
 }
+void CircuitScene::addMux(MType MuxType, QPointF position) {
+    MuxItem* Mux = new MuxItem(MuxType);
+    Mux->setPos(position);
+    addItem(Mux);
+}
 // Add to CircuitScene
 PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshold)
 {
@@ -182,6 +187,7 @@ void CircuitScene::startSim()
     QList<SourceItem*> sourceItems;
     QList<WireItem*> wireItems;
     QList<RegisterItem*> registerItems;
+    QList<MuxItem*> muxItems;
     for (QGraphicsItem* item : items()) {
         if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
             wireItems.push_back(wire);
@@ -194,6 +200,9 @@ void CircuitScene::startSim()
         }
         else if (RegisterItem* reg = dynamic_cast<RegisterItem*>(item)) {
             registerItems.push_back(reg);
+        }
+        else if (MuxItem* mux = dynamic_cast<MuxItem*>(item)) {
+            muxItems.push_back(mux);
         }
     }
     
@@ -268,7 +277,7 @@ void CircuitScene::startSim()
     }
 
     //Wire, Source Mapping
-    u32 outNet;
+    u32 outNet,inNet2, inNet, readEnbNet, clkNet;
     for (auto* sourceItem : sourceItems)
     {   
         outNet = 0;
@@ -281,20 +290,67 @@ void CircuitScene::startSim()
         sources.push_back(Source(outNet, cycleValues));
     }
 
-    u32 inNet, readEnbNet, clkNet;
+    //Wire, Mux Mapping
+    std::vector<Mux> muxes;
+    for (auto* muxItem : muxItems)
+    {
+        std::vector<u32> dataInputNets;
+        std::vector<u32> addressInputNets;
+        outNet = 0;
+
+        // Get data input nets (from getInputPorts which returns data ports)
+        for (auto port : muxItem->getInputPorts()) {
+            if (!port->getConnections().isEmpty()) {
+                WireItem* inputWire = port->getConnections()[0];
+                u32 netID = map.wire2net[inputWire];
+                dataInputNets.push_back(netID);
+            }
+            else {
+                dataInputNets.push_back(0);
+            }
+        }
+
+        // Get address input nets (from getAddressPorts which returns address/select ports)
+        for (auto port : muxItem->getAddressPorts()) {
+            if (!port->getConnections().isEmpty()) {
+                WireItem* inputWire = port->getConnections()[0];
+                u32 netID = map.wire2net[inputWire];
+                addressInputNets.push_back(netID);
+            }
+            else {
+                addressInputNets.push_back(0);
+            }
+        }
+
+        // Get output net
+        if (!muxItem->getOutputPort()->getConnections().isEmpty()) {
+            WireItem* outwire = muxItem->getOutputPort()->getConnections()[0];
+            outNet = map.wire2net[outwire];
+        }
+
+        muxes.push_back(Mux(dataInputNets, addressInputNets, outNet));
+    }
+
     for (auto* regItem : registerItems)
     {
-        outNet = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
+        outNet = 0;inNet2 = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
         clkNet = getNetId(regItem->getClkPort());
         readEnbNet = getNetId(regItem->getReadEnablePort());
-        inNet = getNetId(regItem->getInputPort());
         outNet = getNetId(regItem->getOutputPort());
-        // Update constructor call to include read enable
-        registers.push_back(Register(RType::D, inNet, outNet, clkNet,readEnbNet));
+        inNet = getNetId(regItem->getInputPort());
+        if(regItem->getInputPortTwo()){
+            inNet2 = getNetId(regItem->getInputPortTwo());
+            registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
+        }
+        else{
+            registers.push_back(Register(regItem->getRegType(), inNet, outNet, clkNet,readEnbNet));
+        }
     }
+    
     graph.gates = gates;
     graph.sources = sources;
     graph.registers = registers;
+    graph.muxes = muxes;
     graph.gateInputs = gateInputs;
     emit startSimSIG(graph);
 }
@@ -342,10 +398,12 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
                 else if constexpr (std::is_same_v<T, RType>) {
                     addRegister(arg, event->scenePos());
                 }
+                else if constexpr (std::is_same_v<T, MType>) {
+                    addMux(arg,event->scenePos());
+                }
                 else if constexpr (std::is_same_v<T, bool>) {
                     addSource(event->scenePos());
-                }
-                }, 
+                }}, 
                 m_nextItem);
 
             event->accept();

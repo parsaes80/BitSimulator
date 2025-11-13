@@ -264,3 +264,41 @@ void RegisterButton::paintEvent(QPaintEvent* event)
     painter.fillPath(clockTriangle, painter.brush());
     painter.drawPath(clockTriangle);
 }
+
+//===================== MuxButton ========================
+MuxButton::MuxButton(QWidget* parent) : QPushButton(parent) {
+    setText("");         // Remove text
+    setCheckable(false);  // Allow toggle state
+
+    // Connect the button click to our slot
+    connect(this, &QPushButton::clicked, this, &MuxButton::onButtonClicked);
+}
+
+void MuxButton::paintEvent(QPaintEvent* event)
+{
+    // Draw button background first
+    QPushButton::paintEvent(event);
+
+    // Draw register symbol on top
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Center the drawing area
+    QRect drawRect = rect().adjusted(8, 8, -8, -8);
+    painter.translate(drawRect.center());
+    QPainterPath path;
+    double width = drawRect.width();
+    double height = drawRect.height();
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    double qurtHeight = halfHeight / 2;
+    path.moveTo(-halfWidth,-halfHeight);
+    path.lineTo(halfWidth,-qurtHeight);
+    path.lineTo(halfWidth,qurtHeight);
+    path.lineTo(-halfWidth,halfHeight);
+    path.lineTo(-halfWidth,-halfHeight);
+    painter.setBrush(QColor(255, 215, 150));
+    painter.setPen(QPen(Qt::black, 4));
+    painter.drawPath(path);
+    painter.fillPath(path, painter.brush());
+}

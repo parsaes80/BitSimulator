@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <unordered_map>
 
@@ -22,9 +23,11 @@ enum class RType : u8 { SR, JK, D, T };
 enum class GType : u8 {NOT, AND, OR, XOR, NAND, NOR, XNOR };
 enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
 enum class PortType : u8 {IN,OUT};
+enum class MType : u8 {MUX,DEMUX};
 
 struct Register {
 	u32 inID;
+    u32 InID2; // either R or K input in SR and JK case
 	u32 outID;  
 	u32 clkID;
 	u32 enableID;
@@ -33,8 +36,9 @@ struct Register {
 	bool prevClkState = false;
 	Register() = default;
 	Register(RType t, u32 inId, u32 outId, u32 clkId, u32 enId)
-		: regType(t), inID(inId), outID(outId), clkID(clkId), enableID(enId) {
-	}
+        : regType(t), inID(inId), outID(outId), clkID(clkId), enableID(enId) {InID2=0;}
+    Register(RType t, u32 inId,u32 inId2, u32 outId, u32 clkId, u32 enId)
+        : regType(t), inID(inId), InID2(inId2), outID(outId), clkID(clkId), enableID(enId) {}
 };
 
 struct Gate {
@@ -55,11 +59,21 @@ struct Source {
 	Source(u32 outID,std::vector<bool> cycleValues) :outID(outID), cycleValues(cycleValues){}
 };
 
+struct Mux{
+    std::vector<u32> inData;
+    std::vector<u32> inAddress;
+    u32 outID;
+    Mux()= default;
+    Mux(std::vector<u32> InData, std::vector<u32> InAddress,u32 outData):
+        inData(InData), inAddress(InAddress), outID(outData){}
+};
+
 struct ExportGraph
 {
     std::vector<Gate> gates;
     std::vector<Source> sources;
 	std::vector<Register> registers;
+    std::vector<Mux> muxes;
 
     std::vector<u32> gateInputs;   
     //std::vector<u32> sourceCycleValues;
@@ -69,6 +83,8 @@ struct ExportGraph
         gates.clear();
         sources.clear();
         gateInputs.clear();
+        registers.clear();
+        muxes.clear();
     }
 };
 
