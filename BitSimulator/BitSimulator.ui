@@ -17,9 +17,9 @@
    <widget class="CircuitCanvas" name="camera">
     <property name="geometry">
      <rect>
-      <x>0</x>
+      <x>290</x>
       <y>59</y>
-      <width>1901</width>
+      <width>1611</width>
       <height>1141</height>
      </rect>
     </property>
@@ -190,6 +190,29 @@
      <string/>
     </property>
    </widget>
+   <widget class="TextEditor" name="hdlEditor">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>60</y>
+      <width>291</width>
+      <height>1141</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton">
+    <property name="geometry">
+     <rect>
+      <x>730</x>
+      <y>0</y>
+      <width>81</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Compile</string>
+    </property>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
@@ -243,6 +266,11 @@
    <class>MuxButton</class>
    <extends>QPushButton</extends>
    <header>Toolbar.h</header>
+  </customwidget>
+  <customwidget>
+   <class>TextEditor</class>
+   <extends>QPlainTextEdit</extends>
+   <header>hdlcompiler.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

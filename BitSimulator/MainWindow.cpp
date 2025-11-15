@@ -7,18 +7,25 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
     // Create thread and Simulator
     simThread = new QThread(this);
-    simObj = new Simulator;
-    simObj->moveToThread(simThread);
+    simObj = new Simulator(this);
+    compilerThread = new QThread(this);
+    compiler = new HDLCompiler(this);
 
+    simObj->moveToThread(simThread);
+    compiler->moveToThread(compilerThread);
     setup();
 
     simThread->start();
+    compilerThread->start();
 }
 
 MainWindow::~MainWindow()
 {
     simThread->quit();
     simThread->wait();
+    
+    compilerThread->quit();
+    compilerThread->wait();
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -64,6 +71,7 @@ void MainWindow::setup()
     connect(ui.regButton, &RegisterButton::RegSelected, ui.camera->getScene(), &CircuitScene::setNextRegister);
     connect(ui.muxButton, &MuxButton::MuxSelected, ui.camera->getScene(), &CircuitScene::setNextMux);
 
+    connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
     connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
@@ -147,3 +155,9 @@ void MainWindow::on_slider_valueChanged(int value) {
 
     emit sendTimerPeriod(result);
 }
+
+void MainWindow::on_pushButton_clicked()
+{
+    ui.hdlEditor->onSendCode();
+}
+

@@ -17,16 +17,17 @@ protected:
     void closeEvent(QCloseEvent* event) override;
 private slots:
     void on_startButton_clicked();
-
     void on_srcvalues_textChanged();
-
     void on_slider_valueChanged(int value);
+    void on_pushButton_clicked();
+
 signals:
     void sendTimerPeriod(int milliseconds);
 private:
     void setup();
     Ui::BitSimulatorClass ui;
-    QThread *simThread;
+    QThread *simThread, *compilerThread;
     Simulator *simObj;
+    HDLCompiler *compiler;
 };
 
