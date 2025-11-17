@@ -220,27 +220,6 @@ void GateItem::drawNotBubble(QPainter* painter)
     painter->setBrush(QColor(255, 215, 150)); // Restore original brush
 }
 
-QString GateItem::gateTypeToString() const
-{
-    switch (m_gateType) {
-    case GType::AND:
-        return "AND";
-    case GType::OR:
-        return "OR";
-    case GType::XOR:
-        return "XOR";
-    case GType::NAND:
-        return "NAND";
-    case GType::NOR:
-        return "NOR";
-    case GType::XNOR:
-        return "XNOR";
-    case GType::NOT:
-        return "NOT";
-    }
-    return "GATE";
-}
-
 //void GateItem::mousePressEvent(QGraphicsSceneMouseEvent* event){QGraphicsItem::mousePressEvent(event);}
 
 void GateItem::createPorts()

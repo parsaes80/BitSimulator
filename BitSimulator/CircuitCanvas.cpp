@@ -13,7 +13,7 @@ extern GlobalMap map;
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent), m_connectingWire(false), m_currWire(nullptr)
 {
-    setSceneRect(0, 0, 4000, 2000); // Large canvas
+    setSceneRect(0, 0, 10000, 10000); // Large canvas
 
     // Force full scene update on any change
     connect(this, &QGraphicsScene::changed, this, [this]() { update(); });

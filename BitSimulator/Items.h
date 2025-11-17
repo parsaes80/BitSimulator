@@ -169,7 +169,7 @@ private:
 
     PortItem* m_clkPort = nullptr;
     PortItem* m_readEnbPort = nullptr;
-    
+
     PortItem* m_outputPort = nullptr;
 };
 

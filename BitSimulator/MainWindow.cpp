@@ -7,9 +7,9 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
     // Create thread and Simulator
     simThread = new QThread(this);
-    simObj = new Simulator(this);
+    simObj = new Simulator(nullptr);
     compilerThread = new QThread(this);
-    compiler = new HDLCompiler(this);
+    compiler = new HDLCompiler(nullptr);
 
     simObj->moveToThread(simThread);
     compiler->moveToThread(compilerThread);
@@ -74,6 +74,7 @@ void MainWindow::setup()
     connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
     connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
+    connect(compilerThread, &QThread::finished, compiler, &QObject::deleteLater);
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
     connect(simObj, &Simulator::sendResult,ui.camera->getScene(),&CircuitScene::receiveResult);
     connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
