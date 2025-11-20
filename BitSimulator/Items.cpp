@@ -430,34 +430,23 @@ RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent):m_regType(RegTy
 
 void RegisterItem::createPorts()
 {
-    int numInputs = (m_regType == RType::D || m_regType == RType::T) ? 1 : 2;
-
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
 
+    PortItem* inputPort1 = new PortItem(PortType::IN, 0, this);
+    inputPort1->setPos(-halfWidth, - halfHeight + halfHeight / 8);
+    m_inputPortOne =inputPort1;
 
-    // Position input ports on the left side
-    if (numInputs == 1) {
-        PortItem* inputPort1 = new PortItem(PortType::IN, 0, this);
-        inputPort1->setPos(-halfWidth, (halfHeight / 2) - halfHeight);
-        m_inputPortOne =inputPort1;
-    }
-    else {
-        PortItem* inputPort1 = new PortItem(PortType::IN, 0, this);
-        inputPort1->setPos(-halfWidth, - halfHeight + halfHeight / 8);
-        m_inputPortOne =inputPort1;
+    PortItem* inputPort2 = new PortItem(PortType::IN, 1, this);
+    inputPort2->setPos(-halfWidth, -halfHeight / 2 );
+    m_inputPortTwo =inputPort2;
 
-        PortItem* inputPort2 = new PortItem(PortType::IN, 1, this);
-        inputPort2->setPos(-halfWidth, -halfHeight / 2 );
-        m_inputPortTwo =inputPort2;
-    }
-
-    m_clkPort = new PortItem(PortType::IN, numInputs+1, this);
+    m_clkPort = new PortItem(PortType::IN, 2, this);
     m_clkPort->setPos(-halfWidth, 0); // Right side, center
 
-    m_readEnbPort = new PortItem(PortType::IN, numInputs+2, this);
+    m_readEnbPort = new PortItem(PortType::IN, 3, this);
     m_readEnbPort->setPos(-halfWidth, halfHeight/2); // Right side, center
-    // Create output port
+
     m_outputPort = new PortItem(PortType::OUT, -1, this);
     m_outputPort->setPos(halfWidth, 0); // Right side, center
 }
@@ -555,20 +544,117 @@ void MuxItem::createPorts()
 }
 
 void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget){
-        QPainterPath path;
-        double width = m_rect.width();
-        double height = m_rect.height();
-        double halfWidth = width / 2;
-        double halfHeight = height / 2;
-        double qurtHeight = halfHeight / 2;
 
-        path.moveTo(-halfWidth,-halfHeight);
-        path.lineTo(halfWidth,-qurtHeight);
-        path.lineTo(halfWidth,qurtHeight);
-        path.lineTo(-halfWidth,halfHeight);
-        path.lineTo(-halfWidth,-halfHeight);
-        painter->setBrush(QColor(255, 215, 150));
-        painter->setPen(QPen(Qt::black, 4));
-        painter->drawPath(path);
-        painter->fillPath(path, painter->brush());     
+    if (option->state & QStyle::State_Selected) {
+        painter->setPen(QPen(Qt::blue, 3));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
+    }
+
+    QPainterPath path;
+    double width = m_rect.width();
+    double height = m_rect.height();
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    double qurtHeight = halfHeight / 2;
+
+    path.moveTo(-halfWidth,-halfHeight);
+    path.lineTo(halfWidth,-qurtHeight);
+    path.lineTo(halfWidth,qurtHeight);
+    path.lineTo(-halfWidth,halfHeight);
+    path.lineTo(-halfWidth,-halfHeight);
+    painter->setBrush(QColor(255, 215, 150));
+    painter->setPen(QPen(Qt::black, 4));
+    painter->drawPath(path);
+    painter->fillPath(path, painter->brush());
+}
+
+//===================== DisplayItem ========================
+
+DisplayItem::DisplayItem(int numInputs,int numOutputs, QGraphicsItem* parent):
+    m_numInputs(numInputs),m_numOutputs(numOutputs) {
+
+    setFlag(QGraphicsObject::ItemIsMovable, true);
+    setFlag(QGraphicsObject::ItemIsSelectable, true);
+    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+
+    m_rect = QRectF(-20, -30, 40, 60);
+
+    createPorts();
+}
+
+void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) {
+    // Draw selection highlight
+    if (option->state & QStyle::State_Selected) {
+        painter->setPen(QPen(Qt::blue, 3));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
+    }
+
+    // Draw outer border and background
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(40, 40, 40)); // Dark gray background
+    painter->drawRect(m_rect);
+
+    // Draw inner display area (LED-style display)
+    QRectF displayArea = m_rect.adjusted(5, 5, -5, -5);
+    painter->setPen(QPen(QColor(20, 20, 20), 1));
+    painter->setBrush(QColor(20, 60, 20)); // Dark green background (like old LED displays)
+    painter->drawRect(displayArea);
+
+    // Draw the value
+    painter->setPen(QPen(QColor(0, 255, 0), 2)); // Bright green LED color
+    QFont font = painter->font();
+    font.setBold(true);
+    font.setFamily("Courier");
+    font.setPointSize(16);
+    painter->setFont(font);
+    
+    QString displayText = QString::number(m_value);
+    painter->drawText(displayArea, Qt::AlignCenter, displayText);
+
+    // Add small "DISPLAY" label at the bottom
+    QFont labelFont = painter->font();
+    labelFont.setBold(false);
+    labelFont.setPointSize(6);
+    painter->setFont(labelFont);
+    painter->setPen(QPen(QColor(180, 180, 180), 1));
+    QRectF labelRect(m_rect.left(), m_rect.bottom() - 10, m_rect.width(), 8);
+    painter->drawText(labelRect, Qt::AlignCenter, "DISPLAY");
+}
+
+void DisplayItem::createPorts()
+{
+    double halfWidth = m_rect.width() / 2;
+    double halfHeight = m_rect.height() / 2;
+    double diffHeight = m_rect.height() / (m_numInputs + 1);
+    double currHeight = -halfHeight;
+
+
+    for (int i = 0; i < m_numInputs; i++) {
+        currHeight += diffHeight;
+        PortItem* inputPort = new PortItem(PortType::IN, i, this);
+        inputPort->setPos(-halfWidth, currHeight);
+        m_inputPorts.append(inputPort);
+    }
+    currHeight = -halfHeight;
+    diffHeight = m_rect.height() / (m_numOutputs + 1);
+    for (int i = 0; i < m_numOutputs; i++) {
+        currHeight += diffHeight;
+        PortItem* inputPort = new PortItem(PortType::OUT, m_numInputs+i, this);
+        inputPort->setPos(halfWidth, currHeight);
+        m_inputPorts.append(inputPort);
+    }
+}
+
+void DisplayItem::updateValue()
+{
+    int value = 0;
+    for(int i = m_numInputs - 1; i >= 0; i--) {
+        value = value << 1;  // Shift first
+        if (m_inputPorts[i]->getValue()) {
+            value |= 1;  // Set the least significant bit
+        }
+    }
+    m_value = value;  // Store the calculated value
 }

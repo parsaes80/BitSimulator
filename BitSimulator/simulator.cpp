@@ -4,8 +4,8 @@
 #include <QDebug>
 #include <QTimer>
 #include <QEventLoop>
-#include <queue>
-#include <chrono> 
+#include <chrono>
+
 extern bool sim_running;
 extern GlobalMap map;
 
@@ -180,7 +180,7 @@ void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
     }
 }
 
-void Simulator::processRegisters() {
+inline void Simulator::processRegisters() {
     // Update register processing in tick() - handles all flip-flop types
     for (auto& reg : m_registers) {
         bool currentClock = m_nets[reg.clkID];
@@ -208,12 +208,18 @@ void Simulator::processRegisters() {
                         case RType::D:
                             // D Flip-Flop: Q = D
                             reg.storedValue = input1;
+                            if(input2){
+                                reg.storedValue = false;
+                            }
                             break;
 
                         case RType::T:
                             // T Flip-Flop: Q = T ? !Q : Q (toggle if T=1, hold if T=0)
                             if (input1) {
                                 reg.storedValue = !reg.storedValue;
+                            }
+                            if(input2){
+                                reg.storedValue = false;
                             }
                             break;
 
@@ -318,50 +324,43 @@ void Simulator::tick() {
 
     for (auto& reg : m_registers) {
         bool oldValue = m_nets[reg.outID];
-        m_nets[reg.outID] = reg.storedValue;  // Output the stored value    
-        eventQueue.insert(reg.outID);
+        if(oldValue != reg.storedValue){
+            m_nets[reg.outID] = reg.storedValue;  // Output the stored value
+            eventQueue.insert(reg.outID);
+        }
     }
 
     for (auto& source : m_sources) {
-        // Check bounds BEFORE incrementing and accessing
         source.currentIndex++;
-        if (source.currentIndex >= source.cycleValues.size()) {
-            source.currentIndex = 0;  // Wrap around to beginning
-        }
+        if (source.currentIndex >= source.cycleValues.size()) {source.currentIndex = 0;}
         bool oldValue = m_nets[source.outID];
-        m_nets[source.outID] = source.cycleValues[source.currentIndex];
-        
-        eventQueue.insert(source.outID);
+        if(oldValue != source.cycleValues[source.currentIndex]){
+            m_nets[source.outID] = source.cycleValues[source.currentIndex];
+            eventQueue.insert(source.outID);
+        }
     }
 
     int propagationStep = 0;
-    int maxSteps = 1000; // Safety limit to prevent infinite loops
+    int maxSteps = 10000; // Safety limit
 
     while (!eventQueue.empty() && propagationStep < maxSteps) {
-         auto it = eventQueue.begin();
-         u32 changedNetId = *it;
-         eventQueue.erase(it);
+        auto it = eventQueue.begin();
+        u32 changedNetId = *it;
+        eventQueue.erase(it);
 
-        // Process gates
         processGates(changedNetId, eventQueue);
-        
-        // Process muxes
+
         processMuxes(changedNetId, eventQueue);
 
         propagationStep++;
     }
     
-    // Process registers
     processRegisters();
 
     SimResult result;
 
-    for (int i = 0; i < m_sources.size(); i++) {
-        result.sourcesCurrIdx.push_back(m_sources[i].currentIndex);
-    }
-    for (int i = 0; i < m_registers.size(); i++) {
-        result.registerValues.push_back(m_registers[i].storedValue);
-    }
+    for (int i = 0; i < m_sources.size(); i++) {result.sourcesCurrIdx.push_back(m_sources[i].currentIndex);}
+    for (int i = 0; i < m_registers.size(); i++) {result.registerValues.push_back(m_registers[i].storedValue);}
 
     result.netValues = m_nets;
     emit sendResult(result);

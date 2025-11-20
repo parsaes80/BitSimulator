@@ -16,11 +16,16 @@ struct Port {
     PortType type;
     QList<QString> connections;
 };
+
 struct Node{
     QString id;
-    std::variant<RType,GType,MType,bool> type;
     QPointF position;
-    QList<Port> ports;
+    QHash<QString,Port> ports;
+    u16 BitSlice;
+    bool HasReset = false;
+    bool SecNotGate = false;
+    u8 bitWidth;
+    std::variant<RType,GType,MType,IOType,bool> type; //bool for bit slice
 };
 
 class HDLCompiler : public QObject{
@@ -34,13 +39,13 @@ public slots:
 signals:
     void error(const QString& err);
     void success();
-    void graphReady(const QList<Node>& graph);
+    void graphReady(const QHash<QString,Node>& graph);
 
 private:
-    bool compile(const QString& verilog);
+    bool compile(const QString& hdlCode);
     bool parseDotFile(const QString& filePath);
     QString yosysPath = "./yosys_bundle/bin/yosys";
-    QList<Node> m_components; //maybe hashmap?
+    QHash<QString,Node> m_components;
 };
 
 class TextEditor : public QPlainTextEdit{

@@ -80,3 +80,19 @@ public slots:
 signals:
     void MuxSelected(MType muxType);
 };
+
+class DisplayButton : public QPushButton
+{
+    Q_OBJECT
+
+public:
+    DisplayButton(QWidget* parent = nullptr);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+public slots:
+    void onButtonClicked() { emit DisplaySelected(); };
+signals:
+    void DisplaySelected();
+};

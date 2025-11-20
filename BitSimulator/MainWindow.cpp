@@ -70,6 +70,7 @@ void MainWindow::setup()
     connect(ui.srcButton,&SourceButton::sourceSelected,ui.camera->getScene(),&CircuitScene::setNextSource);
     connect(ui.regButton, &RegisterButton::RegSelected, ui.camera->getScene(), &CircuitScene::setNextRegister);
     connect(ui.muxButton, &MuxButton::MuxSelected, ui.camera->getScene(), &CircuitScene::setNextMux);
+    connect(ui.displayButton, &DisplayButton::DisplaySelected, ui.camera->getScene(), &CircuitScene::setNextDisplay);
 
     connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
     connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim

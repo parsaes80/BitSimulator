@@ -44,6 +44,11 @@ void CircuitScene::addMux(MType MuxType, QPointF position) {
     Mux->setPos(position);
     addItem(Mux);
 }
+void CircuitScene::addDisplay(int numIn,int numOut, QPointF position) {
+    DisplayItem* Display = new DisplayItem(numIn,numOut);
+    Display->setPos(position);
+    addItem(Display);
+}
 // Add to CircuitScene
 PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshold)
 {
@@ -188,6 +193,8 @@ void CircuitScene::startSim()
     QList<WireItem*> wireItems;
     QList<RegisterItem*> registerItems;
     QList<MuxItem*> muxItems;
+    QList<DisplayItem*> displayItems;
+
     for (QGraphicsItem* item : items()) {
         if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
             wireItems.push_back(wire);
@@ -204,16 +211,11 @@ void CircuitScene::startSim()
         else if (MuxItem* mux = dynamic_cast<MuxItem*>(item)) {
             muxItems.push_back(mux);
         }
+        else if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
+            displayItems.push_back(display);
+        }
     }
     
-    //QSet<QPair< QGraphicsObject*, QGraphicsObject*>> connections;
-
-    //for (const auto* wire : wireItems) {
-    //    QGraphicsObject* startItem = wire->getStartPort()->getParentGate();
-    //    QGraphicsObject* endItem = wire->getEndPort()->getParentGate();
-    //    connections.insert(QPair(startItem, endItem));
-    //}
-
     for (int i = 0; i < gateItems.size(); i++) { map.gate2Idx[gateItems[i]] = i; map.Idx2gate[i] = gateItems[i]; }
     for (int i = 0; i < sourceItems.size(); i++) { map.source2Idx[sourceItems[i]] = i; map.Idx2source[i] = sourceItems[i];}
     for (int i = 0; i < registerItems.size(); i++) { map.reg2Idx[registerItems[i]] = i; map.Idx2reg[i] = registerItems[i];}
@@ -241,10 +243,9 @@ void CircuitScene::startSim()
     std::vector<Source> sources;
     std::vector<Register> registers;
     std::vector<u32> gateInputs;
-    //std::vector<u32> sourceOutputs;
 
     auto getNetId = [&](PortItem* port) -> u32 {
-        return (port && !port->getConnections().isEmpty()) ?
+        return (!port->getConnections().isEmpty()) ?
             map.wire2net[port->getConnections()[0]] : 0;
     };
 
@@ -331,20 +332,15 @@ void CircuitScene::startSim()
         muxes.push_back(Mux(dataInputNets, addressInputNets, outNet));
     }
 
-    for (auto* regItem : registerItems)
+    for (const auto* regItem : registerItems)
     {
         outNet = 0;inNet2 = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
         clkNet = getNetId(regItem->getClkPort());
         readEnbNet = getNetId(regItem->getReadEnablePort());
         outNet = getNetId(regItem->getOutputPort());
-        inNet = getNetId(regItem->getInputPort());
-        if(regItem->getInputPortTwo()){
-            inNet2 = getNetId(regItem->getInputPortTwo());
-            registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
-        }
-        else{
-            registers.push_back(Register(regItem->getRegType(), inNet, outNet, clkNet,readEnbNet));
-        }
+        inNet = getNetId(regItem->getInputPort()); 
+        getNetId(regItem->getInputPortTwo());
+        registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
     }
     
     graph.gates = gates;
@@ -381,6 +377,12 @@ void CircuitScene::receiveResult(SimResult result)
         auto reg = map.Idx2reg[i];
         reg->setValue(result.registerValues[i]);
     }
+
+    for (QGraphicsItem* item : items()) {
+        if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
+            display->updateValue();
+        }
+    }
 }
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
@@ -402,7 +404,10 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
                     addMux(arg,event->scenePos());
                 }
                 else if constexpr (std::is_same_v<T, bool>) {
-                    addSource(event->scenePos());
+                    if (arg)
+                        addSource(event->scenePos());
+                    else
+                        addDisplay(3,3,event->scenePos());
                 }}, 
                 m_nextItem);
 

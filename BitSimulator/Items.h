@@ -101,7 +101,7 @@ private:
     QList<bool> m_cycleValues;
 
     QList<PortItem*> m_outPorts;
-    int portNums = 1;
+    int m_numPorts = 1;
 
     QRectF m_rect;
 };
@@ -164,8 +164,8 @@ private:
 
     Direction m_direction = Direction::RIGHT;
 
-    PortItem* m_inputPortOne = nullptr;
-    PortItem* m_inputPortTwo = nullptr;
+    PortItem* m_inputPortOne = nullptr; // S,J,D,T
+    PortItem* m_inputPortTwo = nullptr; // R,K,R,R
 
     PortItem* m_clkPort = nullptr;
     PortItem* m_readEnbPort = nullptr;
@@ -189,7 +189,27 @@ private:
     MType m_muxType;
     QRectF m_rect;
 
-    QVector<PortItem*> m_inputDataPorts;
-    QVector<PortItem*> m_inputAddressPorts;
+    QList<PortItem*> m_inputDataPorts;
+    QList<PortItem*> m_inputAddressPorts;
     PortItem* m_outputPort = nullptr;
+};
+
+class DisplayItem: public QGraphicsObject{
+public:
+    explicit DisplayItem(int numInputs,int numOutputs, QGraphicsItem* parent= nullptr);
+    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    QList<PortItem*> getInputPorts() const { return m_inputPorts; }
+    QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
+    void updateValue();
+private:
+    void createPorts();
+
+    QRectF m_rect;
+    int m_value = 0;
+    int m_numInputs;
+    int m_numOutputs;
+    QList<PortItem*> m_inputPorts;
+    QList<PortItem*> m_outputPorts;
 };

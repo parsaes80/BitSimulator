@@ -177,68 +177,105 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
         if (currLine.contains("\t")){
             QStringList res = currLine.split("\t");
             QString& id = res[0];
-            qDebug() << id;
             if(!id.contains("->")){ //skip edges
+                qDebug() << '\n'<<id;
                 Node node;
                 node.id = id;
+                int labelIndex;
                 for(int j=i+1;!lines[j].contains("\t") && j< lines.size();j++){ // lines of a signle node
-                    if(lines[j].startsWith("label=")){
-                        if (lines[j].contains("_NOT_")){
+                    QString currNodeLine = lines[j];
+                    if(currNodeLine.startsWith("shape=point")){ // junction
+                        node.type = false;
+                    }
+                    if(currNodeLine.startsWith("style=rounded")){// slice
+                        node.type = true;
+                        QRegularExpression re(R"((\d):(\d)\s*-\s*(\d):(\d))");
+                        QRegularExpressionMatch match = re.match(lines[labelIndex]);
+
+                        if (match.hasMatch()) {
+                            int a = match.captured(1).toInt();  // 0
+                            int b = match.captured(2).toInt();  // 0
+                            int c = match.captured(3).toInt();  // 1
+                            int d = match.captured(4).toInt();  // 1
+
+                            node.BitSlice= (a*1000) + (b*100)+ (c*10) + d;
+                        }
+                        qDebug() << "bit slice: " << node.BitSlice;
+                    }
+                    if(currNodeLine.startsWith("shape=octagon")){ // IO
+                        node.type = IOType::IN;
+                        node.id = lines[labelIndex].split("=")[1].removeLast();
+                    }
+                    if(currNodeLine.startsWith("label=")){
+                        labelIndex = j;
+                        if (currNodeLine.contains("_NOT_")){
                             node.type = GType::NOT;
                             qDebug() << "Found NOT gate";
                         }
-                        else if (lines[j].contains("_AND_")){
+                        else if (currNodeLine.contains("_AND_")){
                             node.type = GType::AND;
                             qDebug() << "Found AND gate";
                         }
-                        else if (lines[j].contains("_NAND_")){
+                        else if (currNodeLine.contains("_NAND_")){
                             node.type = GType::NAND;
                             qDebug() << "Found NAND gate";
                         }
-                        else if (lines[j].contains("_OR_")){
+                        else if (currNodeLine.contains("_OR_")){
                             node.type = GType::OR;
                             qDebug() << "Found OR gate";
                         }
-                        else if (lines[j].contains("_NOR_")){
+                        else if (currNodeLine.contains("_NOR_")){
                             node.type = GType::NOR;
                             qDebug() << "Found NOR gate";
                         }
-                        else if (lines[j].contains("_XOR_")){
+                        else if (currNodeLine.contains("_XOR_")){
                             node.type = GType::XOR;
                             qDebug() << "Found XOR gate";
                         }
-                        else if (lines[j].contains("_XNOR_")){
+                        else if (currNodeLine.contains("_XNOR_")){
                             node.type = GType::XNOR;
                             qDebug() << "Found XNOR gate";
                         }
-                        else if (lines[j].contains("_MUX_")){
+                        else if (currNodeLine.contains("_MUX_")){
                             node.type = MType::MUX;
                             qDebug() << "Found MUX gate";
                         }
-                        else if (lines[j].contains("_ORNOT_")){ // CHANGE LATERR
+                        else if (currNodeLine.contains("_ORNOT_")){ // CHANGE LATERR
                             node.type = GType::NOR;
+                            node.SecNotGate = true;
                             qDebug() << "Found ORNOT gate";
                         }
-                        else if (lines[j].contains("_ANDNOT_")){ // CHANGE LATERR
+                        else if (currNodeLine.contains("_ANDNOT_")){ // CHANGE LATERR
                             node.type = GType::NAND;
+                            node.SecNotGate = true;
                             qDebug() << "Found ANDNOT gate";
                         }
-                        else if (lines[j].contains("_SDFF_")){ // CHANGE LATERR
+                        else if (currNodeLine.contains("_SDFF_")){ // CHANGE LATERR
                             node.type = RType::D;
+                            node.HasReset = true;
                             qDebug() << "Found SDFF (Synchronous D Flip-Flop)"; //has sync reset 
                         }
-                        else if (lines[j].contains("_DFF_P_")){ // CHANGE LATERR
+                        else if (currNodeLine.contains("_DFF_P_")){ // CHANGE LATERR
                             node.type = RType::D;
                             qDebug() << "Found DFF_P (D Flip-Flop Positive edge)"; //dosnt have sync reset 
                         }
+
+                        QRegularExpression re(R"(<([^>]+)>\s*([A-Za-z0-9_]+))");
+                        QRegularExpressionMatchIterator it = re.globalMatch(currNodeLine);
+
+                        while (it.hasNext() && !id.startsWith('x')) {
+                            Port port;
+                            auto m = it.next();
+                            port.id = m.captured(1);
+                            port.name = m.captured(2);
+                            port.type = (port.name == "Q") || (port.name =="Y") ?  PortType::OUT : PortType::IN;
+                            node.ports[port.id] = port;
+                            QString Type = port.type == PortType::OUT ?  "out" : "in";
+                            qDebug() << port.id  <<" "<< port.name << " "<< Type;
+                        }
                     }
-                    else if(lines[j].startsWith("pos=")){
-                        QString posLine = lines[j];
-                        
-                        // Remove 'pos="' and trailing '",;'
-                        posLine = posLine.trimmed();
-                        if (posLine.endsWith(",")) posLine.chop(1);
-                        if (posLine.endsWith(";")) posLine.chop(1);
+                    else if(currNodeLine.startsWith("pos=")){
+                        QString posLine = currNodeLine;
                         
                         // Extract the value between quotes
                         int firstQuote = posLine.indexOf('"');
@@ -260,15 +297,49 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                         }
                     }    
                 }
-                m_components.append(node);
+                m_components[id]=(node);
             }
         }
     }
+    //third pass exctract edges
+    for (int i = 0; i < lines.size() - 1; ++i) {
+        QString currLine = lines[i];
+        if (currLine.contains("\t") && currLine.contains("->")){
+            QString firstHalf = currLine.split('\t')[0];
+            QRegularExpression re(R"((\w+):(\w+)(?::(\w+))?\s*->\s*(\w+):(\w+)(?::(\w+))?)");
+            QRegularExpressionMatch m = re.match(firstHalf);
+
+            if (m.hasMatch()) {
+                QString startID = m.captured(1);
+                QString startPart2 = m.captured(2);    // Could be port OR direction
+                QString startPart3 = m.captured(3);    // Could be direction OR empty
+                QString endID = m.captured(4);
+                QString endPart2 = m.captured(5);      // Could be port OR direction
+                QString endPart3 = m.captured(6);      // Could be direction OR empty
+
+                QString startPort = startPart3.isEmpty() ? startPart2 : startPart2;
+                QString startDir = startPart3.isEmpty() ? "" : startPart3;
+
+                QString endPort = endPart3.isEmpty() ? endPart2 : endPart2;
+                QString endDir = endPart3.isEmpty() ? "" : endPart3;
+
+                qDebug() << startID << ":" << startPort
+                         << (startDir.isEmpty() ? "" : ":" + startDir)
+                         << " -> " << endID << ":" << endPort
+                         << (endDir.isEmpty() ? "" : ":" + endDir);
+
+                if (std::holds_alternative<IOType>(m_components[endID].type)) {
+                    m_components[endID].type = IOType::OUT;  // Receives edges = OUTPUT port
+                }
+            }
+        }
+    }
+    // shape=diamond needs to be handled
     return true;
 }
 
-void HDLCompiler::receiveCode(const QString& code) {
-    compile(code);
+void HDLCompiler::receiveCode(const QString& hdlCode) {
+    compile(hdlCode);
 }
 
 //===================== TextEditor ========================

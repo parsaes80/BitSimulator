@@ -302,3 +302,52 @@ void MuxButton::paintEvent(QPaintEvent* event)
     painter.drawPath(path);
     painter.fillPath(path, painter.brush());
 }
+//===================== DisplayButton ========================
+
+DisplayButton::DisplayButton(QWidget* parent) : QPushButton(parent) {
+    setText("");         // Remove text
+    setCheckable(false);  // Allow toggle state
+
+    // Connect the button click to our slot
+    connect(this, &QPushButton::clicked, this, &DisplayButton::onButtonClicked);
+}
+
+void DisplayButton::paintEvent(QPaintEvent* event)
+{
+    // Draw button background first
+    QPushButton::paintEvent(event);
+
+    // Draw display symbol on top
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Center the drawing area
+    QRect drawRect = rect().adjusted(8, 8, -8, -8);
+    painter.translate(drawRect.center());
+
+    // Scale to fit button
+    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 60.0);
+    painter.scale(scale, scale);
+
+    // Draw outer border (dark gray casing)
+    QRectF outerRect(-20, -30, 40, 60);
+    painter.setPen(QPen(Qt::black, 2));
+    painter.setBrush(QColor(40, 40, 40));
+    painter.drawRect(outerRect);
+
+    // Draw inner display area (LED-style display)
+    QRectF displayArea = outerRect.adjusted(5, 5, -5, -5);
+    painter.setPen(QPen(QColor(20, 20, 20), 1));
+    painter.setBrush(QColor(20, 60, 20)); // Dark green background
+    painter.drawRect(displayArea);
+
+    // Draw a sample number (8) in LED green color
+    painter.setPen(QPen(QColor(0, 255, 0), 2));
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setFamily("Courier");
+    font.setPointSize(16);
+    painter.setFont(font);
+    painter.drawText(displayArea, Qt::AlignCenter, "8");
+
+}

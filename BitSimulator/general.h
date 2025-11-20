@@ -24,6 +24,7 @@ enum class GType : u8 {NOT, AND, OR, XOR, NAND, NOR, XNOR };
 enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
 enum class PortType : u8 {IN,OUT};
 enum class MType : u8 {MUX,DEMUX};
+enum class IOType : u8 {IN,OUT};
 
 struct Register {
 	u32 inID;
