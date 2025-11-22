@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1908</width>
-    <height>1278</height>
+    <width>1932</width>
+    <height>1275</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,9 +17,9 @@
    <widget class="CircuitCanvas" name="camera">
     <property name="geometry">
      <rect>
-      <x>290</x>
-      <y>59</y>
-      <width>1611</width>
+      <x>300</x>
+      <y>60</y>
+      <width>1431</width>
       <height>1141</height>
      </rect>
     </property>
@@ -118,7 +118,7 @@
    <widget class="QPushButton" name="startButton">
     <property name="geometry">
      <rect>
-      <x>1300</x>
+      <x>1410</x>
       <y>0</y>
       <width>71</width>
       <height>51</height>
@@ -131,7 +131,7 @@
    <widget class="SourceButton" name="srcButton">
     <property name="geometry">
      <rect>
-      <x>780</x>
+      <x>900</x>
       <y>0</y>
       <width>71</width>
       <height>51</height>
@@ -144,7 +144,7 @@
    <widget class="QTextEdit" name="srcvalues">
     <property name="geometry">
      <rect>
-      <x>860</x>
+      <x>980</x>
       <y>0</y>
       <width>111</width>
       <height>51</height>
@@ -167,7 +167,7 @@
    <widget class="QSlider" name="slider">
     <property name="geometry">
      <rect>
-      <x>1090</x>
+      <x>1190</x>
       <y>20</y>
       <width>201</width>
       <height>18</height>
@@ -203,7 +203,7 @@
    <widget class="QPushButton" name="pushButton">
     <property name="geometry">
      <rect>
-      <x>990</x>
+      <x>1100</x>
       <y>0</y>
       <width>81</width>
       <height>51</height>
@@ -226,13 +226,179 @@
      <string/>
     </property>
    </widget>
+   <widget class="QStackedWidget" name="Overlay">
+    <property name="geometry">
+     <rect>
+      <x>310</x>
+      <y>790</y>
+      <width>181</width>
+      <height>141</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(0, 64, 93);</string>
+    </property>
+    <property name="currentIndex">
+     <number>3</number>
+    </property>
+    <widget class="QWidget" name="gateMuxPage">
+     <widget class="QSlider" name="numGateMuxInputs">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>70</y>
+        <width>160</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="regPage">
+     <widget class="QComboBox" name="regType">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>10</y>
+        <width>51</width>
+        <height>25</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>sr</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>jk</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QComboBox" name="regHoldType">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>50</y>
+        <width>71</width>
+        <height>25</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>flip flop</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>latch</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QComboBox" name="regEnableType">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>90</y>
+        <width>91</width>
+        <height>25</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>No Enable</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Enable</string>
+       </property>
+      </item>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="displayPage">
+     <widget class="QSlider" name="numDisplayInputs">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>40</y>
+        <width>160</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+     <widget class="QSlider" name="numDisplayOutputs">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>80</y>
+        <width>160</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="srcPage">
+     <widget class="QComboBox" name="srcType">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>10</y>
+        <width>81</width>
+        <height>25</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>waveform</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>value</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QSlider" name="NumSrcOutputs">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>50</y>
+        <width>160</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+     <widget class="QTextEdit" name="srcValues">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>80</y>
+        <width>121</width>
+        <height>41</height>
+       </rect>
+      </property>
+     </widget>
+    </widget>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1908</width>
+     <width>1932</width>
      <height>22</height>
     </rect>
    </property>

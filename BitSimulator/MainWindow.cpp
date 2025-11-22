@@ -49,9 +49,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::setup()
 {
     ui.setupUi(this);
+    //setup slider
     ui.slider->setRange(1, 10000);  // 1ms to 1000ms
     ui.slider->setValue(3350);
     on_slider_valueChanged(3350);
+
     // setup button connections to the scene
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
@@ -82,11 +84,6 @@ void MainWindow::setup()
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
-}
-
-void MainWindow::on_startButton_clicked()
-{
-    ui.camera->getScene()->startSim();
 }
 
 void MainWindow::on_srcvalues_textChanged() {
@@ -120,13 +117,13 @@ void MainWindow::on_srcvalues_textChanged() {
     if (isValid && !values.isEmpty()) {
         // Valid input
         ui.srcvalues->setStyleSheet("");
-        scene->setSrcCycleValues(values);
+        scene->setSrcValues(values);
     }
     else {
         // Invalid input
         values.clear();
         values.append(0);
-        scene->setSrcCycleValues(values);
+        scene->setSrcValues(values);
         ui.srcvalues->setStyleSheet("QTextEdit { background-color: #ffcccc; }");
         // ui.statusLabel->setText("Invalid input - use only 0s and 1s");
     }
@@ -157,9 +154,13 @@ void MainWindow::on_slider_valueChanged(int value) {
 
     emit sendTimerPeriod(result);
 }
-
+void MainWindow::on_startButton_clicked()
+{
+    ui.camera->getScene()->startSim();
+}
 void MainWindow::on_pushButton_clicked()
 {
     ui.hdlEditor->onSendCode();
 }
+
 

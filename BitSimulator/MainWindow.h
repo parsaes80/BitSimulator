@@ -5,8 +5,6 @@
 #include "ui_BitSimulator.h"
 #include "simulator.h"
 
-
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -25,6 +23,7 @@ signals:
     void sendTimerPeriod(int milliseconds);
 private:
     void setup();
+
     Ui::BitSimulatorClass ui;
     QThread *simThread, *compilerThread;
     Simulator *simObj;

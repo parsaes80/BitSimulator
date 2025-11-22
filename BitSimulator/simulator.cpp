@@ -42,7 +42,7 @@ void Simulator::processGates(u32 changedNetId, std::set<u32>& eventQueue) {
             }
         }
 
-        if (!gateUsesNet) {
+        if (!gateUsesNet || gate.outID == 0) {
             continue; // This gate doesn't use the changed net
         }
 
@@ -146,7 +146,7 @@ void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
             }
         }
 
-        if (!muxUsesNet) {
+        if (!muxUsesNet || mux.outID == 0) {
             continue; // This MUX doesn't use the changed net
         }
 
@@ -183,6 +183,7 @@ void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
 inline void Simulator::processRegisters() {
     // Update register processing in tick() - handles all flip-flop types
     for (auto& reg : m_registers) {
+
         bool currentClock = m_nets[reg.clkID];
         bool currentEnable = m_nets[reg.enableID];
 
@@ -323,6 +324,7 @@ void Simulator::tick() {
     std::set<u32> eventQueue;
 
     for (auto& reg : m_registers) {
+        if(!reg.outID){continue;}
         bool oldValue = m_nets[reg.outID];
         if(oldValue != reg.storedValue){
             m_nets[reg.outID] = reg.storedValue;  // Output the stored value
@@ -334,7 +336,7 @@ void Simulator::tick() {
         source.currentIndex++;
         if (source.currentIndex >= source.cycleValues.size()) {source.currentIndex = 0;}
         bool oldValue = m_nets[source.outID];
-        if(oldValue != source.cycleValues[source.currentIndex]){
+        if(source.outID!=0 && oldValue != source.cycleValues[source.currentIndex]){
             m_nets[source.outID] = source.cycleValues[source.currentIndex];
             eventQueue.insert(source.outID);
         }
@@ -401,8 +403,8 @@ void Simulator::SimController() {
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
             
             // Print execution time
-            //qDebug() << "Tick execution time:" << duration.count() << "microseconds (" 
-                     //<< duration.count() / 1000.0 << "ms)";
+            qDebug() << "Tick execution time:" << duration.count() << "microseconds ("
+                     << duration.count() / 1000.0 << "ms)";
         }
         });
     m_timer->start(100);  

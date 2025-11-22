@@ -24,13 +24,13 @@ CircuitScene::CircuitScene(QObject* parent)
 
 void CircuitScene::addGate(GType gateType, QPointF position)
 {
-    GateItem* gate = new GateItem(gateType);
+    GateItem* gate = new GateItem(gateType,m_numInputs);
     gate->setPos(position);
     addItem(gate);
 }
 void CircuitScene::addSource(QPointF position)
 {
-    SourceItem* source = new SourceItem(m_nextSrcCycleValues);
+    SourceItem* source = new SourceItem(getSrcValuesBool());
     source->setPos(position);
     addItem(source);
 }
@@ -153,8 +153,8 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
             endPort->addConnection(m_currWire);
 
             // Connect position change signals to wire update
-            QGraphicsObject* startGate = m_currWireStartPort->getParentGate();
-            QGraphicsObject* endGate = endPort->getParentGate();
+            QGraphicsObject* startGate = m_currWireStartPort->getParent();
+            QGraphicsObject* endGate = endPort->getParent();
 
             if (startGate) {
                 connect(startGate,&QGraphicsObject::xChanged,m_currWire,&WireItem::updateWirePosition);
@@ -186,6 +186,7 @@ void CircuitScene::startSim()
 {
     ExportGraph graph;
     graph.clear();
+    map.clear();
 
     // Collections to track items and assign IDs
     QList<GateItem*> gateItems;
@@ -222,23 +223,65 @@ void CircuitScene::startSim()
 
     // wire,net mapping 
     QHash<PortItem*, u32> outputPortToNet;
-    u32 netCounter = 1; 
+    u32 netCounter = 1;
+
     for (WireItem* wire : wireItems) {
         PortItem* startPort = wire->getStartPort();
+        // Skip display output wires in first pass
+        if(dynamic_cast<DisplayItem*>(startPort->getParent())) {continue;}
 
         // If this output port doesn't have a net ID yet, assign one
-        if (!outputPortToNet.contains(startPort)) {
-            outputPortToNet[startPort] = netCounter++;
-        }
+        if (!outputPortToNet.contains(startPort)) {outputPortToNet[startPort] = netCounter++;}
 
         // All wires from the same output port get the same net ID
         u32 netId = outputPortToNet[startPort];
         map.wire2net[wire] = netId;
 
-        // Store first wire for each net (for UI mapping)
+        // Store wire for each net (for UI mapping)
         map.net2wire[netId].push_back(wire);
     }
+    // SECOND PASS: Process display output wires (inputs are already mapped)
+    for (WireItem* wire : wireItems) {
+        PortItem* startPort = wire->getStartPort();
 
+        // Only handle display output ports
+        auto* display = dynamic_cast<DisplayItem*>(startPort->getParent());
+        if(!display) {
+            continue; // Already processed in first pass
+        }
+
+        // Get the index of this output port
+        int outputIndex = display->getOutputPorts().indexOf(startPort);
+
+        if(outputIndex != -1 && outputIndex < display->getInputPorts().size()) {
+            // Get the corresponding input port
+            PortItem* matchedInputPort = display->getInputPorts()[outputIndex];
+
+            // Check if the matched input port has a connection
+            if(!matchedInputPort->getConnections().isEmpty()) {
+                WireItem* matchedInputWire = matchedInputPort->getConnections()[0];
+
+                // Now the input wire SHOULD have a net ID from first pass
+                if(map.wire2net.contains(matchedInputWire)) {
+                    u32 netId = map.wire2net[matchedInputWire];
+                    map.wire2net[wire] = netId;
+                    map.net2wire[netId].push_back(wire);
+                } else {
+                    // Fallback: input not connected, assign new net
+                    if (!outputPortToNet.contains(startPort)) {
+                        outputPortToNet[startPort] = netCounter++;
+                    }
+                    u32 netId = outputPortToNet[startPort];
+                    map.wire2net[wire] = netId;
+                    map.net2wire[netId].push_back(wire);
+                }
+            }
+            else{
+                map.wire2net[wire] = 0;
+                map.net2wire[0].push_back(wire);
+            }
+        }
+    }
     std::vector<Gate> gates;
     std::vector<Source> sources;
     std::vector<Register> registers;

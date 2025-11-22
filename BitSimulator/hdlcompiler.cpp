@@ -184,23 +184,28 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                 int labelIndex;
                 for(int j=i+1;!lines[j].contains("\t") && j< lines.size();j++){ // lines of a signle node
                     QString currNodeLine = lines[j];
+                    if(currNodeLine.startsWith("shape=diamond")){ // signal or variable
+                        node.type =  IOType::OUT;
+                        node.id = lines[labelIndex].split("=")[1].removeLast();
+                    }
                     if(currNodeLine.startsWith("shape=point")){ // junction
                         node.type = false;
                     }
                     if(currNodeLine.startsWith("style=rounded")){// slice
-                        node.type = true;
+
                         QRegularExpression re(R"((\d):(\d)\s*-\s*(\d):(\d))");
                         QRegularExpressionMatch match = re.match(lines[labelIndex]);
-
+                        int res = -1;
                         if (match.hasMatch()) {
                             int a = match.captured(1).toInt();  // 0
                             int b = match.captured(2).toInt();  // 0
                             int c = match.captured(3).toInt();  // 1
                             int d = match.captured(4).toInt();  // 1
 
-                            node.BitSlice= (a*1000) + (b*100)+ (c*10) + d;
+                            res= (a*1000) + (b*100)+ (c*10) + d;
                         }
-                        qDebug() << "bit slice: " << node.BitSlice;
+                        node.type = res;
+                        qDebug() << res;
                     }
                     if(currNodeLine.startsWith("shape=octagon")){ // IO
                         node.type = IOType::IN;
@@ -334,7 +339,7 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
             }
         }
     }
-    // shape=diamond needs to be handled
+
     return true;
 }
 

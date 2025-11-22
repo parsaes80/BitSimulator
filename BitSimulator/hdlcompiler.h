@@ -21,11 +21,10 @@ struct Node{
     QString id;
     QPointF position;
     QHash<QString,Port> ports;
-    u16 BitSlice;
     bool HasReset = false;
     bool SecNotGate = false;
     u8 bitWidth;
-    std::variant<RType,GType,MType,IOType,bool> type; //bool for bit slice
+    std::variant<RType,GType,MType,IOType,int,bool> type; //int for bit slice, true for #, false for junction
 };
 
 class HDLCompiler : public QObject{

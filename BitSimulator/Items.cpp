@@ -71,7 +71,8 @@ void PortItem::removeConnections(WireItem* wire)
 
 //===================== GateItem   ========================
 
-GateItem::GateItem(GType gateType, QGraphicsItem* parent):QGraphicsObject(parent),m_gateType(gateType)
+GateItem::GateItem(GType gateType, int numInputs, QGraphicsItem* parent):
+    QGraphicsObject(parent),m_gateType(gateType),m_numInputs(numInputs)
 {
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
@@ -224,25 +225,19 @@ void GateItem::drawNotBubble(QPainter* painter)
 
 void GateItem::createPorts()
 {
-    int numInputs = (m_gateType == GType::NOT) ? 1 : 2;
+    int numInputs = (m_gateType == GType::NOT) ? 1 : m_numInputs;
 
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
+    double diffHeight = m_rect.height() / (numInputs + 1);
+    double currHeight = -halfHeight;
 
     for (int i = 0; i < numInputs; i++) {
+        currHeight += diffHeight;
         PortItem* inputPort = new PortItem(PortType::IN, i, this);
-
-        // Position input ports on the left side
-        if (numInputs == 1) {
-            inputPort->setPos(-halfWidth, 0); // Center for single input (NOT gate)
-        }
-        else {
-            inputPort->setPos(-halfWidth, -halfHeight / 2 + i * halfHeight); // Top and bottom for dual inputs
-        }
-
+        inputPort->setPos(-halfWidth, currHeight);
         m_inputPorts.append(inputPort);
     }
-
     // Create output port
     m_outputPort = new PortItem(PortType::OUT, -1, this);
     m_outputPort->setPos(halfWidth, 0); // Right side, center
@@ -371,7 +366,8 @@ SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent), m_rect(-
     m_cycleValues.append(false);
     addPorts();
 }
-SourceItem::SourceItem(QList<bool>& cycleValues,QGraphicsItem* parent) : QGraphicsObject(parent), m_rect(-15, -15, 30, 30), m_cycleValues(cycleValues)
+SourceItem::SourceItem(const QList<bool>& cycleValues, QGraphicsItem* parent) :
+    QGraphicsObject(parent), m_rect(-15, -15, 30, 30), m_cycleValues(cycleValues)
 {
     // Enable item flags for interaction
     setFlag(QGraphicsObject::ItemIsMovable, true);
@@ -641,9 +637,9 @@ void DisplayItem::createPorts()
     diffHeight = m_rect.height() / (m_numOutputs + 1);
     for (int i = 0; i < m_numOutputs; i++) {
         currHeight += diffHeight;
-        PortItem* inputPort = new PortItem(PortType::OUT, m_numInputs+i, this);
-        inputPort->setPos(halfWidth, currHeight);
-        m_inputPorts.append(inputPort);
+        PortItem* outputPort = new PortItem(PortType::OUT, m_numInputs+i, this);
+        outputPort->setPos(halfWidth, currHeight);
+        m_outputPorts.append(outputPort);
     }
 }
 

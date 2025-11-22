@@ -108,4 +108,15 @@ struct GlobalMap {
 
 	std::unordered_map <RegisterItem*, u32> reg2Idx;
 	std::unordered_map <u32, RegisterItem*> Idx2reg;
+	
+	void clear() {
+		net2wire.clear();
+		wire2net.clear();
+		gate2Idx.clear();
+		Idx2gate.clear();
+		source2Idx.clear();
+		Idx2source.clear();
+		reg2Idx.clear();
+		Idx2reg.clear();
+    }
 };

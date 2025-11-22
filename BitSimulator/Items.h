@@ -32,7 +32,7 @@ public:
     void removeConnections(WireItem* wire);
 
     QList<WireItem*> getConnections() const { return m_connections; }
-    QGraphicsObject* getParentGate() const { return dynamic_cast<QGraphicsObject*>(parentItem()); };
+    QGraphicsObject* getParent() const { return dynamic_cast<QGraphicsObject*>(parentItem()); };
     void setHighlighted(bool highlighted) {m_highlighted = highlighted;update();};
     bool getValue() const { return m_value; };
     void setValue(bool value) { m_value = value; };
@@ -48,7 +48,7 @@ private:
 class GateItem : public QGraphicsObject{
     Q_OBJECT
 public:
-    explicit GateItem(GType gateType, QGraphicsItem* parent = nullptr);
+    explicit GateItem( GType gateType,int numInputs,QGraphicsItem* parent = nullptr);
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
@@ -59,8 +59,6 @@ public:
     PortItem* getInputPort(int index) const { return m_inputPorts[index]; };
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
-
-    //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
     void drawGateShape(QPainter* painter);
@@ -76,6 +74,7 @@ private:
 
     Direction m_direction = Direction::RIGHT;
 
+    int m_numInputs = 2;
     QVector<PortItem*> m_inputPorts;
     PortItem* m_outputPort = nullptr;
 };
@@ -84,7 +83,7 @@ class SourceItem : public QGraphicsObject {
     Q_OBJECT
 public:
     SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
-    SourceItem(QList<bool>& cycleValues, QGraphicsItem* parent = nullptr);
+    SourceItem(const QList<bool>& cycleValues, QGraphicsItem* parent = nullptr);
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
@@ -101,7 +100,7 @@ private:
     QList<bool> m_cycleValues;
 
     QList<PortItem*> m_outPorts;
-    int m_numPorts = 1;
+    int m_numOutputs = 1;
 
     QRectF m_rect;
 };
@@ -207,6 +206,7 @@ private:
     void createPorts();
 
     QRectF m_rect;
+
     int m_value = 0;
     int m_numInputs;
     int m_numOutputs;
