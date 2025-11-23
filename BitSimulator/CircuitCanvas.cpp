@@ -13,7 +13,7 @@ extern GlobalMap map;
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent), m_connectingWire(false), m_currWire(nullptr)
 {
-    setSceneRect(0, 0, 10000, 10000); // Large canvas
+    setSceneRect(0, 0, 16000, 10000); // Large canvas
 
     // Force full scene update on any change
     connect(this, &QGraphicsScene::changed, this, [this]() { update(); });
@@ -30,17 +30,17 @@ void CircuitScene::addGate(GType gateType, QPointF position)
 }
 void CircuitScene::addSource(QPointF position)
 {
-    SourceItem* source = new SourceItem(getSrcValuesBool());
+    SourceItem* source = new SourceItem(m_srcValues);
     source->setPos(position);
     addItem(source);
 }
 void CircuitScene::addRegister(RType RegType, QPointF position) {
-    RegisterItem* Reg = new RegisterItem(RegType);
+    RegisterItem* Reg = new RegisterItem(RegType,m_isFlipFlop,m_hasEnable);
     Reg->setPos(position);
     addItem(Reg);
 }
 void CircuitScene::addMux(MType MuxType, QPointF position) {
-    MuxItem* Mux = new MuxItem(MuxType);
+    MuxItem* Mux = new MuxItem(MuxType,m_numInputs);
     Mux->setPos(position);
     addItem(Mux);
 }
@@ -217,10 +217,6 @@ void CircuitScene::startSim()
         }
     }
     
-    for (int i = 0; i < gateItems.size(); i++) { map.gate2Idx[gateItems[i]] = i; map.Idx2gate[i] = gateItems[i]; }
-    for (int i = 0; i < sourceItems.size(); i++) { map.source2Idx[sourceItems[i]] = i; map.Idx2source[i] = sourceItems[i];}
-    for (int i = 0; i < registerItems.size(); i++) { map.reg2Idx[registerItems[i]] = i; map.Idx2reg[i] = registerItems[i];}
-
     // wire,net mapping 
     QHash<PortItem*, u32> outputPortToNet;
     u32 netCounter = 1;
@@ -288,14 +284,21 @@ void CircuitScene::startSim()
     std::vector<u32> gateInputs;
 
     auto getNetId = [&](PortItem* port) -> u32 {
-        return (!port->getConnections().isEmpty()) ?
-            map.wire2net[port->getConnections()[0]] : 0;
+        if (!port || port->getConnections().isEmpty()) {
+            return 0;
+        }
+        return map.wire2net[port->getConnections()[0]];
     };
 
     // Wire,Gate Mapping
     u32 gateInputindex = 0;
-    for (auto* gateItem : gateItems)
+    for (int gateItemIdx = 0; gateItemIdx < gateItems.size(); gateItemIdx++)
     {
+        auto* gateItem = gateItems[gateItemIdx];
+        
+        // Store the gate index for this GateItem
+        map.gate2Idx[gateItem] = gateItemIdx;
+        map.Idx2gate[gateItemIdx] = gateItem;
         QList<u32> inputnets;
         for (auto port:gateItem->getInputPorts()) {
             if (!port->getConnections().isEmpty()) {
@@ -321,19 +324,55 @@ void CircuitScene::startSim()
     }
 
     //Wire, Source Mapping
-    u32 outNet,inNet2, inNet, readEnbNet, clkNet;
-    for (auto* sourceItem : sourceItems)
-    {   
-        outNet = 0;
-        if (!sourceItem->getOutputPorts()[0]->getConnections().isEmpty()) {
-            WireItem* outwire = sourceItem->getOutputPorts()[0]->getConnections()[0];
-            outNet = map.wire2net[outwire];
-        }
-        std::vector<bool> cycleValues;
-        for (auto value : sourceItem->getValues()) {cycleValues.push_back(value);};
-        sources.push_back(Source(outNet, cycleValues));
-    }
+    u32 outNet, inNet2, inNet, readEnbNet, clkNet;
+    for (int sourceItemIdx = 0; sourceItemIdx < sourceItems.size(); sourceItemIdx++)
+    {
+        auto* sourceItem = sourceItems[sourceItemIdx];
 
+        // Store the starting sim source index for this SourceItem
+        int startingSimIndex = sources.size();
+        map.source2Idx[sourceItem] = startingSimIndex;
+        map.Idx2source[startingSimIndex] = sourceItem;
+
+        if(std::holds_alternative<QList<bool>>(sourceItem->getValues())){
+            // Single output port, cycling through bool values
+            outNet = 0;
+            if (!sourceItem->getOutputPorts()[0]->getConnections().isEmpty()) {
+                WireItem* outwire = sourceItem->getOutputPorts()[0]->getConnections()[0];
+                outNet = map.wire2net[outwire];
+            }
+
+            std::vector<bool> cycleValues;
+            for (auto value : std::get<QList<bool>>(sourceItem->getValues())) {
+                cycleValues.push_back(value);
+            }
+            sources.push_back(Source(outNet, cycleValues));
+        }
+        else if(std::holds_alternative<QList<int>>(sourceItem->getValues())){
+            // Multiple output ports (one per bit), cycling through int values
+            const auto intValues = std::get<QList<int>>(sourceItem->getValues());
+
+            // For each bit position (output port)
+            for (int bitIndex = 0; bitIndex < sourceItem->getNumOutputPorts(); bitIndex++)
+            {
+                outNet = 0;
+                if (!sourceItem->getOutputPorts()[bitIndex]->getConnections().isEmpty()) {
+                    WireItem* outwire = sourceItem->getOutputPorts()[bitIndex]->getConnections()[0];
+                    outNet = map.wire2net[outwire];
+                }
+
+                // Extract this bit from each int value in the cycle
+                std::vector<bool> cycleValues;
+                for (int value : intValues) {
+                    // Extract bit at bitIndex position (LSB = bit 0)
+                    bool bitValue = (value >> bitIndex) & 1;
+                    cycleValues.push_back(bitValue);
+                }
+
+                sources.push_back(Source(outNet, cycleValues));
+            }
+        }
+    }
     //Wire, Mux Mapping
     std::vector<Mux> muxes;
     for (auto* muxItem : muxItems)
@@ -375,8 +414,14 @@ void CircuitScene::startSim()
         muxes.push_back(Mux(dataInputNets, addressInputNets, outNet));
     }
 
-    for (const auto* regItem : registerItems)
+    for (int regItemIdx = 0; regItemIdx < registerItems.size(); regItemIdx++)
     {
+        auto* regItem = registerItems[regItemIdx];
+        
+        // Store the register index for this RegisterItem
+        map.reg2Idx[regItem] = regItemIdx;
+        map.Idx2reg[regItemIdx] = regItem;
+        
         outNet = 0;inNet2 = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
         clkNet = getNetId(regItem->getClkPort());
         readEnbNet = getNetId(regItem->getReadEnablePort());
@@ -412,9 +457,8 @@ void CircuitScene::receiveResult(SimResult result)
         }
     }
 
-    for (int i = 0; i < result.sourcesCurrIdx.size(); i++) {
-        auto source = map.Idx2source[i];
-        source->setIdx(result.sourcesCurrIdx[i]);    
+    for (auto [source,Idx]: map.source2Idx) {
+        source->setIdx(result.sourcesCurrIdx[Idx]);
     }
     for (int i = 0; i < result.registerValues.size(); i++) {
         auto reg = map.Idx2reg[i];
@@ -450,7 +494,7 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
                     if (arg)
                         addSource(event->scenePos());
                     else
-                        addDisplay(3,3,event->scenePos());
+                        addDisplay(m_numInputs,m_numOutputs,event->scenePos());
                 }}, 
                 m_nextItem);
 
@@ -583,8 +627,36 @@ void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
 
 void CircuitCanvas::wheelEvent(QWheelEvent* event)
 {
-    // Zoom with mouse wheel
+    // Get current transform and scene rect
+    QTransform currentTransform = transform();
+    double currentScale = currentTransform.m11();
+    QRectF sceneRect = m_scene->sceneRect();
+    
     const double scaleFactor = 1.15;
+    
+    // Calculate what the new scale would be
+    double newScale = currentScale;
+    if (event->angleDelta().y() > 0) {
+        newScale *= scaleFactor;  // Zoom in
+    } else {
+        newScale /= scaleFactor;  // Zoom out
+    }
+    
+    // Check if zooming out would make the view larger than the scene
+    if (newScale < currentScale) {  // Zooming out
+        QRectF viewportRect = viewport()->rect();
+        
+        // Calculate what the visible scene area would be with the new scale
+        double newViewWidth = viewportRect.width() / newScale;
+        double newViewHeight = viewportRect.height() / newScale;
+        
+        // Don't zoom out if the view would become larger than the scene
+        if (newViewWidth >= sceneRect.width() || newViewHeight >= sceneRect.height()) {
+            return;  // Prevent this zoom operation
+        }
+    }
+    
+    // Apply the zoom
     if (event->angleDelta().y() > 0) {
         scale(scaleFactor, scaleFactor);
     } else {

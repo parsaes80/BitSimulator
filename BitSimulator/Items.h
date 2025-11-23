@@ -39,7 +39,7 @@ public:
 
 private:
     bool m_value = false;
-    int m_pinIndex = 0;
+    int m_pinIndex;
     bool m_highlighted = false;
     PortType m_portType;
     QList<WireItem*> m_connections;
@@ -74,7 +74,7 @@ private:
 
     Direction m_direction = Direction::RIGHT;
 
-    int m_numInputs = 2;
+    int m_numInputs;
     QVector<PortItem*> m_inputPorts;
     PortItem* m_outputPort = nullptr;
 };
@@ -83,25 +83,22 @@ class SourceItem : public QGraphicsObject {
     Q_OBJECT
 public:
     SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
-    SourceItem(const QList<bool>& cycleValues, QGraphicsItem* parent = nullptr);
+    SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent = nullptr);
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    QList<PortItem*> getOutputPorts() const { return m_outPorts; };
-    u8 getIdx() const { return m_currIdx; };
+    QList<PortItem*> getOutputPorts() const { return m_outputPorts; };
+    int getIdx() const { return m_currIdx;};
     void setIdx(u8 value) { m_currIdx = value; };
-
-    QList<bool> getValues() const { return m_cycleValues; };
-    void setValues(QList<bool> values) { m_cycleValues = values; };
+    int getNumOutputPorts() const { return m_numOutputs; };
+    std::variant<QList<bool>,QList<int>> getValues() const { return m_srcValues; };
+    void setValues(QList<bool> values) { m_srcValues = values; };
 private:
     void addPorts();
 
-    u8 m_currIdx;
-    QList<bool> m_cycleValues;
-
-    QList<PortItem*> m_outPorts;
-    int m_numOutputs = 1;
-
+    int m_currIdx, m_numOutputs;
+    std::variant<QList<bool>,QList<int>> m_srcValues;
+    QList<PortItem*> m_outputPorts;
     QRectF m_rect;
 };
 
@@ -140,7 +137,7 @@ private:
 class RegisterItem : public QGraphicsObject {
     //Q_OBJECT
 public:
-    explicit RegisterItem(RType RegType, QGraphicsItem* parent= nullptr);
+    explicit RegisterItem(RType RegType,bool isFlipFlop,bool hasEnable, QGraphicsItem* parent= nullptr);
 
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
@@ -155,7 +152,7 @@ public:
     //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
-    void createPorts();
+    void createPorts(bool isFlipFlop, bool hasEnable);
     bool m_value = false;
 
     RType m_regType;
@@ -174,7 +171,7 @@ private:
 
 class MuxItem : public QGraphicsObject {
 public:
-    explicit MuxItem(MType MuxType, QGraphicsItem* parent= nullptr);
+    explicit MuxItem(MType MuxType,int numInputs, QGraphicsItem* parent= nullptr);
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
@@ -184,7 +181,7 @@ public:
 
 private:
     void createPorts();
-
+    int m_numInputs;
     MType m_muxType;
     QRectF m_rect;
 

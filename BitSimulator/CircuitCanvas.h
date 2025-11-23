@@ -33,14 +33,12 @@ public:
 
     void startSim();
 
-    QList<bool> getSrcValuesBool() const {
-        return std::holds_alternative<QList<bool>>(m_srcValues)?std::get<QList<bool>>(m_srcValues):QList<bool>{false, true};}
-
-    QList<int> getSrcValuesInt() const {
-        return std::holds_alternative<QList<int>>(m_srcValues)?std::get<QList<int>>(m_srcValues): QList<int>{0, 1}; }
-
-    void setSrcValues(const QList<bool>& values){m_srcValues = values;}
-    void setSrcValues(const QList<int>& values){m_srcValues = values;}
+    std::variant<QList<bool>,QList<int>> getSrcValues() const {return m_srcValues;}
+    int getNumInputs() const { return m_numInputs; }
+    int getNumOutputs() const { return m_numOutputs; }
+    bool getHasEnable() const { return m_hasEnable; }
+    bool getIsFlipFlop() const { return m_isFlipFlop; }
+    bool getSrcIsWave() const { return std::holds_alternative<QList<bool>>(m_srcValues);}
 
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override {
@@ -55,7 +53,12 @@ public slots:
     void setNextDisplay() {m_nextItem = false;  };// Use false to represent Display
     void setNextRegister(RType regType) {m_nextItem = regType;};
     void setNextMux(MType muxType) {m_nextItem = muxType;};
-
+    void setSrcValues(const QList<bool>& values){m_srcValues = values;}
+    void setSrcValues(const QList<int>& values){m_srcValues = values;}
+    void setNumInputs(const int value){m_numInputs = value;}
+    void setNumOutputs(const int value){m_numOutputs = value;}
+    void setHasEnable(const bool value){m_hasEnable = value;}
+    void setIsFlipFlop(const bool value){m_isFlipFlop = value;}
     void receiveResult(SimResult result);
 signals:
     void startSimSIG(ExportGraph graph);
@@ -69,9 +72,9 @@ private:
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
     std::variant<GType, RType, MType,bool> m_nextItem = GType::AND;  // bool true for source false for Display
+    std::variant<QList<bool>,QList<int>> m_srcValues = QList<int>{ 2, 5 };
     int m_numInputs = 2,m_numOutputs = 2;
     bool m_hasEnable = true, m_isFlipFlop = true;
-    std::variant<QList<bool>,QList<int>> m_srcValues = QList<bool>{ false, true };
 };
 
 class CircuitCanvas : public QGraphicsView {

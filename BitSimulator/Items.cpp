@@ -78,7 +78,12 @@ GateItem::GateItem(GType gateType, int numInputs, QGraphicsItem* parent):
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
-    m_rect = QRectF(-25, -20, 50, 40);
+    int x = -25;
+    int y = x - ((m_numInputs-2)*5) + 3;
+    int height = y* -2;
+    m_rect = QRectF(x, y , 50, height);
+
+    //m_rect = QRectF(-25, -22, 50, 44);
 
     createPorts();
 }
@@ -363,11 +368,10 @@ SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent), m_rect(-
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
     m_currIdx = 0;
-    m_cycleValues.append(false);
     addPorts();
 }
-SourceItem::SourceItem(const QList<bool>& cycleValues, QGraphicsItem* parent) :
-    QGraphicsObject(parent), m_rect(-15, -15, 30, 30), m_cycleValues(cycleValues)
+SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent) :
+    QGraphicsObject(parent), m_srcValues(cycleValues)
 {
     // Enable item flags for interaction
     setFlag(QGraphicsObject::ItemIsMovable, true);
@@ -375,9 +379,21 @@ SourceItem::SourceItem(const QList<bool>& cycleValues, QGraphicsItem* parent) :
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
     m_currIdx = 0;
-
+    if(std::holds_alternative<QList<bool>>(m_srcValues)){
+        m_numOutputs = 1;
+    }
+    else{
+        const auto& intValues = std::get<QList<int>>(m_srcValues);
+        int maxValue = *std::ranges::max_element(intValues);
+        m_numOutputs =  static_cast<int>(std::floor(std::log2(maxValue))) + 1;
+    }
+    int x = -15;
+    int y = x - ((m_numOutputs-1)*5);
+    int height = y* -2;
+    m_rect = QRectF(x, y , 30, height);
     addPorts();
 }
+
 void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     // Draw selection highlight
@@ -388,43 +404,65 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     }
 
     painter->setPen(QPen(Qt::black, 2));
-    if (m_cycleValues[m_currIdx]) {
-        painter->setBrush(QColor(255, 150, 150)); 
-        painter->drawRect(m_rect);
+    if(std::holds_alternative<QList<bool>>(m_srcValues)){
+        // Fix: Use std::get to access the value
+        const auto& boolValues = std::get<QList<bool>>(m_srcValues);
+        if (boolValues[m_currIdx]) {
+            painter->setBrush(QColor(255, 150, 150));
+            painter->drawRect(m_rect);
 
-        // Draw "1" or "0" in the center to indicate state
-        painter->setPen(QPen(Qt::white, 2));
-        painter->drawText(m_rect, Qt::AlignCenter, "1");
+            // Draw "1" or "0" in the center to indicate state
+            painter->setPen(QPen(Qt::white, 2));
+            painter->drawText(m_rect, Qt::AlignCenter, "1");
+        }
+        else {
+            painter->setBrush(QColor(255, 255, 255));
+            painter->drawRect(m_rect);
+
+            painter->setPen(QPen(Qt::black, 2));
+            painter->drawText(m_rect, Qt::AlignCenter, "0");
+        }
     }
-    else {
-        painter->setBrush(QColor(255, 255, 255)); 
+    else { // QList<int> - show the number at the current index
+        const auto& intValues = std::get<QList<int>>(m_srcValues);
+        painter->setBrush(QColor(200, 200, 255));
         painter->drawRect(m_rect);
 
         painter->setPen(QPen(Qt::black, 2));
-        painter->drawText(m_rect, Qt::AlignCenter, "0");
+        painter->drawText(m_rect, Qt::AlignCenter, QString::number(intValues[m_currIdx]));
     }
 }
 
 void SourceItem::addPorts()
 {
-    PortItem* outputPort = new PortItem(PortType::OUT, -1, this);
-    outputPort->setPos(15, 0);
-    m_outPorts.append(outputPort);
+    double halfWidth = m_rect.width() / 2;
+    double halfHeight = m_rect.height() / 2;
+    double diffHeight = m_rect.height() / (m_numOutputs + 1);
+    double currHeight = -halfHeight;
+
+    currHeight = -halfHeight;
+    diffHeight = m_rect.height() / (m_numOutputs + 1);
+    for (int i = 0; i < m_numOutputs; i++) {
+        currHeight += diffHeight;
+        PortItem* outputPort = new PortItem(PortType::OUT, i, this);
+        outputPort->setPos(halfWidth, currHeight);
+        m_outputPorts.append(outputPort);
+    }
 }
 
 //===================== RegisterItem ========================
 
-RegisterItem::RegisterItem(RType RegType, QGraphicsItem* parent):m_regType(RegType) {
+RegisterItem::RegisterItem(RType RegType,bool isFlipFlop, bool hasEnable, QGraphicsItem* parent):m_regType(RegType) {
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
     m_rect = QRectF(-20, -30, 40, 60);
 
-    createPorts();
+    createPorts(isFlipFlop, hasEnable);
 }
 
-void RegisterItem::createPorts()
+void RegisterItem::createPorts(bool isFlipFlop, bool hasEnable)
 {
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
@@ -437,12 +475,15 @@ void RegisterItem::createPorts()
     inputPort2->setPos(-halfWidth, -halfHeight / 2 );
     m_inputPortTwo =inputPort2;
 
-    m_clkPort = new PortItem(PortType::IN, 2, this);
-    m_clkPort->setPos(-halfWidth, 0); // Right side, center
+    if(isFlipFlop){
+        m_clkPort = new PortItem(PortType::IN, 2, this);
+        m_clkPort->setPos(-halfWidth, 0);
+    }
 
-    m_readEnbPort = new PortItem(PortType::IN, 3, this);
-    m_readEnbPort->setPos(-halfWidth, halfHeight/2); // Right side, center
-
+    if(hasEnable){
+        m_readEnbPort = new PortItem(PortType::IN, 3, this);
+        m_readEnbPort->setPos(-halfWidth, halfHeight/2); // Right side, center
+    }
     m_outputPort = new PortItem(PortType::OUT, -1, this);
     m_outputPort->setPos(halfWidth, 0); // Right side, center
 }
@@ -493,7 +534,7 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 
 //===================== MuxItem ========================
 
-MuxItem::MuxItem(MType MuxType, QGraphicsItem* parent): m_muxType(MuxType) {
+MuxItem::MuxItem(MType MuxType, int numInputs, QGraphicsItem* parent): m_muxType(MuxType),m_numInputs(numInputs) {
 
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
@@ -507,27 +548,25 @@ MuxItem::MuxItem(MType MuxType, QGraphicsItem* parent): m_muxType(MuxType) {
 
 void MuxItem::createPorts()
 {
-    int numInputs = 2;
-
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (numInputs + 1);
+    double diffHeight = m_rect.height() / (m_numInputs + 1);
     double currHeight = -halfHeight;
     double currWidth  = halfWidth;
 
     //data ports
-    for (int i = 0; i < numInputs; i++) {
+    for (int i = 0; i < m_numInputs; i++) {
         currHeight += diffHeight;
         PortItem* inputPort = new PortItem(PortType::IN, i, this);
         inputPort->setPos(-halfWidth, currHeight);
         m_inputDataPorts.append(inputPort);
     }
 
-    numInputs = static_cast<int>(ceil(log(numInputs)));
-    double diffWidth = m_rect.width() / (numInputs + 1);
+    m_numInputs = static_cast<int>(ceil(log(m_numInputs)));
+    double diffWidth = m_rect.width() / (m_numInputs + 1);
 
     //address ports
-    for (int i = 0; i < numInputs; i++) {
+    for (int i = 0; i < m_numInputs; i++) {
         currWidth -= diffWidth;
         PortItem* inputPort = new PortItem(PortType::IN, m_inputDataPorts.size() + i , this);
         inputPort->setPos(currWidth, halfHeight);

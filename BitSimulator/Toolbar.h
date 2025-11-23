@@ -19,10 +19,10 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit gateTypeSelected(m_gateType); };
+    void onButtonClicked() { emit gateTypeSelected(m_gateType); emit setOverlay(0);};
 signals:
     void gateTypeSelected(GType gateType);
-
+    void setOverlay(int val);
 private:
     void drawGateSymbol(QPainter* painter, double width, double height);
     void drawAndGate(QPainter* painter, double width, double height);
@@ -33,6 +33,7 @@ private:
 
     GType m_gateType;
 };
+
 class SourceButton : public QPushButton
 {
     Q_OBJECT
@@ -44,9 +45,10 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit sourceSelected(); };
+    void onButtonClicked() { emit sourceSelected(); emit setOverlay(2);};
 signals:
     void sourceSelected();
+    void setOverlay(int val);
 };
 
 class RegisterButton : public QPushButton
@@ -60,9 +62,10 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit RegSelected(RType::D);};
+    void onButtonClicked() { emit RegSelected(RType::D);emit setOverlay(1);};
 signals:
     void RegSelected(RType regType);
+    void setOverlay(int val);
 };
 
 class MuxButton : public QPushButton
@@ -76,9 +79,10 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit MuxSelected(MType::MUX);};
+    void onButtonClicked() { emit MuxSelected(MType::MUX);emit setOverlay(0);};
 signals:
     void MuxSelected(MType muxType);
+    void setOverlay(int val);
 };
 
 class DisplayButton : public QPushButton
@@ -92,7 +96,8 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit DisplaySelected(); };
+    void onButtonClicked() { emit DisplaySelected(); emit setOverlay(3);};
 signals:
     void DisplaySelected();
+    void setOverlay(int val);
 };
