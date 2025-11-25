@@ -85,55 +85,55 @@ endmodule
         Process->deleteLater();
         return false;
     }
-    
+
     qDebug() << "Created file:" << file.fileName();
     QTextStream out(&file);
     out << plaholderCode;
     file.close();
     qDebug() << "HDL code written to file";
-    
+
     // Run Yosys synthesis
     QStringList arguments;
     arguments << "-p" << "read_verilog code.v; synth -top adder; show -format dot -prefix code_graph";
     Process->start(yosysPath, arguments);
-    
+
     if (!Process->waitForFinished(30000)) {
         qDebug() << "Process timeout or failed to start";
         emit error("Yosys process timeout");
         return false;
     }
-    
+
     if (Process->exitCode() != 0) {
         qDebug() << "Yosys compilation failed";
         qDebug() << "Error:" << Process->readAllStandardError();
         emit error("Compilation failed: " + Process->readAllStandardError());
         return false;
     }
-    
+
     qDebug() << "Yosys compilation successful";
-    
+
     QStringList dotArgs;
     // Output a positioned .dot file (plain format has coordinates)
     dotArgs << "-Tdot" << "code_graph.dot" << "-o" << "code_graph_positioned.dot";
     Process->start("dot", dotArgs);
-    
+
     if (!Process->waitForFinished(10000)) {
         qDebug() << "Dot process timeout";
         Process->deleteLater();
         emit success();
         return false;
     }
-    
+
     if (Process->exitCode() != 0) {
         qDebug() << "Dot layout failed:" << Process->readAllStandardError();
         Process->deleteLater();
         emit success();
         return false;
     }
-    
+
     Process->deleteLater();
     qDebug() << "Graph layout computed";
-    
+
     // Parse the positioned dot file
     if(!parseDotFile("code_graph_positioned.dot")) return false;
     emit graphReady(m_components);
@@ -170,6 +170,7 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
             while(lines[i + 1].startsWith("\t")){nextLine.removeFirst();};
         }
     }
+
     //second pass extract nodes
     for (int i = 0; i < lines.size() - 1; ++i) {
         QString& currLine = lines[i];
@@ -258,11 +259,11 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                         else if (currNodeLine.contains("_SDFF_")){ // CHANGE LATERR
                             node.type = RType::D;
                             node.HasReset = true;
-                            qDebug() << "Found SDFF (Synchronous D Flip-Flop)"; //has sync reset 
+                            qDebug() << "Found SDFF (Synchronous D FlipFlop)"; //has sync reset
                         }
                         else if (currNodeLine.contains("_DFF_P_")){ // CHANGE LATERR
                             node.type = RType::D;
-                            qDebug() << "Found DFF_P (D Flip-Flop Positive edge)"; //dosnt have sync reset 
+                            qDebug() << "Found DFF_P (D FlipFlop Positive edge)"; //dosnt have sync reset
                         }
 
                         QRegularExpression re(R"(<([^>]+)>\s*([A-Za-z0-9_]+))");
@@ -281,31 +282,32 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                     }
                     else if(currNodeLine.startsWith("pos=")){
                         QString posLine = currNodeLine;
-                        
+
                         // Extract the value between quotes
                         int firstQuote = posLine.indexOf('"');
                         int lastQuote = posLine.lastIndexOf('"');
                         QString posValue = posLine.mid(firstQuote + 1, lastQuote - firstQuote - 1);
-                        
+
                         // Split by comma to get x,y
                         QStringList coords = posValue.split(',');
                         if (coords.size() == 2) {
                             double x = coords[0].toDouble();
                             double y = coords[1].toDouble();
-                            
+
                             // Convert from Graphviz coordinates (origin bottom-left) to Qt (origin top-left)
                             // You'll need the graph height - parse it from the bb attribute first
                             node.position.setX(x);
                             node.position.setY(y); // Will flip Y later when we have graphHeight
-                            
+
                             qDebug() << "Parsed position:" << x << "," << y;
                         }
-                    }    
+                    }
                 }
-                m_components[id]=(node);
+                m_components[id]=node;
             }
         }
     }
+
     //third pass exctract edges
     for (int i = 0; i < lines.size() - 1; ++i) {
         QString currLine = lines[i];
@@ -322,19 +324,48 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                 QString endPart2 = m.captured(5);      // Could be port OR direction
                 QString endPart3 = m.captured(6);      // Could be direction OR empty
 
-                QString startPort = startPart3.isEmpty() ? startPart2 : startPart2;
+                QString startPortID = startPart3.isEmpty() ? startPart2 : startPart2;
                 QString startDir = startPart3.isEmpty() ? "" : startPart3;
 
-                QString endPort = endPart3.isEmpty() ? endPart2 : endPart2;
+                QString endPortID = endPart3.isEmpty() ? endPart2 : endPart2;
                 QString endDir = endPart3.isEmpty() ? "" : endPart3;
 
-                qDebug() << startID << ":" << startPort
+                qDebug() << startID << ":" << startPortID
                          << (startDir.isEmpty() ? "" : ":" + startDir)
-                         << " -> " << endID << ":" << endPort
+                         << " -> " << endID << ":" << endPortID
                          << (endDir.isEmpty() ? "" : ":" + endDir);
 
                 if (std::holds_alternative<IOType>(m_components[endID].type)) {
-                    m_components[endID].type = IOType::OUT;  // Receives edges = OUTPUT port
+                    m_components[endID].type = IOType::OUT;
+                }
+
+                auto& endPort = m_components[endID].ports[endPortID];
+                auto& startPort = m_components[startID].ports[startPortID];
+                startPort.connections.append(&endPort);
+                endPort.connections.append(&startPort);
+            }
+        }
+    }
+    for (auto& node : m_components) {
+        for (auto& port : node.ports) {
+            port.parent = &node;
+        }
+    }
+
+    for(auto& comp: m_components){
+        if (!std::holds_alternative<IOType>(comp.type)){
+            continue;
+        }
+        for (auto& port: comp.ports){
+            for (auto* otherPort:port.connections){
+                auto* otherComp = otherPort->parent;
+                if(std::holds_alternative<int>(otherComp->type)){
+                    int bitSliceVal = std::get<int>(otherComp->type);
+                    int first = (bitSliceVal / 1000) % 10;
+                    int second = (bitSliceVal / 100) % 10;
+                    int third = (bitSliceVal / 10) % 10;
+                    int fourth = bitSliceVal % 10;
+
                 }
             }
         }
@@ -342,7 +373,9 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
 
     return true;
 }
-
+bool HDLCompiler::processDotFile() {
+    ;
+}
 void HDLCompiler::receiveCode(const QString& hdlCode) {
     compile(hdlCode);
 }

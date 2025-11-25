@@ -10,11 +10,14 @@
 #include <variant>
 #include "general.h"
 
+struct Node;
+
 struct Port {
+    Node* parent;
     QString id;           // e.g., "p128"
     QString name;         // e.g., "C", "D", "Q"
     PortType type;
-    QList<QString> connections;
+    QList<Port*> connections;
 };
 
 struct Node{
@@ -43,6 +46,7 @@ signals:
 private:
     bool compile(const QString& hdlCode);
     bool parseDotFile(const QString& filePath);
+    bool processDotFile();
     QString yosysPath = "./yosys_bundle/bin/yosys";
     QHash<QString,Node> m_components;
 };

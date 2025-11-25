@@ -39,7 +39,12 @@ public:
     bool getHasEnable() const { return m_hasEnable; }
     bool getIsFlipFlop() const { return m_isFlipFlop; }
     bool getSrcIsWave() const { return std::holds_alternative<QList<bool>>(m_srcValues);}
-
+    RType getNextRegisterType() const {
+        if (std::holds_alternative<RType>(m_nextItem)) {
+            return std::get<RType>(m_nextItem);
+        }
+        return RType::SR;
+    }
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override {
         painter->fillRect(rect, QColor(10, 100, 100));};// Draw background color

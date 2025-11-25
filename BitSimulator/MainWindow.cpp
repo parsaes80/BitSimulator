@@ -156,7 +156,23 @@ void MainWindow::on_overlay_currentChanged(int arg1)
         break;
         
     case 1: // Register page
-        // Set register type based on current scene state
+        switch (scene->getNextRegisterType()) {
+        case RType::SR:
+            ui.regType->setCurrentIndex(0);
+            break;
+        case RType::JK:
+            ui.regType->setCurrentIndex(1);
+            break;
+        case RType::D:
+            ui.regType->setCurrentIndex(2);
+            break;
+        case RType::T:
+            ui.regType->setCurrentIndex(3);
+            break;
+        default:
+            ui.regType->setCurrentIndex(0); // Default to SR
+            break;
+        }
         if (scene->getHasEnable()) {
             ui.regEnableType->setCurrentIndex(1);
         } else {
