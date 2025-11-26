@@ -14,10 +14,9 @@ struct Node;
 
 struct Port {
     Node* parent;
-    QString id;           // e.g., "p128"
     QString name;         // e.g., "C", "D", "Q"
     PortType type;
-    QList<Port*> connections;
+    QList<int> connections;
 };
 
 struct Node{
@@ -25,9 +24,7 @@ struct Node{
     QPointF position;
     QHash<QString,Port> ports;
     bool HasReset = false;
-    bool SecNotGate = false;
-    u8 bitWidth;
-    std::variant<RType,GType,MType,IOType,int,bool> type; //int for bit slice, true for #, false for junction
+    std::variant<RType,GType,MType,IOType> type;
 };
 
 class HDLCompiler : public QObject{
@@ -41,14 +38,16 @@ public slots:
 signals:
     void error(const QString& err);
     void success();
-    void graphReady(const QHash<QString,Node>& graph);
+    void sendGraph(const QHash<QString,Node> graph);
 
 private:
     bool compile(const QString& hdlCode);
     bool parseDotFile(const QString& filePath);
-    bool processDotFile();
+    bool processJsonFile(const QString& filePath);
     QString yosysPath = "./yosys_bundle/bin/yosys";
+    QHash<QString,Node> m_componentsPos;
     QHash<QString,Node> m_components;
+    QHash<int, QString> m_bitToNet;  // Maps bit numbers to net names
 };
 
 class TextEditor : public QPlainTextEdit{

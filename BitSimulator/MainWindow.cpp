@@ -97,12 +97,13 @@ void MainWindow::setup()
     connect(ui.displayButton, &DisplayButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
 
     connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
-    connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit); //connect scene and sim
+    connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit);
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
     connect(compilerThread, &QThread::finished, compiler, &QObject::deleteLater);
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
     connect(simObj, &Simulator::sendResult,ui.camera->getScene(),&CircuitScene::receiveResult);
     connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
+    connect(compiler, &HDLCompiler::sendGraph, ui.camera->getScene(), &CircuitScene::receiveGraph);
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");

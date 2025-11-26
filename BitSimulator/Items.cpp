@@ -360,16 +360,6 @@ void WireItem::updateWirePosition()
 }
 //===================== SourceItem ========================
 
-SourceItem::SourceItem(QGraphicsItem* parent): QGraphicsObject(parent), m_rect(-15, -15, 30, 30)
-{
-    // Enable item flags for interaction
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
-
-    m_currIdx = 0;
-    addPorts();
-}
 SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent) :
     QGraphicsObject(parent), m_srcValues(cycleValues)
 {
@@ -393,7 +383,23 @@ SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, 
     m_rect = QRectF(x, y , 30, height);
     addPorts();
 }
+SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues,int numOut, QGraphicsItem* parent) :
+    QGraphicsObject(parent), m_srcValues(cycleValues)
+{
+    // Enable item flags for interaction
+    setFlag(QGraphicsObject::ItemIsMovable, true);
+    setFlag(QGraphicsObject::ItemIsSelectable, true);
+    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
+    m_currIdx = 0;
+    m_numOutputs = numOut;
+
+    int x = -15;
+    int y = x - ((m_numOutputs-1)*5);
+    int height = y* -2;
+    m_rect = QRectF(x, y , 30, height);
+    addPorts();
+}
 void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     // Draw selection highlight

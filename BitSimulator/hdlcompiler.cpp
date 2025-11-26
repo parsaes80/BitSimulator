@@ -4,6 +4,11 @@
 #include <QProcess>
 #include <QFile>
 #include <QTextStream>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonParseError>
+#include <QRegularExpression>
 
 //===================== HDLCompiler ========================
 
@@ -94,7 +99,7 @@ endmodule
 
     // Run Yosys synthesis
     QStringList arguments;
-    arguments << "-p" << "read_verilog code.v; synth -top adder; show -format dot -prefix code_graph";
+    arguments << "-p" << "read_verilog code.v; synth -top adder; write_json code_netlist.json; show -format dot -prefix code_graph";
     Process->start(yosysPath, arguments);
 
     if (!Process->waitForFinished(30000)) {
@@ -136,7 +141,9 @@ endmodule
 
     // Parse the positioned dot file
     if(!parseDotFile("code_graph_positioned.dot")) return false;
-    emit graphReady(m_components);
+    if(!processJsonFile("code_netlist.json")) return false;
+
+    emit sendGraph(m_components);
     emit success();
     return true;
 }
@@ -170,117 +177,34 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
             while(lines[i + 1].startsWith("\t")){nextLine.removeFirst();};
         }
     }
+    double minX = std::numeric_limits<double>::max();
+    double minY = std::numeric_limits<double>::max();
+    double maxX = std::numeric_limits<double>::lowest();
+    double maxY = std::numeric_limits<double>::lowest();
 
-    //second pass extract nodes
+    //second pass extract nodes and graph size
     for (int i = 0; i < lines.size() - 1; ++i) {
         QString& currLine = lines[i];
 
         if (currLine.contains("\t")){
-            QStringList res = currLine.split("\t");
-            QString& id = res[0];
-            if(!id.contains("->")){ //skip edges
-                qDebug() << '\n'<<id;
+            QStringList firstLine = currLine.split("\t");
+            QString& firstLineStart = firstLine[0];
+            if(!firstLineStart.contains("->") && !firstLineStart.startsWith('x')){ //skip edges and bitslice and junction
                 Node node;
-                node.id = id;
-                int labelIndex;
+                node.id = firstLineStart;
                 for(int j=i+1;!lines[j].contains("\t") && j< lines.size();j++){ // lines of a signle node
                     QString currNodeLine = lines[j];
-                    if(currNodeLine.startsWith("shape=diamond")){ // signal or variable
-                        node.type =  IOType::OUT;
-                        node.id = lines[labelIndex].split("=")[1].removeLast();
-                    }
-                    if(currNodeLine.startsWith("shape=point")){ // junction
-                        node.type = false;
-                    }
-                    if(currNodeLine.startsWith("style=rounded")){// slice
-
-                        QRegularExpression re(R"((\d):(\d)\s*-\s*(\d):(\d))");
-                        QRegularExpressionMatch match = re.match(lines[labelIndex]);
-                        int res = -1;
-                        if (match.hasMatch()) {
-                            int a = match.captured(1).toInt();  // 0
-                            int b = match.captured(2).toInt();  // 0
-                            int c = match.captured(3).toInt();  // 1
-                            int d = match.captured(4).toInt();  // 1
-
-                            res= (a*1000) + (b*100)+ (c*10) + d;
-                        }
-                        node.type = res;
-                        qDebug() << res;
-                    }
-                    if(currNodeLine.startsWith("shape=octagon")){ // IO
-                        node.type = IOType::IN;
-                        node.id = lines[labelIndex].split("=")[1].removeLast();
-                    }
                     if(currNodeLine.startsWith("label=")){
-                        labelIndex = j;
-                        if (currNodeLine.contains("_NOT_")){
-                            node.type = GType::NOT;
-                            qDebug() << "Found NOT gate";
-                        }
-                        else if (currNodeLine.contains("_AND_")){
-                            node.type = GType::AND;
-                            qDebug() << "Found AND gate";
-                        }
-                        else if (currNodeLine.contains("_NAND_")){
-                            node.type = GType::NAND;
-                            qDebug() << "Found NAND gate";
-                        }
-                        else if (currNodeLine.contains("_OR_")){
-                            node.type = GType::OR;
-                            qDebug() << "Found OR gate";
-                        }
-                        else if (currNodeLine.contains("_NOR_")){
-                            node.type = GType::NOR;
-                            qDebug() << "Found NOR gate";
-                        }
-                        else if (currNodeLine.contains("_XOR_")){
-                            node.type = GType::XOR;
-                            qDebug() << "Found XOR gate";
-                        }
-                        else if (currNodeLine.contains("_XNOR_")){
-                            node.type = GType::XNOR;
-                            qDebug() << "Found XNOR gate";
-                        }
-                        else if (currNodeLine.contains("_MUX_")){
-                            node.type = MType::MUX;
-                            qDebug() << "Found MUX gate";
-                        }
-                        else if (currNodeLine.contains("_ORNOT_")){ // CHANGE LATERR
-                            node.type = GType::NOR;
-                            node.SecNotGate = true;
-                            qDebug() << "Found ORNOT gate";
-                        }
-                        else if (currNodeLine.contains("_ANDNOT_")){ // CHANGE LATERR
-                            node.type = GType::NAND;
-                            node.SecNotGate = true;
-                            qDebug() << "Found ANDNOT gate";
-                        }
-                        else if (currNodeLine.contains("_SDFF_")){ // CHANGE LATERR
-                            node.type = RType::D;
-                            node.HasReset = true;
-                            qDebug() << "Found SDFF (Synchronous D FlipFlop)"; //has sync reset
-                        }
-                        else if (currNodeLine.contains("_DFF_P_")){ // CHANGE LATERR
-                            node.type = RType::D;
-                            qDebug() << "Found DFF_P (D FlipFlop Positive edge)"; //dosnt have sync reset
-                        }
-
-                        QRegularExpression re(R"(<([^>]+)>\s*([A-Za-z0-9_]+))");
-                        QRegularExpressionMatchIterator it = re.globalMatch(currNodeLine);
-
-                        while (it.hasNext() && !id.startsWith('x')) {
-                            Port port;
-                            auto m = it.next();
-                            port.id = m.captured(1);
-                            port.name = m.captured(2);
-                            port.type = (port.name == "Q") || (port.name =="Y") ?  PortType::OUT : PortType::IN;
-                            node.ports[port.id] = port;
-                            QString Type = port.type == PortType::OUT ?  "out" : "in";
-                            qDebug() << port.id  <<" "<< port.name << " "<< Type;
+                        // Extract numeric ID from label like: label="{{<p128> C|<p129> D}|$317\n$_DFF_P_|{<p131> Q}}",
+                        QRegularExpression labelRe(R"(\$(\d+))");
+                        QRegularExpressionMatch labelMatch = labelRe.match(currNodeLine);
+                        if (labelMatch.hasMatch()) {
+                            node.id = labelMatch.captured(1);
+                        } else {
+                            node.id = currNodeLine.split('=')[1].removeLast();
                         }
                     }
-                    else if(currNodeLine.startsWith("pos=")){
+                    if(currNodeLine.startsWith("pos=")){\
                         QString posLine = currNodeLine;
 
                         // Extract the value between quotes
@@ -294,88 +218,273 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                             double x = coords[0].toDouble();
                             double y = coords[1].toDouble();
 
-                            // Convert from Graphviz coordinates (origin bottom-left) to Qt (origin top-left)
-                            // You'll need the graph height - parse it from the bb attribute first
+                            minX = std::min(minX, x);
+                            minY = std::min(minY, y);
+                            maxX = std::max(maxX, x);
+                            maxY = std::max(maxY, y);
+
                             node.position.setX(x);
                             node.position.setY(y); // Will flip Y later when we have graphHeight
 
-                            qDebug() << "Parsed position:" << x << "," << y;
+                            qDebug() << node.id<< " :" << x << "," << y;
                         }
                     }
                 }
-                m_components[id]=node;
+                m_componentsPos[node.id]=node;
             }
         }
     }
 
-    //third pass exctract edges
-    for (int i = 0; i < lines.size() - 1; ++i) {
-        QString currLine = lines[i];
-        if (currLine.contains("\t") && currLine.contains("->")){
-            QString firstHalf = currLine.split('\t')[0];
-            QRegularExpression re(R"((\w+):(\w+)(?::(\w+))?\s*->\s*(\w+):(\w+)(?::(\w+))?)");
-            QRegularExpressionMatch m = re.match(firstHalf);
+    double graphCenterX = (minX + maxX) / 2.0;
+    double graphCenterY = (minY + maxY) / 2.0;
 
-            if (m.hasMatch()) {
-                QString startID = m.captured(1);
-                QString startPart2 = m.captured(2);    // Could be port OR direction
-                QString startPart3 = m.captured(3);    // Could be direction OR empty
-                QString endID = m.captured(4);
-                QString endPart2 = m.captured(5);      // Could be port OR direction
-                QString endPart3 = m.captured(6);      // Could be direction OR empty
+    // Your scene dimensions (from CircuitScene constructor)
+    const double sceneWidth = 16000.0;
+    const double sceneHeight = 10000.0;
+    const double sceneCenterX = sceneWidth / 2.0;
+    const double sceneCenterY = sceneHeight / 2.0;
 
-                QString startPortID = startPart3.isEmpty() ? startPart2 : startPart2;
-                QString startDir = startPart3.isEmpty() ? "" : startPart3;
+    qDebug() << "Graph bounds: (" << minX << "," << minY << ") to (" << maxX << "," << maxY << ")";
+    qDebug() << "Graph center:" << graphCenterX << "," << graphCenterY;
 
-                QString endPortID = endPart3.isEmpty() ? endPart2 : endPart2;
-                QString endDir = endPart3.isEmpty() ? "" : endPart3;
+    // Transform all node positions
+    for (auto it = m_componentsPos.begin(); it != m_componentsPos.end(); ++it) {
+        Node& node = it.value();
+        double x = node.position.x();
+        double y = node.position.y();
 
-                qDebug() << startID << ":" << startPortID
-                         << (startDir.isEmpty() ? "" : ":" + startDir)
-                         << " -> " << endID << ":" << endPortID
-                         << (endDir.isEmpty() ? "" : ":" + endDir);
+        // 1. Flip Y coordinate (Graphviz origin is bottom-left, Qt is top-left)
+        y = maxY - y;
 
-                if (std::holds_alternative<IOType>(m_components[endID].type)) {
-                    m_components[endID].type = IOType::OUT;
-                }
+        // 2. Translate to center the graph in the scene
+        x = x - graphCenterX + sceneCenterX;
+        y = y - graphCenterY + sceneCenterY;
 
-                auto& endPort = m_components[endID].ports[endPortID];
-                auto& startPort = m_components[startID].ports[startPortID];
-                startPort.connections.append(&endPort);
-                endPort.connections.append(&startPort);
-            }
-        }
+        node.position.setX(x);
+        node.position.setY(y);
+
+        qDebug() << "Transformed position for" << node.id << ":" << x << "," << y;
     }
-    for (auto& node : m_components) {
-        for (auto& port : node.ports) {
-            port.parent = &node;
-        }
-    }
-
-    for(auto& comp: m_components){
-        if (!std::holds_alternative<IOType>(comp.type)){
-            continue;
-        }
-        for (auto& port: comp.ports){
-            for (auto* otherPort:port.connections){
-                auto* otherComp = otherPort->parent;
-                if(std::holds_alternative<int>(otherComp->type)){
-                    int bitSliceVal = std::get<int>(otherComp->type);
-                    int first = (bitSliceVal / 1000) % 10;
-                    int second = (bitSliceVal / 100) % 10;
-                    int third = (bitSliceVal / 10) % 10;
-                    int fourth = bitSliceVal % 10;
-
-                }
-            }
-        }
-    }
-
     return true;
 }
-bool HDLCompiler::processDotFile() {
-    ;
+
+bool HDLCompiler::processJsonFile(const QString& filePath) {
+    QFile file(filePath);
+    
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "Failed to open JSON file:" << file.errorString();
+        emit error("Failed to open JSON file: " + file.errorString());
+        return false;
+    }
+
+    QByteArray jsonData = file.readAll();
+    file.close();
+
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonData, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError) {
+        qDebug() << "JSON parse error:" << parseError.errorString();
+        emit error("JSON parse error: " + parseError.errorString());
+        return false;
+    }
+
+    if (!doc.isObject()) {
+        qDebug() << "JSON root is not an object";
+        emit error("Invalid JSON structure: root is not an object");
+        return false;
+    }
+
+    QJsonObject root = doc.object();
+    
+    // Parse modules
+    if (!root.contains("modules") || !root["modules"].isObject()) {
+        qDebug() << "No modules found in JSON";
+        emit error("No modules found in JSON");
+        return false;
+    }
+
+    QJsonObject modules = root["modules"].toObject();
+    
+    // Process each module
+    for (auto moduleIt = modules.begin(); moduleIt != modules.end(); ++moduleIt) {
+        QString moduleName = moduleIt.key();
+        QJsonObject module = moduleIt.value().toObject();
+        
+        qDebug() << "\n=== Processing Module:" << moduleName << "===";
+        
+        // First pass: Build bit-to-net mapping from netnames  NOT NEEDED
+        if (module.contains("netnames") && module["netnames"].isObject()) {
+            QJsonObject netnames = module["netnames"].toObject();
+            
+            for (auto netIt = netnames.begin(); netIt != netnames.end(); ++netIt) {
+                QString netName = netIt.key();
+                QJsonObject netData = netIt.value().toObject();
+                
+                // Only add to mapping if hide_name is 0 (false)
+                bool hideNames = netData["hide_name"].toInt() == 1;
+                if (!hideNames && netData.contains("bits") && netData["bits"].isArray()) {
+                    QJsonArray bits = netData["bits"].toArray();
+                    for (const QJsonValue& bitVal : bits) {
+                        int bitNum = bitVal.toInt();
+                        m_bitToNet[bitNum] = netName;
+                    }
+                }
+            }
+            qDebug() << "Built bit-to-net mapping:" << m_bitToNet.size() << "bits";
+        }
+        
+        // Second pass: Create nodes for module ports (I/O)
+        if (module.contains("ports") && module["ports"].isObject()) {
+            QJsonObject ports = module["ports"].toObject();
+            
+            for (auto portIt = ports.begin(); portIt != ports.end(); ++portIt) {
+                QString portName = portIt.key();
+                QJsonObject portData = portIt.value().toObject();
+                
+                QString direction = portData["direction"].toString();
+                QJsonArray bits = portData["bits"].toArray();
+                
+                // Create an I/O node for each module port
+                Node ioNode;
+                ioNode.id = portName;
+                
+                // Determine I/O type
+                if (direction == "input") {
+                    ioNode.type = IOType::IN;
+                } else if (direction == "output") {
+                    ioNode.type = IOType::OUT;
+                }
+
+                ioNode.position = m_componentsPos[portName].position;
+
+                // Create a port for this I/O
+                Port ioPort;
+                ioPort.parent = nullptr; // Will be set after insertion
+                ioPort.name = portName;
+                ioPort.type = (direction == "input") ? PortType::OUT : PortType::IN; // Note: reversed for I/O nodes
+                
+                // Store bit connections
+                for (const QJsonValue& bitVal : bits) {
+                    ioPort.connections.append(bitVal.toInt());
+                }
+                
+                ioNode.ports[portName] = ioPort;
+                
+                m_components[portName] = ioNode;
+                qDebug() << "Created I/O node:" << portName << "direction:" << direction << "bits:" << bits;
+            }
+        }
+        
+        // Third pass: Process cells (logic gates, flip-flops, etc.)
+        if (module.contains("cells") && module["cells"].isObject()) {
+            QJsonObject cells = module["cells"].toObject();
+            qDebug() << "\nProcessing" << cells.size() << "cells...";
+            
+            for (auto cellIt = cells.begin(); cellIt != cells.end(); ++cellIt) {
+                QString cellName = cellIt.key();
+                QJsonObject cellData = cellIt.value().toObject();
+                
+                QString cellType = cellData["type"].toString();
+                
+                // Extract numeric ID from cell name (e.g., "517" from "$abc$516$auto$blifparse.cc:397:parse_blif$517")
+                QString cellId = cellName;
+                QRegularExpression re(R"(\$(\d+)(?!.*\$\d))"); // Last number in the string
+                QRegularExpressionMatch match = re.match(cellName);
+                if (match.hasMatch()) {
+                    cellId = match.captured(1);
+                }
+                
+                Node node;
+                node.id = cellId;
+                
+                // Determine node type based on cell type
+                if (cellType == "$_DFF_P_" || cellType == "$_DFF_N_" || 
+                    cellType == "$_SDFF_PN0_" || cellType == "$_SDFF_PN1_") {
+                    node.type = RType::D; // D flip-flop
+                    if (cellType.contains("SDFF")) {
+                        node.HasReset = true;
+                    }
+                } else if (cellType == "$_NOT_") {
+                    node.type = GType::NOT;
+                } else if (cellType == "$_AND_") {
+                    node.type = GType::AND;
+                } else if (cellType == "$_OR_") {
+                    node.type = GType::OR;
+                } else if (cellType == "$_XOR_") {
+                    node.type = GType::XOR;
+                } else if (cellType == "$_NAND_") {
+                    node.type = GType::NAND;
+                } else if (cellType == "$_NOR_") {
+                    node.type = GType::NOR;
+                } else if (cellType == "$_XNOR_") {
+                    node.type = GType::XNOR;
+                } else if (cellType == "$_ANDNOT_") {
+                    node.type = GType::ANDNOT;
+                } else if (cellType == "$_ORNOT_") {
+                    node.type = GType::ORNOT;
+                } else if (cellType == "$_MUX_") {
+                    node.type = MType::MUX;
+                } else {
+                    // Unknown type - use a generic marker
+                    qDebug() << "Warning: Unknown cell type:" << cellType;
+                    continue; // Skip unknown types for now
+                }
+                
+                // Copy position if available from dot file
+                if (m_componentsPos.contains(cellId)) {
+                    node.position = m_componentsPos[cellId].position;
+                }
+                
+                // Process connections to create ports
+                if (cellData.contains("connections") && cellData["connections"].isObject()) {
+                    QJsonObject connections = cellData["connections"].toObject();
+                    QJsonObject portDirs = cellData["port_directions"].toObject();
+                    
+                    for (auto connIt = connections.begin(); connIt != connections.end(); ++connIt) {
+                        QString portName = connIt.key();
+                        QJsonArray bitArray = connIt.value().toArray();
+                        
+                        Port port;
+                        port.parent = nullptr; // Will be updated after insertion
+                        port.name = portName;
+                        
+                        // Determine port direction
+                        QString direction = portDirs[portName].toString();
+                        if (direction == "input") {
+                            port.type = PortType::IN;
+                        } else if (direction == "output") {
+                            port.type = PortType::OUT;
+                        }
+                        
+                        // Store bit numbers as connections
+                        for (const QJsonValue& bitVal : bitArray) {
+                            port.connections.append(bitVal.toInt());
+                        }
+                        
+                        node.ports[portName] = port;
+                    }
+                }
+                
+                m_components[cellId] = node;
+                qDebug() << "Created node:" << cellId << "type:" << cellType << "ports:" << node.ports.size();
+            }
+        }
+    }
+    
+    // Update parent pointers in all ports
+    for (auto it = m_components.begin(); it != m_components.end(); ++it) {
+        for (auto portIt = it.value().ports.begin(); portIt != it.value().ports.end(); ++portIt) {
+            portIt.value().parent = &it.value();
+        }
+    }
+    
+    qDebug() << "\n=== JSON processing complete ===";
+    qDebug() << "Total components:" << m_components.size();
+    qDebug() << "Total nets:" << m_bitToNet.size();
+    return true;
 }
+
 void HDLCompiler::receiveCode(const QString& hdlCode) {
     compile(hdlCode);
 }

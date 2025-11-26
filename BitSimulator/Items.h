@@ -82,9 +82,9 @@ private:
 class SourceItem : public QGraphicsObject {
     Q_OBJECT
 public:
-    SourceItem(QGraphicsItem* parent = nullptr); // Change parameter type
-    SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent = nullptr);
 
+    SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent = nullptr);
+    SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, int numOut, QGraphicsItem* parent = nullptr);
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; };

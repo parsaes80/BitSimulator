@@ -22,32 +22,50 @@ CircuitScene::CircuitScene(QObject* parent)
     connect(this, &QGraphicsScene::selectionChanged, this, [this]() { update(); });
 }
 
-void CircuitScene::addGate(GType gateType, QPointF position)
+QGraphicsObject* CircuitScene::addGate(GType gateType,int numIn, QPointF position)
 {
-    GateItem* gate = new GateItem(gateType,m_numInputs);
+    GateItem* gate = new GateItem(gateType,numIn);
     gate->setPos(position);
     addItem(gate);
+    return gate;
 }
-void CircuitScene::addSource(QPointF position)
+QGraphicsObject* CircuitScene::addSource(QPointF position)
 {
     SourceItem* source = new SourceItem(m_srcValues);
     source->setPos(position);
     addItem(source);
+    return source;
 }
-void CircuitScene::addRegister(RType RegType, QPointF position) {
+QGraphicsObject* CircuitScene::addSource(std::variant<QList<bool>,QList<int>> srcValues,int numOut,QPointF position)
+{
+    SourceItem* source = new SourceItem(srcValues,numOut);
+    source->setPos(position);
+    addItem(source);
+    return source;
+}
+QGraphicsObject* CircuitScene::addRegister(RType RegType, QPointF position) {
     RegisterItem* Reg = new RegisterItem(RegType,m_isFlipFlop,m_hasEnable);
     Reg->setPos(position);
     addItem(Reg);
+    return Reg;
 }
-void CircuitScene::addMux(MType MuxType, QPointF position) {
+QGraphicsObject* CircuitScene::addRegister(RType RegType,bool hasEnable, QPointF position) {
+    RegisterItem* Reg = new RegisterItem(RegType,true,hasEnable);
+    Reg->setPos(position);
+    addItem(Reg);
+    return Reg;
+}
+QGraphicsObject* CircuitScene::addMux(MType MuxType,int numIn, QPointF position) {
     MuxItem* Mux = new MuxItem(MuxType,m_numInputs);
     Mux->setPos(position);
     addItem(Mux);
+    return Mux;
 }
-void CircuitScene::addDisplay(int numIn,int numOut, QPointF position) {
+QGraphicsObject* CircuitScene::addDisplay(int numIn,int numOut, QPointF position) {
     DisplayItem* Display = new DisplayItem(numIn,numOut);
     Display->setPos(position);
     addItem(Display);
+    return Display;
 }
 // Add to CircuitScene
 PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshold)
@@ -472,6 +490,258 @@ void CircuitScene::receiveResult(SimResult result)
     }
 }
 
+void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
+{
+    qDebug() << "Received graph with" << graph.size() << "nodes";
+    clear();
+    QHash<QString,QGraphicsObject*> node2Item;
+
+    for (auto it = graph.begin(); it != graph.end(); ++it) {
+        const QString& nodeId = it.key();
+        const Node& node = it.value();
+        QGraphicsObject* item=nullptr;
+
+        if( std::holds_alternative<GType>(node.type)){
+            item = addGate(std::get<GType>(node.type),2,node.position);
+        }
+        else if( std::holds_alternative<RType>(node.type)){
+            item = addRegister(std::get<RType>(node.type),false,node.position);
+        }
+        else if( std::holds_alternative<MType>(node.type)){
+            item = addMux(std::get<MType>(node.type),2,node.position);
+        }
+        else if( std::holds_alternative<IOType>(node.type)){
+            auto IoType = std::get<IOType>(node.type);
+            if (IoType == IOType::IN){
+                int bitWidth = node.ports[node.id].connections.size();
+                if (bitWidth==1)
+                    item = addSource(QList<bool>{false,true},bitWidth,node.position);
+                else{
+                    QList<int> values;
+                    int maxValue = 1 << bitWidth;
+
+                    for (int i = 0; i < maxValue; i++) {
+                        values.append(i);
+                    }
+                    item = addSource(values,bitWidth,node.position);
+                }
+            }
+            else{
+                item = addDisplay(3,3,node.position);
+            }
+        }
+        node2Item[nodeId]=item;
+    }
+
+    QHash<int, QList<QPair<QString, QString>>> bitToInputs; // bit -> [(nodeId, portName), ...]
+    QHash<int, QPair<QString, QString>> bitToOutput; // bit -> (nodeId, portName)
+
+    for (auto it = graph.begin(); it != graph.end(); ++it) {
+        const QString& nodeId = it.key();
+        const Node& node = it.value();
+
+        for (auto portIt = node.ports.begin(); portIt != node.ports.end(); ++portIt) {
+            const QString& portName = portIt.key();
+            const Port& port = portIt.value();
+
+            for (int bitNum : port.connections) {
+                if (port.type == PortType::IN) {
+                    bitToInputs[bitNum].append({nodeId, portName});
+                } else if (port.type == PortType::OUT) {
+                    bitToOutput[bitNum] = {nodeId, portName};
+                }
+            }
+        }
+    }
+
+    for (auto bitIt = bitToInputs.begin(); bitIt != bitToInputs.end(); ++bitIt) {
+        int bitNum = bitIt.key();
+        const QList<QPair<QString, QString>>& inputs = bitIt.value();
+
+        if (!bitToOutput.contains(bitNum)) {
+            qDebug() << "Warning: Bit" << bitNum << "has no output source";
+            continue;
+        }
+
+        const auto& [outputNodeId, outputPortName] = bitToOutput[bitNum];
+
+
+        QGraphicsObject* outputItem = node2Item[outputNodeId];
+        PortItem* outPort =nullptr;
+        QList<PortItem*> outPorts;
+
+        if (auto ptr = dynamic_cast<GateItem*>(outputItem)){
+            outPort = ptr->getOutputPort();
+        }
+        else if (auto ptr = dynamic_cast<MuxItem*>(outputItem)){
+            outPort = ptr->getOutputPort();
+        }
+        else if (auto ptr = dynamic_cast<RegisterItem*>(outputItem)){
+            outPort = ptr->getOutputPort();
+        }
+        else if(auto ptr = dynamic_cast<SourceItem*>(outputItem)){
+            outPorts = ptr->getOutputPorts();
+            // Find which port outputs this specific bit
+            const Node& outputNode = graph[outputNodeId];
+            for (auto portIt = outputNode.ports.begin(); portIt != outputNode.ports.end(); ++portIt) {
+                const Port& port = portIt.value();
+                if (port.type == PortType::OUT) {
+                    // Check if this port contains our bitNum
+                    int bitIndex = port.connections.indexOf(bitNum);
+                    if (bitIndex != -1 && bitIndex < outPorts.size()) {
+                        outPort = outPorts[bitIndex];
+                        break;
+                    }
+                }
+            }
+        }
+        else if(auto ptr = dynamic_cast<DisplayItem*>(outputItem)){
+            outPorts = ptr->getOutputPorts();
+            // Find which port outputs this specific bit
+            const Node& outputNode = graph[outputNodeId];
+            for (auto portIt = outputNode.ports.begin(); portIt != outputNode.ports.end(); ++portIt) {
+                const Port& port = portIt.value();
+                if (port.type == PortType::OUT) {
+                    // Check if this port contains our bitNum
+                    int bitIndex = port.connections.indexOf(bitNum);
+                    if (bitIndex != -1 && bitIndex < outPorts.size()) {
+                        outPort = outPorts[bitIndex];
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (const auto& [inputNodeId, inputPortName] : inputs) {
+            QGraphicsObject* inputItem = node2Item[inputNodeId];
+            PortItem* inPort = nullptr;
+            QList<PortItem*> inPorts;
+            if(inputNodeId == "547"){
+                qDebug() << "here";
+            }
+            if (auto ptr = dynamic_cast<GateItem*>(inputItem)){
+                inPorts = ptr->getInputPorts();
+                const Node& inputNode = graph[inputNodeId];
+
+                int portCounter = 0;  // Count which input port we're on
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN) {
+                        if (port.name == inputPortName && port.connections.contains(bitNum)) {
+                            // This is the right port!
+                            if (portCounter < inPorts.size()) {
+                                inPort = inPorts[portCounter];
+                            }
+                            break;
+                        }
+                        portCounter++;
+                    }
+                }
+            }
+            else if (auto ptr = dynamic_cast<MuxItem*>(inputItem)){
+                inPorts = ptr->getInputPorts();
+                QList<PortItem*> addrPorts = ptr->getAddressPorts();
+
+                const Node& inputNode = graph[inputNodeId];
+
+                // Determine if this is an address port by checking the port name
+                bool isAddressPort = inputPortName.contains("S") || inputPortName.contains("addr") || inputPortName.contains("sel");
+
+                int portCounter = 0;  // Count which port we're on (within its category)
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN) {
+                        // Check if this port matches our category (address vs data)
+                        bool thisIsAddress = port.name.contains("S") || port.name.contains("addr") || port.name.contains("sel");
+
+                        if (thisIsAddress == isAddressPort) {
+                            // We're in the right category, check if this is our port
+                            if (port.name == inputPortName && port.connections.contains(bitNum)) {
+                                if (isAddressPort && portCounter < addrPorts.size()) {
+                                    inPort = addrPorts[portCounter];
+                                } else if (!isAddressPort && portCounter < inPorts.size()) {
+                                    inPort = inPorts[portCounter];
+                                }
+                                break;
+                            }
+                            portCounter++;  // Only increment for ports in the same category
+                        }
+                    }
+                }
+            }
+            else if(auto ptr = dynamic_cast<DisplayItem*>(inputItem)){
+                inPorts = ptr->getInputPorts();
+                const Node& inputNode = graph[inputNodeId];
+
+                int portCounter = 0;  // Count which input port we're on
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN) {
+                        if (port.name == inputPortName && port.connections.contains(bitNum)) {
+                            if (portCounter < inPorts.size()) {
+                                inPort = inPorts[portCounter];
+                            }
+                            break;
+                        }
+                        portCounter++;
+                    }
+                }
+            }
+            else if (auto ptr = dynamic_cast<RegisterItem*>(inputItem)){
+                const Node& inputNode = graph[inputNodeId];
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN && port.name == inputPortName) {
+                        // Map port name to the correct register port
+                        if (inputPortName.contains("D") || inputPortName.toLower().contains("data")) {
+                            inPort = ptr->getInputPort();
+                        }
+                        else if (inputPortName.contains("C") || inputPortName.toLower().contains("c")) {
+                            inPort = ptr->getClkPort();
+                        }
+                        else if (inputPortName.contains("EN") || inputPortName.toLower().contains("enable")) {
+                            inPort = ptr->getReadEnablePort();
+                        }
+                        else if (inputPortName.contains("R") || inputPortName.toLower().contains("reset")) {
+                            inPort = ptr->getInputPortTwo();
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (!inPort) {
+                qDebug() << "Warning: Could not find input port" << inputPortName << "on node" << inputNodeId;
+                continue;
+            }
+
+            QPointF outPos = outPort->mapToScene(QPointF(0, 0));
+            QPointF endPos = inPort->mapToScene(QPointF(0, 0));
+
+            WireItem* wire = new WireItem(outPos, endPos);
+            wire->setStartPort(outPort);
+            wire->setEndPort(inPort);
+
+            outPort->addConnection(wire);
+            inPort->addConnection(wire);
+
+            addItem(wire);
+
+            connect(outputItem,&QGraphicsObject::xChanged,wire,&WireItem::updateWirePosition);
+            connect(outputItem,&QGraphicsObject::yChanged,wire,&WireItem::updateWirePosition);
+
+            connect(inputItem,&QGraphicsObject::xChanged,wire,&WireItem::updateWirePosition);
+            connect(inputItem,&QGraphicsObject::yChanged,wire,&WireItem::updateWirePosition);
+
+            wire->updateWirePosition();
+
+            qDebug() << "Created wire: bit" << bitNum << "from" << outputNodeId << outputPortName
+                     << "to" << inputNodeId << inputPortName;
+        }
+    }
+    return;
+}
+
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     // Handle our custom cases first
     if (event->button() == Qt::LeftButton) {
@@ -482,13 +752,13 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
                 using T = std::decay_t<decltype(arg)>;
 
                 if constexpr (std::is_same_v<T, GType>) {
-                    addGate(arg, event->scenePos());
+                    addGate(arg,m_numInputs, event->scenePos());
                 }
                 else if constexpr (std::is_same_v<T, RType>) {
                     addRegister(arg, event->scenePos());
                 }
                 else if constexpr (std::is_same_v<T, MType>) {
-                    addMux(arg,event->scenePos());
+                    addMux(arg,m_numInputs,event->scenePos());
                 }
                 else if constexpr (std::is_same_v<T, bool>) {
                     if (arg)
@@ -664,20 +934,3 @@ void CircuitCanvas::wheelEvent(QWheelEvent* event)
     }
 }
 
-void CircuitCanvas::dragEnterEvent(QDragEnterEvent* event)
-{
-    if (event->mimeData()->hasText() && event->mimeData()->text().startsWith("gate:")) {
-        event->acceptProposedAction();
-    }
-}
-
-void CircuitCanvas::dropEvent(QDropEvent* event)
-{
-    QString gateData = event->mimeData()->text();
-    if (gateData.startsWith("gate:")) {
-        int gateTypeInt = gateData.mid(5).toInt();
-        GType gateType = static_cast<GType>(gateTypeInt);
-        addGate(gateType, event->position().toPoint());
-        event->acceptProposedAction();
-    }
-}

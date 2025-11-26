@@ -13,20 +13,23 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QDebug>
+#include <variant>
 #include "general.h"
 #include "Items.h"
-#include <variant>
+#include "hdlcompiler.h"
 
 class CircuitScene : public QGraphicsScene {
     Q_OBJECT
 public:
     explicit CircuitScene(QObject* parent = nullptr);
 
-    void addGate(GType gateType, QPointF position);
-    void addSource(QPointF position);
-    void addRegister(RType RegType, QPointF position);
-    void addMux(MType MuxType, QPointF position);
-    void addDisplay(int numIn,int numOut, QPointF position);
+    QGraphicsObject* addGate(GType gateType,int numIn, QPointF position);
+    QGraphicsObject* addSource(QPointF position);
+    QGraphicsObject* addSource(std::variant<QList<bool>,QList<int>> srcValues,int numOut,QPointF position);
+    QGraphicsObject* addRegister(RType RegType, QPointF position);
+    QGraphicsObject* addRegister(RType RegType,bool hasEnable, QPointF position);
+    QGraphicsObject* addMux(MType MuxType,int numIn, QPointF position);
+    QGraphicsObject* addDisplay(int numIn,int numOut, QPointF position);
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
@@ -65,10 +68,12 @@ public slots:
     void setHasEnable(const bool value){m_hasEnable = value;}
     void setIsFlipFlop(const bool value){m_isFlipFlop = value;}
     void receiveResult(SimResult result);
+    void receiveGraph(QHash<QString,Node> graph);
 signals:
     void startSimSIG(ExportGraph graph);
 private:
     void clearHighlights();
+    PortItem* getPortFromItem(QGraphicsObject* item, PortType type);
 
     bool m_connectingWire;
     QPointF m_wireStartPoint;
@@ -86,10 +91,7 @@ class CircuitCanvas : public QGraphicsView {
     Q_OBJECT
 public:
     explicit CircuitCanvas(QWidget* parent = nullptr);
-
-    void addGate(GType gateType, QPoint position) {m_scene->addGate(gateType, mapToScene(position));};
     void clearCanvas() {m_scene->clear();};
-    
     CircuitScene* getScene() const { return m_scene; }
 
 protected:
@@ -98,8 +100,6 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
-    void dragEnterEvent(QDragEnterEvent* event) override;
-    void dropEvent(QDropEvent* event) override;
 
 private:
     CircuitScene* m_scene;
