@@ -81,9 +81,13 @@ GateItem::GateItem(GType gateType, int numInputs, QGraphicsItem* parent):
     int x = -25;
     int y = x - ((m_numInputs-2)*5) + 3;
     int height = y* -2;
-    m_rect = QRectF(x, y , 50, height);
 
-    //m_rect = QRectF(-25, -22, 50, 44);
+    if(gateType == GType::NOT) {
+        m_numInputs =1;
+        y=-22;
+        height= 44;
+    }
+    m_rect = QRectF(x, y , 50, height);
 
     createPorts();
 }
@@ -134,8 +138,9 @@ void GateItem::drawGateShape(QPainter* painter)
 void GateItem::drawAndGate(QPainter* painter)
 {
     painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(0, 255, 140));
+    painter->setBrush(QColor(255, 224, 105));
     QPainterPath path;
+
     double width = m_rect.width();
     double height = m_rect.height();
     double halfWidth = width / 2;
@@ -154,7 +159,7 @@ void GateItem::drawAndGate(QPainter* painter)
 void GateItem::drawOrGate(QPainter* painter)
 {
     painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(255, 255, 110));
+    painter->setBrush(QColor(0, 255, 140));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -227,24 +232,22 @@ void GateItem::drawNotBubble(QPainter* painter)
     painter->setBrush(QColor(255, 0, 0));
     double width = m_rect.width();
     double halfWidth = width / 2;
-    double bubbleSize = 10; // Make consistent with NOT gate
+    double bubbleSize = 10;
     
-    painter->drawEllipse(halfWidth, 0, bubbleSize, bubbleSize);
+    // Draw centered at y=0 by offsetting y by -bubbleSize/2
+    painter->drawEllipse(halfWidth, -bubbleSize/2, bubbleSize, bubbleSize);
     painter->setBrush(QColor(255, 215, 150)); // Restore original brush
 }
 
-//void GateItem::mousePressEvent(QGraphicsSceneMouseEvent* event){QGraphicsItem::mousePressEvent(event);}
-
 void GateItem::createPorts()
 {
-    int numInputs = (m_gateType == GType::NOT) ? 1 : m_numInputs;
 
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (numInputs + 1);
+    double diffHeight = m_rect.height() / (m_numInputs + 1);
     double currHeight = -halfHeight;
 
-    for (int i = 0; i < numInputs; i++) {
+    for (int i = 0; i < m_numInputs; i++) {
         currHeight += diffHeight;
         PortItem* inputPort = new PortItem(PortType::IN, i, this);
         inputPort->setPos(-halfWidth, currHeight);
@@ -252,7 +255,16 @@ void GateItem::createPorts()
     }
     // Create output port
     m_outputPort = new PortItem(PortType::OUT, -1, this);
-    m_outputPort->setPos(halfWidth, 0); // Right side, center
+    
+    bool hasNotBubble = (m_gateType == GType::NAND ||
+                         m_gateType == GType::NOR ||
+                         m_gateType == GType::XNOR);
+    
+    if (hasNotBubble) {
+        m_outputPort->setPos(halfWidth + 14, 0); // Shift right by 10 (bubble size)
+    } else {
+        m_outputPort->setPos(halfWidth, 0);
+    }
 }
 
 //===================== Wire Item   ========================

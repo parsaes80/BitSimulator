@@ -9,13 +9,12 @@
 #include <vector>
 extern GlobalMap map;
 
-QGraphicsItem* norgate = nullptr;
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent), m_connectingWire(false), m_currWire(nullptr)
 {
-    setSceneRect(0, 0, 16000, 10000); // Large canvas
+    setSceneRect(0, 0, 160000, 100000); // Large canvas
 
     // Force full scene update on any change
     connect(this, &QGraphicsScene::changed, this, [this]() { update(); });
@@ -162,7 +161,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
     if (m_connectingWire && m_currWire) {
         PortItem* endPort = findNearestPort(endPoint);
 
-        if (endPort && m_currWireStartPort && endPort->canConnectTo(m_currWireStartPort) 
+        if (endPort && m_currWireStartPort && endPort->canConnectTo(m_currWireStartPort)
             && endPort->getPortType() == PortType::IN && endPort->getConnections().isEmpty()) {
             // Set the ports
             m_currWire->setStartPort(m_currWireStartPort);
@@ -187,7 +186,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
             }
             // Set final wire appearance
             m_currWire->setPen(QPen(Qt::black, 2));
-            m_currWire->updateWirePosition(); 
+            m_currWire->updateWirePosition();
         } else {
             // Remove invalid wire
             removeItem(m_currWire);
@@ -236,8 +235,8 @@ void CircuitScene::startSim()
             displayItems.push_back(display);
         }
     }
-    
-    // wire,net mapping 
+
+    // wire,net mapping
     QHash<PortItem*, u32> outputPortToNet;
     u32 netCounter = 1;
 
@@ -315,9 +314,7 @@ void CircuitScene::startSim()
     for (int gateItemIdx = 0; gateItemIdx < gateItems.size(); gateItemIdx++)
     {
         auto* gateItem = gateItems[gateItemIdx];
-        if(gateItem == norgate){
-            qDebug()<< "nor here";
-        }
+
         // Store the gate index for this GateItem
         map.gate2Idx[gateItem] = gateItemIdx;
         map.Idx2gate[gateItemIdx] = gateItem;
@@ -337,7 +334,7 @@ void CircuitScene::startSim()
         if (!gateItem->getOutputPort()->getConnections().isEmpty()) {
             WireItem* outwire = gateItem->getOutputPort()->getConnections()[0];
             outNet = map.wire2net[outwire];
-        }    
+        }
 
         for (auto inputnet : inputnets) { gateInputs.push_back(inputnet);};
 
@@ -439,20 +436,20 @@ void CircuitScene::startSim()
     for (int regItemIdx = 0; regItemIdx < registerItems.size(); regItemIdx++)
     {
         auto* regItem = registerItems[regItemIdx];
-        
+
         // Store the register index for this RegisterItem
         map.reg2Idx[regItem] = regItemIdx;
         map.Idx2reg[regItemIdx] = regItem;
-        
+
         outNet = 0;inNet2 = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
         clkNet = getNetId(regItem->getClkPort());
         readEnbNet = getNetId(regItem->getReadEnablePort());
         outNet = getNetId(regItem->getOutputPort());
-        inNet = getNetId(regItem->getInputPort()); 
+        inNet = getNetId(regItem->getInputPort());
         getNetId(regItem->getInputPortTwo());
         registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
     }
-    
+
     graph.gates = gates;
     graph.sources = sources;
     graph.registers = registers;
@@ -538,7 +535,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
         }
         node2Item[nodeId]=item;
     }
-    norgate = node2Item["593"];
+
     QHash<int, QList<QPair<QString, QString>>> bitToInputs; // bit -> [(nodeId, portName), ...]
     QHash<int, QPair<QString, QString>> bitToOutput; // bit -> (nodeId, portName)
 
@@ -740,6 +737,96 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                      << "to" << inputNodeId << inputPortName;
         }
     }
+
+
+
+    // QList<QGraphicsObject*> components;
+    // for (QGraphicsItem* item : items()) {
+    //     if (GateItem* gate = dynamic_cast<GateItem*>(item)) {
+    //         components.push_back(gate);
+    //     }
+    //     else if (SourceItem* source = dynamic_cast<SourceItem*>(item)) {
+    //         components.push_back(source);
+    //     }
+    //     else if (RegisterItem* reg = dynamic_cast<RegisterItem*>(item)) {
+    //         components.push_back(reg);
+    //     }
+    //     else if (MuxItem* mux = dynamic_cast<MuxItem*>(item)) {
+    //         components.push_back(mux);
+    //     }
+    //     else if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
+    //         components.push_back(display);
+    //     }
+    // }
+    // // Group items by vertical proximity (within 100 pixels)
+    // QList<QList<QGraphicsObject*>> groups;
+    // QSet<QGraphicsObject*> processed;
+
+    // for (auto* comp : components) {
+    //     if (processed.contains(comp)) continue;
+
+    //     QList<QGraphicsObject*> group;
+    //     group.append(comp);
+    //     processed.insert(comp);
+
+    //     qreal compY = comp->pos().x();
+
+    //     // Find all items at similar Y position
+    //     for (auto* other : components) {
+    //         if (processed.contains(other)) continue;
+
+    //         qreal otherY = other->pos().x();
+    //         if (qAbs(compY - otherY) < 100) {  // Within 100 pixels vertically
+    //             group.append(other);
+    //             processed.insert(other);
+    //         }
+    //     }
+
+    //     if (group.size() > 1) {
+    //         groups.append(group);
+    //     }
+    // }
+
+    // // Process each group
+    // for (auto& group : groups) {
+    //     // Sort group by Y position (top to bottom)
+    //     std::sort(group.begin(), group.end(), [](QGraphicsObject* a, QGraphicsObject* b) {
+    //         return a->pos().y() < b->pos().y();
+    //     });
+
+    //     int groupSize = group.size();
+
+    //     if (groupSize == 1) {
+    //         continue; // Skip single items
+    //     }
+
+    //     // Apply gradient shifts
+    //     for (int i = 0; i < groupSize; i++) {
+    //         QGraphicsObject* obj = group[i];
+
+    //         qreal shift;
+    //         if (groupSize == 2) {
+    //             // Special case: only 2 items
+    //             shift = (i == 0) ? -5.0 : 5.0;
+    //         } else {
+    //             // 3 or more items: linear interpolation from -5 to +5
+    //             // Middle item(s) should be close to 0
+    //             shift = -200.0 + (100.0 * i / (groupSize - 1));
+    //         }
+
+    //         // Apply the shift
+    //         QPointF currentPos = obj->pos();
+    //         obj->setPos(currentPos.x() + shift, currentPos.y());
+    //     }
+    // }
+
+    // // Update all wires after moving components
+    // for (QGraphicsItem* wireItem : items()) {
+    //     if (auto* wire = dynamic_cast<WireItem*>(wireItem)) {
+    //         wire->updateWirePosition();
+    //     }
+    // }
+
     return;
 }
 
@@ -766,7 +853,7 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
                         addSource(event->scenePos());
                     else
                         addDisplay(m_numInputs,m_numOutputs,event->scenePos());
-                }}, 
+                }},
                 m_nextItem);
 
             event->accept();
@@ -789,7 +876,7 @@ void CircuitScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
     if (m_connectingWire) {
         updateWireConnection(event->scenePos());
 
-    } else { 
+    } else {
         QGraphicsScene::mouseMoveEvent(event);
     }
 }
@@ -858,7 +945,7 @@ void CircuitCanvas::mousePressEvent(QMouseEvent* event)
         event->accept();
         return;
     }
-   
+
     QGraphicsView::mousePressEvent(event); // Call base class implementation
 }
 
@@ -868,18 +955,18 @@ void CircuitCanvas::mouseMoveEvent(QMouseEvent* event)
         // Calculate movement delta
         QPoint delta = event->pos() - m_lastPanPoint;
         m_lastPanPoint = event->pos();
-        
+
         // Move the viewport in the same direction as mouse movement
         QScrollBar* hBar = horizontalScrollBar();
         QScrollBar* vBar = verticalScrollBar();
-        
+
         hBar->setValue(hBar->value() - delta.x());
         vBar->setValue(vBar->value() - delta.y());
-        
+
         event->accept();
         return;
     }
-    
+
     QGraphicsView::mouseMoveEvent(event);
 }
 
@@ -892,7 +979,7 @@ void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
         event->accept();
         return;
     }
-    
+
     QGraphicsView::mouseReleaseEvent(event);
 }
 
@@ -902,9 +989,9 @@ void CircuitCanvas::wheelEvent(QWheelEvent* event)
     QTransform currentTransform = transform();
     double currentScale = currentTransform.m11();
     QRectF sceneRect = m_scene->sceneRect();
-    
+
     const double scaleFactor = 1.15;
-    
+
     // Calculate what the new scale would be
     double newScale = currentScale;
     if (event->angleDelta().y() > 0) {
@@ -912,21 +999,21 @@ void CircuitCanvas::wheelEvent(QWheelEvent* event)
     } else {
         newScale /= scaleFactor;  // Zoom out
     }
-    
+
     // Check if zooming out would make the view larger than the scene
     if (newScale < currentScale) {  // Zooming out
         QRectF viewportRect = viewport()->rect();
-        
+
         // Calculate what the visible scene area would be with the new scale
         double newViewWidth = viewportRect.width() / newScale;
         double newViewHeight = viewportRect.height() / newScale;
-        
+
         // Don't zoom out if the view would become larger than the scene
         if (newViewWidth >= sceneRect.width() || newViewHeight >= sceneRect.height()) {
             return;  // Prevent this zoom operation
         }
     }
-    
+
     // Apply the zoom
     if (event->angleDelta().y() > 0) {
         scale(scaleFactor, scaleFactor);
