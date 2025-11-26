@@ -323,6 +323,13 @@ void Simulator::tick() {
 
     std::set<u32> eventQueue;
 
+        if (firstTick) {
+        for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
+            eventQueue.insert(i);
+        }
+        firstTick = false;
+    }
+    
     for (auto& reg : m_registers) {
         if(!reg.outID){continue;}
         bool oldValue = m_nets[reg.outID];
@@ -343,7 +350,7 @@ void Simulator::tick() {
     }
 
     int propagationStep = 0;
-    int maxSteps = 10000; // Safety limit
+    int maxSteps = 100000;
 
     while (!eventQueue.empty() && propagationStep < maxSteps) {
         auto it = eventQueue.begin();
@@ -377,7 +384,7 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_registers = graph.registers;
     m_muxes = graph.muxes;
     m_gateInputs = graph.gateInputs;
-
+    firstTick = true;
     auto numNets = map.net2wire.size();
     for (int i = 0; i <= numNets; i++) { m_nets.push_back(false);};
 

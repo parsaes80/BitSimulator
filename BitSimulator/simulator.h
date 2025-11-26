@@ -32,6 +32,7 @@ private:
 
     std::vector<u32> m_gateInputs;     
     std::vector<u32> m_sourceOutputs;
-     
+
+    bool firstTick = true;
 };
 

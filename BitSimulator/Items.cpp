@@ -97,10 +97,6 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
         painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
     }
 
-    // Draw gate body based on type
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(255, 215, 150)); // Light orange/beige color like in your image
-
     drawGateShape(painter);
 
 }
@@ -137,6 +133,8 @@ void GateItem::drawGateShape(QPainter* painter)
 
 void GateItem::drawAndGate(QPainter* painter)
 {
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(0, 255, 140));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -155,7 +153,8 @@ void GateItem::drawAndGate(QPainter* painter)
 
 void GateItem::drawOrGate(QPainter* painter)
 {
-    // OR gate: Curved shape
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(255, 255, 110));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -177,13 +176,25 @@ void GateItem::drawOrGate(QPainter* painter)
 
 void GateItem::drawXorGate(QPainter* painter)
 {
-    // Draw OR gate first
-    drawOrGate(painter);
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(223, 0, 255));
+    QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    
+
+    // Left curved input side
+    path.moveTo(-halfWidth, -halfHeight);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight); // Input curve
+    // Bottom connection to right side
+    path.lineTo(halfWidth / 2, halfHeight);
+    // Right curved output side - reaches full width
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight); // Output curve reaches right edge
+    // Top connection
+    path.lineTo(-halfWidth, -halfHeight);
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
     // Add extra curved line on the left for XOR
     QPainterPath extraLine;
     extraLine.moveTo(-halfWidth, -halfHeight * 0.75);
@@ -193,36 +204,32 @@ void GateItem::drawXorGate(QPainter* painter)
 
 void GateItem::drawNotGate(QPainter* painter)
 {
-    // NOT gate: Triangle with bubble
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(255, 0, 0));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double bubbleSize = 0; // Make bubble a bit bigger
 
     path.moveTo(-halfWidth, -halfHeight);       // Top left
     path.lineTo(-halfWidth, halfHeight);        // Bottom left
-    path.lineTo(halfWidth - bubbleSize / 2, 0); // Right point (leave space for bubble)
+    path.lineTo(halfWidth , 0); // Right point (leave space for bubble)
     path.lineTo(-halfWidth, -halfHeight);       // Close triangle
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
     
-    // Draw NOT bubble at the tip
-    painter->setBrush(Qt::white);
-    painter->drawEllipse(halfWidth - bubbleSize/2, -bubbleSize/2, bubbleSize, bubbleSize);
-    painter->setBrush(QColor(255, 215, 150)); // Restore original brush
 }
 
 void GateItem::drawNotBubble(QPainter* painter)
 {
-    // Small circle at output for NOT operation
-    painter->setBrush(Qt::white);
+    painter->setPen(QPen(Qt::black, 2));
+    painter->setBrush(QColor(255, 0, 0));
     double width = m_rect.width();
     double halfWidth = width / 2;
-    double bubbleSize = 0; // Make consistent with NOT gate
+    double bubbleSize = 10; // Make consistent with NOT gate
     
-    painter->drawEllipse(halfWidth - bubbleSize/2, -bubbleSize/2, bubbleSize, bubbleSize);
+    painter->drawEllipse(halfWidth, 0, bubbleSize, bubbleSize);
     painter->setBrush(QColor(255, 215, 150)); // Restore original brush
 }
 
@@ -263,20 +270,26 @@ QRectF WireItem::boundingRect() const
         return QRectF(0, 0, 1, 1);  // Minimal fallback
     }
 
+    qreal penWidth = m_pen.width();
+    qreal extra = penWidth / 2.0 + 2; // Small extra margin for selection
+
     // Calculate midpoint for orthogonal wire
     qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
 
-    // Find bounding rectangle that encompasses all three line segments
-    qreal left = qMin(localStartPos.x(), qMin(midX, localEndPos.x()));
-    qreal right = qMax(localStartPos.x(), qMax(midX, localEndPos.x()));
+    // Create a tight bounding rect that only covers the wire path
+    // The wire consists of 3 segments:
+    // 1. Horizontal: (startX, startY) to (midX, startY)
+    // 2. Vertical: (midX, startY) to (midX, endY)
+    // 3. Horizontal: (midX, endY) to (endX, endY)
+
+    qreal left = qMin(localStartPos.x(), localEndPos.x());
+    qreal right = qMax(localStartPos.x(), localEndPos.x());
     qreal top = qMin(localStartPos.y(), localEndPos.y());
     qreal bottom = qMax(localStartPos.y(), localEndPos.y());
 
-    QRectF rect(left, top, right - left, bottom - top);
-
-    // Add padding for pen width
-    qreal penWidth = m_pen.width();
-    return rect.adjusted(-penWidth / 2, -penWidth / 2, penWidth / 2, penWidth / 2);
+    return QRectF(left - extra, top - extra,
+                  right - left + 2*extra,
+                  bottom - top + 2*extra);
 }
 
 // Update WireItem methods
@@ -332,6 +345,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
         }
 
         if (isSelected()) {
+            currentPen.setColor(Qt::blue);
             currentPen.setWidth(3);
         }
     }
@@ -346,7 +360,28 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     painter->drawLine(midX, localStartPos.y(), midX, localEndPos.y());                        // Vertical from start height to end height
     painter->drawLine(midX, localEndPos.y(), localEndPos.x(), localEndPos.y());               // Horizontal from middle to end
 }
+QPainterPath WireItem::shape() const
+{
+    QPainterPath path;
 
+    if (localStartPos.isNull() && localEndPos.isNull()) {
+        return path;
+    }
+
+    qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
+
+    // Create a stroker to make a clickable area around the wire
+    QPainterPathStroker stroker;
+    stroker.setWidth(10); // 10 pixel click tolerance
+
+    // Draw the orthogonal path
+    path.moveTo(localStartPos);
+    path.lineTo(midX, localStartPos.y());
+    path.lineTo(midX, localEndPos.y());
+    path.lineTo(localEndPos);
+
+    return stroker.createStroke(path);
+}
 void WireItem::updateWirePosition()
 {  
     // Get the scene positions of both ports

@@ -20,7 +20,7 @@ using s32 = int32_t;
 using s64 = int64_t;
 
 enum class RType : u8 { SR, JK, D, T };
-enum class GType : u8 {NOT, AND, OR, XOR, NAND, NOR, XNOR, ANDNOT, ORNOT};
+enum class GType : u8 {NOT, AND, OR, XOR, NAND, NOR, XNOR};
 enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
 enum class PortType : u8 {IN,OUT};
 enum class MType : u8 {MUX,DEMUX};

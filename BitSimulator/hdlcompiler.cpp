@@ -99,7 +99,7 @@ endmodule
 
     // Run Yosys synthesis
     QStringList arguments;
-    arguments << "-p" << "read_verilog code.v; synth -top adder; write_json code_netlist.json; show -format dot -prefix code_graph";
+    arguments << "-p" << "read_verilog code.v; synth -top adder -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR; write_json code_netlist.json; show -format dot -format svg -prefix code_graph";
     Process->start(yosysPath, arguments);
 
     if (!Process->waitForFinished(30000)) {
@@ -419,10 +419,6 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                     node.type = GType::NOR;
                 } else if (cellType == "$_XNOR_") {
                     node.type = GType::XNOR;
-                } else if (cellType == "$_ANDNOT_") {
-                    node.type = GType::ANDNOT;
-                } else if (cellType == "$_ORNOT_") {
-                    node.type = GType::ORNOT;
                 } else if (cellType == "$_MUX_") {
                     node.type = MType::MUX;
                 } else {

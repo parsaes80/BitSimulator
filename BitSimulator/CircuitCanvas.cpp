@@ -8,6 +8,8 @@
 #include <qscrollbar.h>
 #include <vector>
 extern GlobalMap map;
+
+QGraphicsItem* norgate = nullptr;
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
@@ -313,7 +315,9 @@ void CircuitScene::startSim()
     for (int gateItemIdx = 0; gateItemIdx < gateItems.size(); gateItemIdx++)
     {
         auto* gateItem = gateItems[gateItemIdx];
-        
+        if(gateItem == norgate){
+            qDebug()<< "nor here";
+        }
         // Store the gate index for this GateItem
         map.gate2Idx[gateItem] = gateItemIdx;
         map.Idx2gate[gateItemIdx] = gateItem;
@@ -502,6 +506,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
         QGraphicsObject* item=nullptr;
 
         if( std::holds_alternative<GType>(node.type)){
+
             item = addGate(std::get<GType>(node.type),2,node.position);
         }
         else if( std::holds_alternative<RType>(node.type)){
@@ -527,12 +532,13 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                 }
             }
             else{
-                item = addDisplay(3,3,node.position);
+                int bitWidth = node.ports[node.id].connections.size();
+                item = addDisplay(bitWidth,0,node.position);
             }
         }
         node2Item[nodeId]=item;
     }
-
+    norgate = node2Item["593"];
     QHash<int, QList<QPair<QString, QString>>> bitToInputs; // bit -> [(nodeId, portName), ...]
     QHash<int, QPair<QString, QString>> bitToOutput; // bit -> (nodeId, portName)
 
@@ -616,9 +622,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
             QGraphicsObject* inputItem = node2Item[inputNodeId];
             PortItem* inPort = nullptr;
             QList<PortItem*> inPorts;
-            if(inputNodeId == "547"){
-                qDebug() << "here";
-            }
+
             if (auto ptr = dynamic_cast<GateItem*>(inputItem)){
                 inPorts = ptr->getInputPorts();
                 const Node& inputNode = graph[inputNodeId];
@@ -673,17 +677,14 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                 inPorts = ptr->getInputPorts();
                 const Node& inputNode = graph[inputNodeId];
 
-                int portCounter = 0;  // Count which input port we're on
                 for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
                     const Port& port = portIt.value();
                     if (port.type == PortType::IN) {
                         if (port.name == inputPortName && port.connections.contains(bitNum)) {
-                            if (portCounter < inPorts.size()) {
-                                inPort = inPorts[portCounter];
-                            }
+                            int portIndex = port.connections.indexOf(bitNum);
+                            inPort = inPorts[portIndex];
                             break;
                         }
-                        portCounter++;
                     }
                 }
             }
