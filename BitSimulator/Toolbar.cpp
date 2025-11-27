@@ -29,7 +29,7 @@ void GateButton::paintEvent(QPaintEvent* event)
 
     // Use 75% of button size for gate drawing
     QRect buttonRect = rect();
-    double gateWidth = buttonRect.width() * 0.75;
+    double gateWidth = buttonRect.width() * 0.7;
     double gateHeight = buttonRect.height() * 0.75;
     
     // Center the gate in the button
@@ -81,85 +81,95 @@ void GateButton::drawGateSymbol(QPainter* painter, double width, double height)
 }
 
 void GateButton::drawAndGate(QPainter* painter, double width, double height)
-{
+{  
     QPainterPath path;
     
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double arcWidth = width * 0.4;  // 40% of total width for the arc
 
     path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(-halfWidth + arcWidth, -halfHeight);
-    path.arcTo(-halfWidth + arcWidth, -halfHeight, arcWidth, height, 90, -180);
+    path.lineTo(0, -halfHeight);
+    path.arcTo(0, -halfHeight, halfWidth, height, 90, -180);
     path.lineTo(-halfWidth, halfHeight);
-    path.closeSubpath();
-    
+    path.lineTo(-halfWidth, -halfHeight);
+
+    painter->setBrush(QColor(255, 215, 150));
+
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 }
 
 void GateButton::drawOrGate(QPainter* painter, double width, double height)
 {
+    painter->setBrush(QColor(0, 255, 140));
+
     QPainterPath path;
     
     double halfWidth = width / 2;
     double halfHeight = height / 2;
     
     path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth * 0.3, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth * 0.6, halfHeight);
-    path.quadTo(halfWidth, 0, halfWidth * 0.6, -halfHeight);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth / 2, halfHeight);
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
-    
+
+    painter->setBrush(QColor(0, 255, 140));
+
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 }
 
 void GateButton::drawXorGate(QPainter* painter, double width, double height)
 {
-    drawOrGate(painter, width, height);
+    painter->setBrush(QColor(223, 0, 255));
 
-    painter->setBrush(Qt::NoBrush);
-
-    QPainterPath extraLine;
-    
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double offset = width * 0.08;  // Small offset from the main gate
-    
-    extraLine.moveTo(-halfWidth - offset, -halfHeight * 0.8);
-    extraLine.quadTo(-halfWidth * 0.4, 0, -halfWidth - offset, halfHeight * 0.8);
+
+    QPainterPath path;
+
+    path.moveTo(-halfWidth, -halfHeight);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth / 2, halfHeight);
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
+    path.lineTo(-halfWidth, -halfHeight);
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
+
+    QPainterPath extraLine;
+
+    painter->setBrush(Qt::NoBrush);
+    double offset = width * 0.1;
+    extraLine.moveTo(-halfWidth - offset, -halfHeight*0.9 );
+    extraLine.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight*0.9);
     painter->drawPath(extraLine);
 }
 
 void GateButton::drawNotGate(QPainter* painter, double width, double height)
 {
+    painter->setBrush(QColor(255, 0, 0));
     QPainterPath path;
-    
+
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double bubbleRadius = width * 0.08;  // Bubble size relative to width
 
     path.moveTo(-halfWidth, -halfHeight);
     path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(halfWidth - bubbleRadius * 2, 0);
+    path.lineTo(halfWidth , 0);
     path.lineTo(-halfWidth, -halfHeight);
-    
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
-    // Draw NOT bubble at the tip
-    painter->setBrush(Qt::white);
-    painter->drawEllipse(QRectF(halfWidth - bubbleRadius * 2, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
 }
 
 void GateButton::drawNotBubble(QPainter* painter, double width, double height)
 {
-    painter->setBrush(Qt::white);
+    painter->setBrush(Qt::red);
     double bubbleRadius = width * 0.08;  // Bubble size relative to width
     double QuarterWidth = width / 4;
     
-    painter->drawEllipse(QRectF(QuarterWidth + bubbleRadius, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
+    painter->drawEllipse(QRectF(QuarterWidth + 3*bubbleRadius, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
 }
 
 //===================== SourceButton ========================
@@ -298,7 +308,7 @@ void MuxButton::paintEvent(QPaintEvent* event)
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
     painter.setBrush(QColor(255, 215, 150));
-    painter.setPen(QPen(Qt::black, 4));
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 4));
     painter.drawPath(path);
     painter.fillPath(path, painter.brush());
 }
@@ -331,7 +341,7 @@ void DisplayButton::paintEvent(QPaintEvent* event)
 
     // Draw outer border (dark gray casing)
     QRectF outerRect(-20, -30, 40, 60);
-    painter.setPen(QPen(Qt::black, 2));
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
     painter.setBrush(QColor(40, 40, 40));
     painter.drawRect(outerRect);
 

@@ -13,6 +13,7 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QDebug>
+#include <QKeyEvent>
 #include "general.h"
 
 class WireItem;
@@ -29,7 +30,7 @@ public:
     bool canConnectTo(PortItem* otherPort) const;
 
     void addConnection(WireItem* wire);
-    void removeConnections(WireItem* wire);
+    void removeConnection(WireItem* wire);
 
     QList<WireItem*> getConnections() const { return m_connections; }
     QGraphicsObject* getParent() const { return dynamic_cast<QGraphicsObject*>(parentItem()); };
@@ -59,6 +60,9 @@ public:
     PortItem* getInputPort(int index) const { return m_inputPorts[index]; };
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void drawGateShape(QPainter* painter);
@@ -93,6 +97,10 @@ public:
     int getNumOutputPorts() const { return m_numOutputs; };
     std::variant<QList<bool>,QList<int>> getValues() const { return m_srcValues; };
     void setValues(QList<bool> values) { m_srcValues = values; };
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
 private:
     void addPorts();
 
@@ -124,8 +132,12 @@ public:
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
 public slots:
     void updateWirePosition();
+
 private:
     bool m_value = false;
     PortItem* m_startPort = nullptr;
@@ -150,7 +162,9 @@ public:
     PortItem* getReadEnablePort() const { return m_readEnbPort; }
     PortItem* getClkPort() const { return m_clkPort; }
     void setValue(bool value) { m_value = value;};
-    //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void createPorts(bool isFlipFlop, bool hasEnable);
@@ -180,6 +194,9 @@ public:
     QList<PortItem*> getAddressPorts() const { return m_inputAddressPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
 
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
 private:
     void createPorts();
     int m_numInputs;
@@ -200,6 +217,10 @@ public:
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
     void updateValue();
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
 private:
     void createPorts();
 

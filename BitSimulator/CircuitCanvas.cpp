@@ -523,7 +523,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                     int maxValue = 1 << bitWidth;
 
                     for (int i = 0; i < maxValue; i++) {
-                        values.append(i);
+                        values.append(i); values.append(i);
                     }
                     item = addSource(values,bitWidth,node.position);
                 }
