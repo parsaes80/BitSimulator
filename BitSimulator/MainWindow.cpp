@@ -3,6 +3,8 @@
 #include "CircuitCanvas.h"
 #include "Toolbar.h"
 
+extern bool sim_running;
+extern GlobalMap map;
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
     // Create thread and Simulator
@@ -139,7 +141,7 @@ void MainWindow::on_startButton_clicked()
 {
     ui.camera->getScene()->startSim();
 }
-void MainWindow::on_pushButton_clicked()
+void MainWindow::on_compileButton_clicked()
 {
     ui.hdlEditor->onSendCode();
 }
@@ -375,5 +377,13 @@ void MainWindow::on_numDisplayInputs_valueChanged(int value)
 void MainWindow::on_numDisplayOutputs_valueChanged(int value)
 {
     ui.camera->getScene()->setNumOutputs(value);
+}
+
+
+void MainWindow::on_clearButton_clicked()
+{
+    sim_running = false;
+    ui.camera->getScene()->clear();
+    map.clear();
 }
 

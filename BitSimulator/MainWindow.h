@@ -18,7 +18,7 @@ private slots:
     void on_startButton_clicked();
 
     void on_slider_valueChanged(int value);
-    void on_pushButton_clicked();
+    void on_compileButton_clicked();
 
     void on_overlay_currentChanged(int arg1);
     void on_numGateMuxInputs_valueChanged(int value);
@@ -31,6 +31,8 @@ private slots:
     void on_numDisplayInputs_valueChanged(int value);
 
     void on_numDisplayOutputs_valueChanged(int value);
+
+    void on_clearButton_clicked();
 
 signals:
     void sendTimerPeriod(int milliseconds);

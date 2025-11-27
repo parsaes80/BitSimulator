@@ -495,6 +495,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
 {
     qDebug() << "Received graph with" << graph.size() << "nodes";
     clear();
+
     QHash<QString,QGraphicsObject*> node2Item;
 
     for (auto it = graph.begin(); it != graph.end(); ++it) {
