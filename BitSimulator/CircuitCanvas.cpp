@@ -437,15 +437,14 @@ void CircuitScene::startSim()
     {
         auto* regItem = registerItems[regItemIdx];
 
-        // Store the register index for this RegisterItem
         map.reg2Idx[regItem] = regItemIdx;
         map.Idx2reg[regItemIdx] = regItem;
 
-        outNet = 0;inNet2 = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
         clkNet = getNetId(regItem->getClkPort());
         readEnbNet = getNetId(regItem->getReadEnablePort());
         outNet = getNetId(regItem->getOutputPort());
         inNet = getNetId(regItem->getInputPort());
+        inNet2 = (regItem->getRegType()!= RType::D)?getNetId(regItem->getInputPortTwo()):0; // HACK FIX NEED TO CHANGE LATER
         getNetId(regItem->getInputPortTwo());
         registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
     }
@@ -522,10 +521,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                 else{
                     QList<int> values;
                     int maxValue = 1 << bitWidth;
-
-                    for (int i = 0; i < maxValue; i++) {
-                        values.append(i); values.append(i);
-                    }
+                    for (int i = 0; i < maxValue; i++) {values.append(i); values.append(i);}
                     item = addSource(values,bitWidth,node.position);
                 }
             }

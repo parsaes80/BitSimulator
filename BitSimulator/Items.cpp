@@ -310,15 +310,6 @@ QRectF WireItem::boundingRect() const
     qreal penWidth = m_pen.width();
     qreal extra = penWidth / 2.0 + 2; // Small extra margin for selection
 
-    // Calculate midpoint for orthogonal wire
-    qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
-
-    // Create a tight bounding rect that only covers the wire path
-    // The wire consists of 3 segments:
-    // 1. Horizontal: (startX, startY) to (midX, startY)
-    // 2. Vertical: (midX, startY) to (midX, endY)
-    // 3. Horizontal: (midX, endY) to (endX, endY)
-
     qreal left = qMin(localStartPos.x(), localEndPos.x());
     qreal right = qMax(localStartPos.x(), localEndPos.x());
     qreal top = qMin(localStartPos.y(), localEndPos.y());
@@ -537,8 +528,6 @@ void SourceItem::addPorts()
     double diffHeight = m_rect.height() / (m_numOutputs + 1);
     double currHeight = -halfHeight;
 
-    currHeight = -halfHeight;
-    diffHeight = m_rect.height() / (m_numOutputs + 1);
     for (int i = 0; i < m_numOutputs; i++) {
         currHeight += diffHeight;
         PortItem* outputPort = new PortItem(PortType::OUT, i, this);
@@ -565,7 +554,8 @@ void SourceItem::keyPressEvent(QKeyEvent* event)
             scene()->removeItem(this);
             deleteLater();
         }
-    } else {
+    }
+    else {
         QGraphicsObject::keyPressEvent(event);
     }
 }

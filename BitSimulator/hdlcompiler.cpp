@@ -54,7 +54,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
     QStringList dotArgs;
     // Output a positioned .dot file (plain format has coordinates)
     dotArgs << "-Tdot" << "code_graph.dot" << "-o" << "code_graph_positioned.dot";
-    Process->start("dot", dotArgs);
+    Process->start("./dot", dotArgs);
 
     if (!Process->waitForFinished(10000)) {
         qDebug() << "Dot process timeout";
