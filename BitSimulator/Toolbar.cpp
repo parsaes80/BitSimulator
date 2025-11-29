@@ -122,7 +122,7 @@ void GateButton::drawOrGate(QPainter* painter, double width, double height)
 
 void GateButton::drawXorGate(QPainter* painter, double width, double height)
 {
-    painter->setBrush(QColor(223, 0, 255));
+    painter->setBrush(QColor(142, 43, 255));
 
     double halfWidth = width / 2;
     double halfHeight = height / 2;
@@ -307,7 +307,7 @@ void MuxButton::paintEvent(QPaintEvent* event)
     path.lineTo(halfWidth,qurtHeight);
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
-    painter.setBrush(QColor(255, 215, 150));
+    painter.setBrush(QColor(255, 164, 0));
     painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 4));
     painter.drawPath(path);
     painter.fillPath(path, painter.brush());

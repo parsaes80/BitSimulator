@@ -209,9 +209,9 @@ inline void Simulator::processRegisters() {
                         case RType::D:
                             // D Flip-Flop: Q = D
                             reg.storedValue = input1;
-                            if(input2){
-                                reg.storedValue = false;
-                            }
+                            // if(input2){
+                            //     reg.storedValue = false;
+                            // }
                             break;
 
                         case RType::T:

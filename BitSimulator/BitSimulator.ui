@@ -6,15 +6,18 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1920</width>
-    <height>1080</height>
+    <width>1600</width>
+    <height>960</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>BitSimulator</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <layout class="QHBoxLayout" name="horizontalLayout_2">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <property name="spacing">
+     <number>6</number>
+    </property>
     <property name="leftMargin">
      <number>0</number>
     </property>
@@ -56,6 +59,9 @@
          <layout class="QGridLayout" name="gridLayout_2">
           <property name="horizontalSpacing">
            <number>6</number>
+          </property>
+          <property name="verticalSpacing">
+           <number>0</number>
           </property>
           <item row="1" column="0" colspan="3">
            <widget class="CircuitCanvas" name="camera"/>
@@ -564,26 +570,26 @@
            <widget class="QStackedWidget" name="overlay">
             <property name="maximumSize">
              <size>
-              <width>130</width>
+              <width>140</width>
               <height>70</height>
              </size>
             </property>
             <property name="styleSheet">
-             <string notr="true">background-color: rgb(0, 64, 93);</string>
+             <string notr="true">background-color: rgb(53, 53, 53);</string>
             </property>
             <property name="currentIndex">
-             <number>3</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="gateMuxPage">
              <layout class="QVBoxLayout" name="verticalLayout_3">
               <property name="leftMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="topMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="rightMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="bottomMargin">
                <number>9</number>
@@ -607,16 +613,16 @@
             <widget class="QWidget" name="regPage">
              <layout class="QVBoxLayout" name="verticalLayout_4">
               <property name="leftMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="topMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="rightMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="bottomMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <item>
                <widget class="QComboBox" name="regType">
@@ -684,7 +690,7 @@
                <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>0</number>
+               <number>6</number>
               </property>
               <item>
                <widget class="QComboBox" name="srcType">
@@ -712,16 +718,16 @@
             <widget class="QWidget" name="displayPage">
              <layout class="QVBoxLayout" name="verticalLayout_2">
               <property name="leftMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="topMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <property name="rightMargin">
                <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>0</number>
+               <number>3</number>
               </property>
               <item>
                <widget class="QLabel" name="label_2">
@@ -750,6 +756,20 @@
                  <enum>Qt::Horizontal</enum>
                 </property>
                </widget>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="srcModifierPage">
+             <layout class="QVBoxLayout" name="verticalLayout_6">
+              <item>
+               <widget class="QLabel" name="label_4">
+                <property name="text">
+                 <string>This source values:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QTextEdit" name="textEdit"/>
               </item>
              </layout>
             </widget>
@@ -785,7 +805,6 @@
     </item>
    </layout>
   </widget>
-  <widget class="QStatusBar" name="statusBar"/>
   <action name="actionSimulator">
    <property name="text">
     <string>Simulator </string>

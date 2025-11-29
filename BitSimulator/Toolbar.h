@@ -3,12 +3,11 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QPainter>
+#include <QStackedWidget>
 #include "general.h"
 
-class GateButton : public QPushButton
-{
-    Q_OBJECT
-    
+class GateButton : public QPushButton{
+    Q_OBJECT  
 public:
     GateButton(GType gateType, QWidget* parent = nullptr);
     GateButton(QWidget* parent = nullptr);
@@ -34,10 +33,8 @@ private:
     GType m_gateType;
 };
 
-class SourceButton : public QPushButton
-{
+class SourceButton : public QPushButton{
     Q_OBJECT
-
 public:
     SourceButton(QWidget* parent = nullptr);
 
@@ -51,10 +48,8 @@ signals:
     void setOverlay(int val);
 };
 
-class RegisterButton : public QPushButton
-{
+class RegisterButton : public QPushButton{
     Q_OBJECT
-
 public:
     RegisterButton(QWidget* parent = nullptr);
 
@@ -68,10 +63,8 @@ signals:
     void setOverlay(int val);
 };
 
-class MuxButton : public QPushButton
-{
+class MuxButton : public QPushButton{
     Q_OBJECT
-
 public:
     MuxButton(QWidget* parent = nullptr);
 
@@ -85,10 +78,8 @@ signals:
     void setOverlay(int val);
 };
 
-class DisplayButton : public QPushButton
-{
+class DisplayButton : public QPushButton{
     Q_OBJECT
-
 public:
     DisplayButton(QWidget* parent = nullptr);
 
@@ -101,3 +92,18 @@ signals:
     void DisplaySelected();
     void setOverlay(int val);
 };
+
+// class OptionsOverlay : public QStackedWidget{
+//     Q_OBJECT
+// public:
+//     OptionsOverlay(QWidget* parent = nullptr);
+
+// protected:
+//     void paintEvent(QPaintEvent* event) override;
+
+// public slots:
+//     void onButtonClicked() { emit DisplaySelected(); emit setOverlay(3);};
+// signals:
+//     void DisplaySelected();
+//     void setOverlay(int val);
+// };

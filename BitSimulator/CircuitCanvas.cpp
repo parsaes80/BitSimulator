@@ -7,8 +7,11 @@
 #include <QDebug>
 #include <qscrollbar.h>
 #include <vector>
-extern GlobalMap map;
+#include <QStackedWidget>
 
+extern GlobalMap map;
+extern QStackedWidget* overlayPtr;
+extern QGraphicsScene* scenePtr;
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
@@ -35,6 +38,7 @@ QGraphicsObject* CircuitScene::addSource(QPointF position)
     SourceItem* source = new SourceItem(m_srcValues);
     source->setPos(position);
     addItem(source);
+    connect(source, &SourceItem::setOverlay, overlayPtr, &QStackedWidget::setCurrentIndex);
     return source;
 }
 QGraphicsObject* CircuitScene::addSource(std::variant<QList<bool>,QList<int>> srcValues,int numOut,QPointF position)
@@ -42,6 +46,7 @@ QGraphicsObject* CircuitScene::addSource(std::variant<QList<bool>,QList<int>> sr
     SourceItem* source = new SourceItem(srcValues,numOut);
     source->setPos(position);
     addItem(source);
+    connect(source, &SourceItem::setOverlay, overlayPtr, &QStackedWidget::setCurrentIndex);
     return source;
 }
 QGraphicsObject* CircuitScene::addRegister(RType RegType, QPointF position) {
@@ -444,7 +449,7 @@ void CircuitScene::startSim()
         readEnbNet = getNetId(regItem->getReadEnablePort());
         outNet = getNetId(regItem->getOutputPort());
         inNet = getNetId(regItem->getInputPort());
-        inNet2 = (regItem->getRegType()!= RType::D)?getNetId(regItem->getInputPortTwo()):0; // HACK FIX NEED TO CHANGE LATER
+        inNet2 = getNetId(regItem->getInputPortTwo());
         getNetId(regItem->getInputPortTwo());
         registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
     }
@@ -896,6 +901,7 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
 {
     m_scene = new CircuitScene(this);
     setScene(m_scene);
+    scenePtr = m_scene;
 
     // Configure view
     setDragMode(QGraphicsView::RubberBandDrag);

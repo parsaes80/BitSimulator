@@ -100,6 +100,9 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
+    //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+signals:
+    void setOverlay(int val,SourceItem* sourcePtr);
 
 private:
     void addPorts();
@@ -110,8 +113,7 @@ private:
     QRectF m_rect;
 };
 
-class WireItem : public QGraphicsObject
-{
+class WireItem : public QGraphicsObject{
     Q_OBJECT
 public:
     WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent = nullptr);

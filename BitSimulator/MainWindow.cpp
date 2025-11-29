@@ -5,6 +5,9 @@
 
 extern bool sim_running;
 extern GlobalMap map;
+extern QStackedWidget* overlayPtr;
+extern QGraphicsScene* scenePtr;
+
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
     // Create thread and Simulator
@@ -51,6 +54,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::setup()
 {
     ui.setupUi(this);
+    overlayPtr = ui.overlay;
+
     //setup slider
     ui.slider->setRange(1, 10000);  // 1ms to 1000ms
     ui.slider->setValue(3350);
@@ -97,6 +102,7 @@ void MainWindow::setup()
     connect(ui.regButton, &RegisterButton::setOverlay, ui.overlay,&QStackedWidget::setCurrentIndex);
     connect(ui.muxButton, &MuxButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
     connect(ui.displayButton, &DisplayButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
+
 
     connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
     connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit);

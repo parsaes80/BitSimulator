@@ -180,7 +180,7 @@ void GateItem::drawOrGate(QPainter* painter)
 void GateItem::drawXorGate(QPainter* painter)
 {
     painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(223, 0, 255));
+    painter->setBrush(QColor(142, 43, 255));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -560,6 +560,10 @@ void SourceItem::keyPressEvent(QKeyEvent* event)
     }
 }
 
+// void SourceItem::mousePressEvent(QGraphicsSceneMouseEvent* event){
+//     setOverlay(4,this);
+// }
+
 //===================== RegisterItem ========================
 
 RegisterItem::RegisterItem(RType RegType,bool isFlipFlop, bool hasEnable, QGraphicsItem* parent):m_regType(RegType) {
@@ -730,7 +734,7 @@ void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     path.lineTo(halfWidth,qurtHeight);
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
-    painter->setBrush(QColor(255, 215, 150));
+    painter->setBrush(QColor(255, 164, 0));
     painter->setPen(QPen(Qt::black, 4));
     painter->drawPath(path);
     painter->fillPath(path, painter->brush());
