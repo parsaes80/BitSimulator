@@ -24,12 +24,14 @@ signals:
     void setOverlay(int val);
 private:
     void drawGateSymbol(QPainter* painter, double width, double height);
-    void drawAndGate(QPainter* painter, double width, double height);
-    void drawOrGate(QPainter* painter, double width, double height);
-    void drawXorGate(QPainter* painter, double width, double height);
-    void drawNotGate(QPainter* painter, double width, double height);
-    void drawNotBubble(QPainter* painter, double width, double height);
-
+    void drawANDGate(QPainter* painter, double width, double height);
+    void drawORGate(QPainter* painter, double width, double height);
+    void drawXORGate(QPainter* painter, double width, double height);
+    void drawNOTGate(QPainter* painter, double width, double height);
+    void drawNOTBubble(QPainter* painter, double width, double height);
+    void drawNANDGate(QPainter* painter, double width, double height);
+    void drawNORGate(QPainter* painter, double width, double height);
+    void drawXNORGate(QPainter* painter, double width, double height);
     GType m_gateType;
 };
 

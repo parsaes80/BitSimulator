@@ -381,7 +381,6 @@ void CircuitScene::startSim()
                 // Extract this bit from each int value in the cycle
                 std::vector<bool> cycleValues;
                 for (int value : intValues) {
-                    // Extract bit at bitIndex position (LSB = bit 0)
                     bool bitValue = (value >> bitIndex) & 1;
                     cycleValues.push_back(bitValue);
                 }
@@ -398,17 +397,14 @@ void CircuitScene::startSim()
         std::vector<u32> addressInputNets;
         outNet = 0;
 
-        // Get data input nets
         for (auto port : muxItem->getInputPorts()) {
             dataInputNets.push_back(getNetId(port));
         }
 
-        // Get address input nets
         for (auto port : muxItem->getAddressPorts()) {
             addressInputNets.push_back(getNetId(port));
         }
 
-        // Get output net
         if (!muxItem->getOutputPort()->getConnections().isEmpty()) {
             WireItem* outwire = muxItem->getOutputPort()->getConnections()[0];
             outNet = map.wire2net[outwire];
@@ -569,7 +565,6 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
             for (auto portIt = outputNode.ports.begin(); portIt != outputNode.ports.end(); ++portIt) {
                 const Port& port = portIt.value();
                 if (port.type == PortType::OUT) {
-                    // Check if this port contains our bitNum
                     int bitIndex = port.connections.indexOf(bitNum);
                     if (bitIndex != -1 && bitIndex < outPorts.size()) {
                         outPort = outPorts[bitIndex];
@@ -585,7 +580,6 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
             for (auto portIt = outputNode.ports.begin(); portIt != outputNode.ports.end(); ++portIt) {
                 const Port& port = portIt.value();
                 if (port.type == PortType::OUT) {
-                    // Check if this port contains our bitNum
                     int bitIndex = port.connections.indexOf(bitNum);
                     if (bitIndex != -1 && bitIndex < outPorts.size()) {
                         outPort = outPorts[bitIndex];
@@ -604,7 +598,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                 inPorts = ptr->getInputPorts();
                 const Node& inputNode = graph[inputNodeId];
 
-                int portCounter = 0;  // Count which input port we're on
+                int portCounter = 0;  
                 for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
                     const Port& port = portIt.value();
                     if (port.type == PortType::IN) {
@@ -627,15 +621,13 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                 // Determine if this is an address port by checking the port name
                 bool isAddressPort = inputPortName.contains("S") || inputPortName.contains("addr") || inputPortName.contains("sel");
 
-                int portCounter = 0;  // Count which port we're on (within its category)
+                int portCounter = 0;  
                 for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
                     const Port& port = portIt.value();
                     if (port.type == PortType::IN) {
-                        // Check if this port matches our category (address vs data)
                         bool thisIsAddress = port.name.contains("S") || port.name.contains("addr") || port.name.contains("sel");
 
                         if (thisIsAddress == isAddressPort) {
-                            // We're in the right category, check if this is our port
                             if (port.name == inputPortName && port.connections.contains(bitNum)) {
                                 if (isAddressPort && portCounter < addrPorts.size()) {
                                     inPort = addrPorts[portCounter];
@@ -644,7 +636,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                                 }
                                 break;
                             }
-                            portCounter++;  // Only increment for ports in the same category
+                            portCounter++;  
                         }
                     }
                 }
@@ -774,10 +766,10 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
     //     int groupSize = group.size();
 
     //     if (groupSize == 1) {
-    //         continue; // Skip single items
+    //         continue; 
     //     }
 
-    //     // Apply gradient shifts
+    //    
     //     for (int i = 0; i < groupSize; i++) {
     //         QGraphicsObject* obj = group[i];
 
@@ -791,7 +783,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
     //             shift = -200.0 + (100.0 * i / (groupSize - 1));
     //         }
 
-    //         // Apply the shift
+    //      
     //         QPointF currentPos = obj->pos();
     //         obj->setPos(currentPos.x() + shift, currentPos.y());
     //     }
@@ -808,11 +800,10 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
 }
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
-    // Handle our custom cases first
+
     if (event->button() == Qt::LeftButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
         if (!clickedItem) {
-            // Only add items if we didn't click on an existing item
             std::visit([&](auto&& arg) {
                 using T = std::decay_t<decltype(arg)>;
                 if constexpr (std::is_same_v<T, GType>) {
@@ -836,7 +827,7 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
             return;
         }
     }
-    else if (event->button() == Qt::RightButton) { // Right click starts wire connection
+    else if (event->button() == Qt::RightButton) {
         startWireConnection(event->scenePos());
         event->accept();
         return;
@@ -927,11 +918,10 @@ void CircuitCanvas::mousePressEvent(QMouseEvent* event)
 void CircuitCanvas::mouseMoveEvent(QMouseEvent* event)
 {
     if (m_middleMousePressed) {
-        // Calculate movement delta
+
         QPoint delta = event->pos() - m_lastPanPoint;
         m_lastPanPoint = event->pos();
 
-        // Move the viewport in the same direction as mouse movement
         QScrollBar* hBar = horizontalScrollBar();
         QScrollBar* vBar = verticalScrollBar();
 
@@ -948,7 +938,7 @@ void CircuitCanvas::mouseMoveEvent(QMouseEvent* event)
 void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::MiddleButton && m_middleMousePressed) {
-        // Stop camera dragging
+
         m_middleMousePressed = false;
         setCursor(Qt::ArrowCursor);
         event->accept();
@@ -976,16 +966,15 @@ void CircuitCanvas::wheelEvent(QWheelEvent* event)
     }
 
     // Check if zooming out would make the view larger than the scene
-    if (newScale < currentScale) {  // Zooming out
+    if (newScale < currentScale) {  
         QRectF viewportRect = viewport()->rect();
 
-        // Calculate what the visible scene area would be with the new scale
         double newViewWidth = viewportRect.width() / newScale;
         double newViewHeight = viewportRect.height() / newScale;
 
         // Don't zoom out if the view would become larger than the scene
         if (newViewWidth >= sceneRect.width() || newViewHeight >= sceneRect.height()) {
-            return;  // Prevent this zoom operation
+            return;  
         }
     }
 

@@ -14,7 +14,7 @@
 
 bool HDLCompiler::compile(const QString& hdlCode) {
 
-    QFile file("code.v");  // No parent needed - local scope
+    QFile file("code.v");  
     QProcess *Process = new QProcess(this);
 
     // Write HDL code to file
@@ -52,6 +52,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
     qDebug() << "Yosys compilation successful";
 
     QStringList dotArgs;
+
     // Output a positioned .dot file (plain format has coordinates)
     dotArgs << "-Tdot" << "code_graph.dot" << "-o" << "code_graph_positioned.dot";
     Process->start("./dot", dotArgs);
@@ -73,7 +74,6 @@ bool HDLCompiler::compile(const QString& hdlCode) {
     Process->deleteLater();
     qDebug() << "Graph layout computed";
 
-    // Parse the positioned dot file
     if(!parseDotFile("code_graph_positioned.dot")) return false;
     if(!processJsonFile("code_netlist.json")) return false;
 
@@ -103,7 +103,6 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
         QString& nextLine = lines[i + 1];
 
         while(nextLine.startsWith("\t")){nextLine.removeFirst();};
-        // Check condition on first line
         if (currLine.endsWith("\\")) {
             currLine.removeLast();
             currLine.append(nextLine);
@@ -146,7 +145,6 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                         int lastQuote = posLine.lastIndexOf('"');
                         QString posValue = posLine.mid(firstQuote + 1, lastQuote - firstQuote - 1);
 
-                        // Split by comma to get x,y
                         QStringList coords = posValue.split(',');
                         if (coords.size() == 2) {
                             double x = coords[0].toDouble();
@@ -158,7 +156,7 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
                             maxY = std::max(maxY, y);
 
                             node.position.setX(x);
-                            node.position.setY(y); // Will flip Y later when we have graphHeight
+                            node.position.setY(y); 
 
                             qDebug() << node.id<< " :" << x << "," << y;
                         }
@@ -172,7 +170,7 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
     double graphCenterX = (minX + maxX) / 2.0;
     double graphCenterY = (minY + maxY) / 2.0;
 
-    // Your scene dimensions (from CircuitScene constructor)
+    // CircuitScene dimentions
     const double sceneWidth = 160000.0;
     const double sceneHeight = 100000.0;
     const double sceneCenterX = sceneWidth / 2.0;
@@ -187,10 +185,10 @@ bool HDLCompiler::parseDotFile(const QString& filePath) {
         double x = node.position.x();
         double y = node.position.y();
 
-        // 1. Flip Y coordinate (Graphviz origin is bottom-left, Qt is top-left)
+        // Flip Y coordinate (Graphviz origin is bottom-left, Qt is top-left)
         y = maxY - y;
 
-        // 2. Translate to center the graph in the scene
+        // Translate to center the graph in the scene
         x = x - graphCenterX + sceneCenterX;
         y = y - graphCenterY + sceneCenterY;
 
@@ -247,7 +245,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
         
         qDebug() << "\n=== Processing Module:" << moduleName << "===";
         
-        // First pass: Build bit-to-net mapping from netnames  NOT NEEDED
+        // First pass: Build bit-to-net mapping from netnames  NOT NEEDED FOR NOW
         if (module.contains("netnames") && module["netnames"].isObject()) {
             QJsonObject netnames = module["netnames"].toObject();
             
@@ -255,7 +253,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 QString netName = netIt.key();
                 QJsonObject netData = netIt.value().toObject();
                 
-                // Only add to mapping if hide_name is 0 (false)
+                // Only add to mapping if hide_name is 1
                 bool hideNames = netData["hide_name"].toInt() == 1;
                 if (!hideNames && netData.contains("bits") && netData["bits"].isArray()) {
                     QJsonArray bits = netData["bits"].toArray();
@@ -283,7 +281,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 Node ioNode;
                 ioNode.id = portName;
                 
-                // Determine I/O type
+                
                 if (direction == "input") {
                     ioNode.type = IOType::IN;
                 } else if (direction == "output") {
@@ -294,9 +292,9 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
 
                 // Create a port for this I/O
                 Port ioPort;
-                ioPort.parent = nullptr; // Will be set after insertion
+                ioPort.parent = nullptr; 
                 ioPort.name = portName;
-                ioPort.type = (direction == "input") ? PortType::OUT : PortType::IN; // Note: reversed for I/O nodes
+                ioPort.type = (direction == "input") ? PortType::OUT : PortType::IN; 
                 
                 // Store bit connections
                 for (const QJsonValue& bitVal : std::as_const(bits)) {
@@ -310,7 +308,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
             }
         }
         
-        // Third pass: Process cells (logic gates, flip-flops, etc.)
+        // Third pass: Process cells 
         if (module.contains("cells") && module["cells"].isObject()) {
             QJsonObject cells = module["cells"].toObject();
             qDebug() << "\nProcessing" << cells.size() << "cells...";
@@ -321,7 +319,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 
                 QString cellType = cellData["type"].toString();
                 
-                // Extract numeric ID from cell name (e.g., "517" from "$abc$516$auto$blifparse.cc:397:parse_blif$517")
+                // Extract numeric ID from cell name 
                 QString cellId = cellName;
                 QRegularExpression re(R"(\$(\d+)(?!.*\$\d))"); // Last number in the string
                 QRegularExpressionMatch match = re.match(cellName);
@@ -331,11 +329,9 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 
                 Node node;
                 node.id = cellId;
-                if (node.id=="83")
-                    qDebug() << "here";
                 // Determine node type based on cell type
                 if (cellType.contains("DFF")) {
-                    node.type = RType::D; // D flip-flop
+                    node.type = RType::D; 
                     if (cellType.contains("SDFF")) {
                         node.HasReset = true;
                     }
@@ -358,10 +354,10 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 } else {
                     // Unknown type - use a generic marker
                     qDebug() << "Warning: Unknown cell type:" << cellType;
-                    continue; // Skip unknown types for now
+                    continue; // Skip unknown types 
                 }
                 
-                // Copy position if available from dot file
+                // Copy position from dot file
                 if (m_componentsPos.contains(cellId)) {
                     node.position = m_componentsPos[cellId].position;
                 }
@@ -376,7 +372,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                         QJsonArray bitArray = connIt.value().toArray();
                         
                         Port port;
-                        port.parent = nullptr; // Will be updated after insertion
+                        port.parent = nullptr; 
                         port.name = portName;
                         
                         // Determine port direction
@@ -433,11 +429,9 @@ TextEditor::TextEditor(QWidget *parent) : QPlainTextEdit(parent) {
     QFontMetrics metrics(font);
     setTabStopDistance(4 * metrics.horizontalAdvance(' '));
 
-    // Enable line wrapping
     setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    // Set placeholder text
-    setPlaceholderText("Enter your Verilog or VHDL code here...");
+    setPlaceholderText("Enter your Verilog code here...");
 }
 
 TextEditor::TextEditor(const QString &text, QWidget *parent) : QPlainTextEdit(text, parent) {
@@ -452,6 +446,5 @@ TextEditor::TextEditor(const QString &text, QWidget *parent) : QPlainTextEdit(te
     QFontMetrics metrics(font);
     setTabStopDistance(4 * metrics.horizontalAdvance(' '));
 
-    // Enable line wrapping
     setLineWrapMode(QPlainTextEdit::NoWrap);
 }

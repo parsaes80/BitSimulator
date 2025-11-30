@@ -233,7 +233,7 @@ void GateItem::drawNotBubble(QPainter* painter)
     
     // Draw centered at y=0 by offsetting y by -bubbleSize/2
     painter->drawEllipse(halfWidth, -bubbleSize/2, bubbleSize, bubbleSize);
-    painter->setBrush(QColor(255, 215, 150)); // Restore original brush
+    painter->setBrush(QColor(255, 215, 150)); 
 }
 
 void GateItem::createPorts()
@@ -257,19 +257,19 @@ void GateItem::createPorts()
                          m_gateType == GType::XNOR);
     
     if (hasNotBubble) {
-        m_outputPort->setPos(halfWidth + 14, 0); // Shift right by 10 (bubble size)
+        m_outputPort->setPos(halfWidth + 14, 0); // Shift right
     } else {
         m_outputPort->setPos(halfWidth, 0);
     }
 }
 
+// Check if all ports are empty
 void GateItem::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // Check if all ports are empty
+       
         bool allPortsEmpty = true;
-        
-        // Check input ports
+
         for (PortItem* port : std::as_const(m_inputPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
@@ -277,12 +277,10 @@ void GateItem::keyPressEvent(QKeyEvent* event)
             }
         }
         
-        // Check output port
         if (allPortsEmpty && m_outputPort && !m_outputPort->getConnections().isEmpty()) {
             allPortsEmpty = false;
         }
         
-        // If all ports are empty, remove the item
         if (allPortsEmpty) {
             scene()->removeItem(this);
             deleteLater();
@@ -304,7 +302,7 @@ QRectF WireItem::boundingRect() const
 {
     // Handle case where positions aren't set yet
     if (localStartPos.isNull() && localEndPos.isNull()) {
-        return QRectF(0, 0, 1, 1);  // Minimal fallback
+        return QRectF(0, 0, 1, 1); 
     }
 
     qreal penWidth = m_pen.width();
@@ -355,13 +353,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     // Color based on simulation state
     if (!sim_running) {
-        if (isSelected()) {
-            currentPen.setColor(Qt::blue);
-            currentPen.setWidth(3);
-        }
-        else {
-            currentPen.setColor(Qt::black);
-        }
+        currentPen.setColor(Qt::black);
     }
     else {
         // During simulation, color based on wire value
@@ -371,11 +363,11 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
         else {
             currentPen.setColor(Qt::black); // Low signal
         }
+    }
 
-        if (isSelected()) {
-            currentPen.setColor(Qt::blue);
-            currentPen.setWidth(3);
-        }
+    if (isSelected()) {
+        currentPen.setColor(Qt::blue);
+        currentPen.setWidth(3);
     }
 
     painter->setPen(currentPen);
@@ -384,9 +376,9 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
 
     // Draw orthogonal path: horizontal -> vertical -> horizontal
-    painter->drawLine(localStartPos.x(), localStartPos.y(), midX, localStartPos.y());          // Horizontal from start to middle
-    painter->drawLine(midX, localStartPos.y(), midX, localEndPos.y());                        // Vertical from start height to end height
-    painter->drawLine(midX, localEndPos.y(), localEndPos.x(), localEndPos.y());               // Horizontal from middle to end
+    painter->drawLine(localStartPos.x(), localStartPos.y(), midX, localStartPos.y()); 
+    painter->drawLine(midX, localStartPos.y(), midX, localEndPos.y());                
+    painter->drawLine(midX, localEndPos.y(), localEndPos.x(), localEndPos.y());       
 }
 QPainterPath WireItem::shape() const
 {
@@ -425,8 +417,6 @@ void WireItem::updateWirePosition()
 void WireItem::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // For wires, we remove them regardless of connections
-        // since the wire itself IS the connection
         if (m_startPort) {
             m_startPort->removeConnection(this);
         }
@@ -445,7 +435,6 @@ void WireItem::keyPressEvent(QKeyEvent* event)
 SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent) :
     QGraphicsObject(parent), m_srcValues(cycleValues)
 {
-    // Enable item flags for interaction
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
@@ -468,7 +457,6 @@ SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, 
 SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues,int numOut, QGraphicsItem* parent) :
     QGraphicsObject(parent), m_srcValues(cycleValues)
 {
-    // Enable item flags for interaction
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
@@ -493,7 +481,6 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 
     painter->setPen(QPen(Qt::black, 2));
     if(std::holds_alternative<QList<bool>>(m_srcValues)){
-        // Fix: Use std::get to access the value
         const auto& boolValues = std::get<QList<bool>>(m_srcValues);
         if (boolValues[m_currIdx]) {
             painter->setBrush(QColor(255, 150, 150));
@@ -743,18 +730,16 @@ void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
 void MuxItem::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // Check if all ports are empty
+                // If all ports are empty, remove the item
         bool allPortsEmpty = true;
         
-        // Check input data ports
         for (PortItem* port : std::as_const(m_inputDataPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
                 break;
             }
         }
-        
-        // Check input address ports
+
         if (allPortsEmpty) {
             for (PortItem* port : std::as_const(m_inputAddressPorts)) {
                 if (!port->getConnections().isEmpty()) {
@@ -763,13 +748,11 @@ void MuxItem::keyPressEvent(QKeyEvent* event)
                 }
             }
         }
-        
-        // Check output port
+
         if (allPortsEmpty && m_outputPort && !m_outputPort->getConnections().isEmpty()) {
             allPortsEmpty = false;
         }
-        
-        // If all ports are empty, remove the item
+
         if (allPortsEmpty) {
             scene()->removeItem(this);
             deleteLater();
@@ -788,7 +771,13 @@ DisplayItem::DisplayItem(int numInputs,int numOutputs, QGraphicsItem* parent):
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
-    m_rect = QRectF(-20, -30, 40, 60);
+    int bitWidth = std::max(m_numInputs,m_numOutputs);
+    int x = -20;
+    int y = x - (bitWidth*4);
+    int height = y* -2;
+    int width = x * -2;
+
+    m_rect = QRectF(x, y, width, height);
 
     createPorts();
 }
@@ -809,7 +798,7 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     // Draw inner display area (LED-style display)
     QRectF displayArea = m_rect.adjusted(5, 5, -5, -5);
     painter->setPen(QPen(QColor(20, 20, 20), 1));
-    painter->setBrush(QColor(20, 60, 20)); // Dark green background (like old LED displays)
+    painter->setBrush(QColor(20, 60, 20)); // Dark green background
     painter->drawRect(displayArea);
 
     // Draw the value
@@ -872,10 +861,9 @@ void DisplayItem::updateValue()
 void DisplayItem::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // Check if all ports are empty
+        // If all ports are empty, remove the item
         bool allPortsEmpty = true;
         
-        // Check input ports
         for (PortItem* port : std::as_const(m_inputPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
@@ -883,7 +871,6 @@ void DisplayItem::keyPressEvent(QKeyEvent* event)
             }
         }
         
-        // Check output ports
         if (allPortsEmpty) {
             for (PortItem* port : std::as_const(m_outputPorts)) {
                 if (!port->getConnections().isEmpty()) {
@@ -893,7 +880,6 @@ void DisplayItem::keyPressEvent(QKeyEvent* event)
             }
         }
         
-        // If all ports are empty, remove the item
         if (allPortsEmpty) {
             scene()->removeItem(this);
             deleteLater();

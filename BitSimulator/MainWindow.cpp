@@ -336,7 +336,6 @@ void MainWindow::on_srcValues_textChanged()
             values.append(0);
             scene->setSrcValues(values);
             ui.srcValues->setStyleSheet("QTextEdit { background-color: #ffcccc; }");
-            // ui.statusLabel->setText("Invalid input - use only 0s and 1s");
         }
     }
     else{
@@ -405,7 +404,7 @@ void MainWindow::on_srcTextEdit_textChanged()
     auto values = currentSource->getValues();
 
     if(std::holds_alternative<QList<bool>>(values)){
-        // Parse as boolean values (0s and 1s)
+        // Parse as boolean values 
         QList<bool> newValues;
         bool isValid = true;
 

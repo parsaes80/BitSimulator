@@ -128,7 +128,6 @@ void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
         // Check if this MUX uses the changed net (either data or address input)
         bool muxUsesNet = false;
 
-        // Check data inputs
         for (u32 dataNetId : mux.inData) {
             if (dataNetId == changedNetId) {
                 muxUsesNet = true;
@@ -136,7 +135,6 @@ void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
             }
         }
 
-        // Check address inputs
         if (!muxUsesNet) {
             for (u32 addrNetId : mux.inAddress) {
                 if (addrNetId == changedNetId) {
@@ -399,17 +397,12 @@ void Simulator::SimController() {
     m_timer = new QTimer(this);
         connect(m_timer, &QTimer::timeout, this, [this]() {
         if (sim_running) {
-            // Start timing
             auto startTime = std::chrono::high_resolution_clock::now();
-            
-            // Execute the tick
             tick();
             
-            // End timing and calculate duration
             auto endTime = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-            
-            // Print execution time
+        
             qDebug() << "Tick execution time:" << duration.count() << "microseconds ("
                      << duration.count() / 1000.0 << "ms)";
         }
