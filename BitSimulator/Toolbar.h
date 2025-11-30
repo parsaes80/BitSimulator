@@ -93,17 +93,15 @@ signals:
     void setOverlay(int val);
 };
 
-// class OptionsOverlay : public QStackedWidget{
-//     Q_OBJECT
-// public:
-//     OptionsOverlay(QWidget* parent = nullptr);
-
-// protected:
-//     void paintEvent(QPaintEvent* event) override;
-
-// public slots:
-//     void onButtonClicked() { emit DisplaySelected(); emit setOverlay(3);};
-// signals:
-//     void DisplaySelected();
-//     void setOverlay(int val);
-// };
+class ItemOverlay : public QStackedWidget{
+    Q_OBJECT
+public:
+    ItemOverlay(QWidget* parent = nullptr);
+    SourceItem* getCurrentSource() const { return m_currentSource; }
+public slots:
+    void onSourceClicked(SourceItem* sourcePtr);
+signals:
+    void setOverlay(int val);
+private:
+    SourceItem* m_currentSource = nullptr;
+};

@@ -91,19 +91,21 @@ public:
     SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, int numOut, QGraphicsItem* parent = nullptr);
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    void setValues(QList<bool> values) { m_srcValues = values; };
+    void setValues(QList<int> values) { m_srcValues = values; };
+
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; };
     int getIdx() const { return m_currIdx;};
     void setIdx(u8 value) { m_currIdx = value; };
     int getNumOutputPorts() const { return m_numOutputs; };
     std::variant<QList<bool>,QList<int>> getValues() const { return m_srcValues; };
-    void setValues(QList<bool> values) { m_srcValues = values; };
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
-    //void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
 signals:
-    void setOverlay(int val,SourceItem* sourcePtr);
-
+    void setOverlay(SourceItem* sourcePtr);
 private:
     void addPorts();
 

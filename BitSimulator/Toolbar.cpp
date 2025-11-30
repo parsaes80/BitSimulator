@@ -1,7 +1,9 @@
 #include "Toolbar.h"
+#include "Items.h"
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QTextEdit>
 
 GateButton::GateButton(GType gateType, QWidget* parent)
     : QPushButton(parent)
@@ -359,5 +361,51 @@ void DisplayButton::paintEvent(QPaintEvent* event)
     font.setPointSize(16);
     painter.setFont(font);
     painter.drawText(displayArea, Qt::AlignCenter, "8");
-
 }
+
+//===================== ItemOverlay ========================
+
+ItemOverlay::ItemOverlay(QWidget* parent) : QStackedWidget(parent) {}
+
+void ItemOverlay::onSourceClicked(SourceItem* sourcePtr) {
+    m_currentSource = sourcePtr;
+    this->setCurrentIndex(4);
+    
+    // Find the text edit widget in page 4 (current page)
+    QWidget* currentPage = this->widget(4);
+    QTextEdit* textEdit = currentPage->findChild<QTextEdit*>("srcTextEdit"); // Use object name from UI
+    
+    // Alternative if you don't know the object name:
+    // QPlainTextEdit* textEdit = currentPage->findChild<QPlainTextEdit*>();
+    
+    if (!textEdit) {
+        qDebug() << "TextEdit not found!";
+        return;
+    }
+    
+    auto values = sourcePtr->getValues();
+    
+    if (std::holds_alternative<QList<bool>>(values)) {
+        const auto& boolValues = std::get<QList<bool>>(values);
+        
+        // Convert bool list to comma-separated string
+        QStringList strList;
+        for (bool val : boolValues) {
+            strList << (val ? "1" : "0");
+        }
+        
+        textEdit->setPlainText(strList.join(", "));
+    }
+    else {
+        const auto& intValues = std::get<QList<int>>(values);
+        
+        // Convert int list to comma-separated string
+        QStringList strList;
+        for (int val : intValues) {
+            strList << QString::number(val);
+        }
+        
+        textEdit->setPlainText(strList.join(", "));
+    }
+}
+

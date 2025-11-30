@@ -3,10 +3,11 @@
 #include "CircuitCanvas.h"
 #include "Toolbar.h"
 
-extern bool sim_running;
-extern GlobalMap map;
-extern QStackedWidget* overlayPtr;
-extern QGraphicsScene* scenePtr;
+bool sim_running;
+GlobalMap map;
+ItemOverlay* overlayPtr;
+QGraphicsScene* scenePtr;
+MainWindow* mainMenuPtr;
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
@@ -55,6 +56,7 @@ void MainWindow::setup()
 {
     ui.setupUi(this);
     overlayPtr = ui.overlay;
+    mainMenuPtr = this;
 
     //setup slider
     ui.slider->setRange(1, 10000);  // 1ms to 1000ms
@@ -304,7 +306,7 @@ void MainWindow::on_srcValues_textChanged()
         QString cleanText;  // For displaying cleaned version
 
         // Parse and clean text
-        for (QChar c : text) {
+        for (QChar c : std::as_const(text)) {
             if (c == '0') {
                 values.append(false);
                 cleanText += '0';
@@ -348,7 +350,7 @@ void MainWindow::on_srcValues_textChanged()
         // Split by comma or whitespace
         QStringList parts = text.split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts);
         
-        for (const QString& part : parts) {
+        for (const QString& part : std::as_const(parts)) {
             bool ok;
             int value = part.toInt(&ok);
             if (ok && value >= 0) {
@@ -391,5 +393,85 @@ void MainWindow::on_clearButton_clicked()
     sim_running = false;
     ui.camera->getScene()->clear();
     map.clear();
+}
+
+
+void MainWindow::on_srcTextEdit_textChanged()
+{
+    SourceItem* currentSource = ui.overlay->getCurrentSource();
+    if (!currentSource) return;
+
+    QString text = ui.srcTextEdit->toPlainText();
+    auto values = currentSource->getValues();
+
+    if(std::holds_alternative<QList<bool>>(values)){
+        // Parse as boolean values (0s and 1s)
+        QList<bool> newValues;
+        bool isValid = true;
+
+        // Parse and clean text
+        for (QChar c : std::as_const(text)) {
+            if (c == '0') {
+                newValues.append(false);
+            }
+            else if (c == '1') {
+                newValues.append(true);
+            }
+            else if (c.isSpace() || c == ',' || c == '-') {
+                // Allow separators but skip them
+                continue;
+            }
+            else {
+                isValid = false;
+                break;
+            }
+        }
+
+        if (isValid && !newValues.isEmpty()) {
+            // Valid input - update the source
+            ui.srcTextEdit->setStyleSheet("");
+            currentSource->setValues(newValues);
+            currentSource->update();
+        }
+        else {
+            // Invalid input - show error
+            ui.srcTextEdit->setStyleSheet("QPlainTextEdit { background-color: #ffcccc; }");
+        }
+    }
+    else{
+        // Parse as integer values
+        QList<int> newValues;
+        bool isValid = true;
+
+        // Split by comma or whitespace
+        QStringList parts = text.split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts);
+
+        for (const QString& part : std::as_const(parts)) {
+            bool ok;
+            int value = part.toInt(&ok);
+            if (ok && value >= 0) {
+                newValues.append(value);
+            } else {
+                isValid = false;
+                break;
+            }
+        }
+
+        if (isValid && !newValues.isEmpty()) {
+            // Valid input - update the source
+            ui.srcTextEdit->setStyleSheet("");
+            // Need to add setValues overload for QList<int> in SourceItem
+            currentSource->setValues(newValues);
+            currentSource->update();
+        } else {
+            // Invalid input - show error
+            ui.srcTextEdit->setStyleSheet("QPlainTextEdit { background-color: #ffcccc; }");
+        }
+    }
+}
+
+void MainWindow::on_pushButton_clicked()
+{
+    sim_running=false;
 }
 

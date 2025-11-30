@@ -270,7 +270,7 @@ void GateItem::keyPressEvent(QKeyEvent* event)
         bool allPortsEmpty = true;
         
         // Check input ports
-        for (PortItem* port : m_inputPorts) {
+        for (PortItem* port : std::as_const(m_inputPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
                 break;
@@ -542,7 +542,7 @@ void SourceItem::keyPressEvent(QKeyEvent* event)
         // Check if all output ports are empty
         bool allPortsEmpty = true;
         
-        for (PortItem* port : m_outputPorts) {
+        for (PortItem* port : std::as_const(m_outputPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
                 break;
@@ -560,9 +560,9 @@ void SourceItem::keyPressEvent(QKeyEvent* event)
     }
 }
 
-// void SourceItem::mousePressEvent(QGraphicsSceneMouseEvent* event){
-//     setOverlay(4,this);
-// }
+void SourceItem::mousePressEvent(QGraphicsSceneMouseEvent* event){
+    emit setOverlay(this);
+}
 
 //===================== RegisterItem ========================
 
@@ -747,7 +747,7 @@ void MuxItem::keyPressEvent(QKeyEvent* event)
         bool allPortsEmpty = true;
         
         // Check input data ports
-        for (PortItem* port : m_inputDataPorts) {
+        for (PortItem* port : std::as_const(m_inputDataPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
                 break;
@@ -756,7 +756,7 @@ void MuxItem::keyPressEvent(QKeyEvent* event)
         
         // Check input address ports
         if (allPortsEmpty) {
-            for (PortItem* port : m_inputAddressPorts) {
+            for (PortItem* port : std::as_const(m_inputAddressPorts)) {
                 if (!port->getConnections().isEmpty()) {
                     allPortsEmpty = false;
                     break;
@@ -876,7 +876,7 @@ void DisplayItem::keyPressEvent(QKeyEvent* event)
         bool allPortsEmpty = true;
         
         // Check input ports
-        for (PortItem* port : m_inputPorts) {
+        for (PortItem* port : std::as_const(m_inputPorts)) {
             if (!port->getConnections().isEmpty()) {
                 allPortsEmpty = false;
                 break;
@@ -885,7 +885,7 @@ void DisplayItem::keyPressEvent(QKeyEvent* event)
         
         // Check output ports
         if (allPortsEmpty) {
-            for (PortItem* port : m_outputPorts) {
+            for (PortItem* port : std::as_const(m_outputPorts)) {
                 if (!port->getConnections().isEmpty()) {
                     allPortsEmpty = false;
                     break;

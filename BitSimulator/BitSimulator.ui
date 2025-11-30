@@ -90,10 +90,10 @@
             <property name="horizontalSpacing">
              <number>6</number>
             </property>
-            <item row="0" column="6">
-             <widget class="GateButton" name="notButton">
+            <item row="0" column="15">
+             <widget class="QPushButton" name="clearButton">
               <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                 <horstretch>0</horstretch>
                 <verstretch>0</verstretch>
                </sizepolicy>
@@ -106,114 +106,37 @@
               </property>
               <property name="maximumSize">
                <size>
-                <width>16777215</width>
+                <width>80</width>
                 <height>60</height>
                </size>
               </property>
               <property name="text">
-               <string/>
-              </property>
-              <property name="checkable">
-               <bool>true</bool>
-              </property>
-              <property name="checked">
-               <bool>false</bool>
-              </property>
-              <property name="autoExclusive">
-               <bool>true</bool>
+               <string>Clear</string>
               </property>
              </widget>
             </item>
-            <item row="0" column="2">
-             <widget class="GateButton" name="orButton">
+            <item row="0" column="12">
+             <widget class="QSlider" name="slider">
               <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+               <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
                 <horstretch>0</horstretch>
                 <verstretch>0</verstretch>
                </sizepolicy>
               </property>
               <property name="minimumSize">
                <size>
-                <width>70</width>
-                <height>40</height>
+                <width>250</width>
+                <height>60</height>
                </size>
               </property>
               <property name="maximumSize">
                <size>
-                <width>16777215</width>
+                <width>200</width>
                 <height>60</height>
                </size>
               </property>
-              <property name="text">
-               <string/>
-              </property>
-              <property name="checkable">
-               <bool>true</bool>
-              </property>
-              <property name="checked">
-               <bool>false</bool>
-              </property>
-              <property name="autoExclusive">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="10">
-             <widget class="SourceButton" name="srcButton">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>70</width>
-                <height>40</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>16777215</width>
-                <height>60</height>
-               </size>
-              </property>
-              <property name="text">
-               <string/>
-              </property>
-              <property name="checkable">
-               <bool>true</bool>
-              </property>
-              <property name="checked">
-               <bool>false</bool>
-              </property>
-              <property name="autoExclusive">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="11">
-             <widget class="QPushButton" name="compileButton">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>70</width>
-                <height>40</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>16777215</width>
-                <height>60</height>
-               </size>
-              </property>
-              <property name="text">
-               <string>Compile</string>
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
              </widget>
             </item>
@@ -251,33 +174,8 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="12">
-             <widget class="QSlider" name="slider">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>250</width>
-                <height>60</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>200</width>
-                <height>60</height>
-               </size>
-              </property>
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="9">
-             <widget class="DisplayButton" name="displayButton">
+            <item row="0" column="1">
+             <widget class="GateButton" name="nandButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -310,8 +208,8 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="3">
-             <widget class="GateButton" name="norButton">
+            <item row="0" column="8">
+             <widget class="RegisterButton" name="regButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -341,36 +239,45 @@
               </property>
               <property name="autoExclusive">
                <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="13">
-             <widget class="QPushButton" name="startButton">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>70</width>
-                <height>40</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>16777215</width>
-                <height>60</height>
-               </size>
-              </property>
-              <property name="text">
-               <string>Start</string>
               </property>
              </widget>
             </item>
             <item row="0" column="4">
              <widget class="GateButton" name="xorButton">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>70</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>60</height>
+               </size>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="checked">
+               <bool>false</bool>
+              </property>
+              <property name="autoExclusive">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="6">
+             <widget class="GateButton" name="notButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -437,8 +344,8 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="8">
-             <widget class="RegisterButton" name="regButton">
+            <item row="0" column="3">
+             <widget class="GateButton" name="norButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -471,8 +378,101 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="1">
-             <widget class="GateButton" name="nandButton">
+            <item row="0" column="11">
+             <widget class="QPushButton" name="compileButton">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>70</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>60</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Compile</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="2">
+             <widget class="GateButton" name="orButton">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>70</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>60</height>
+               </size>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="checked">
+               <bool>false</bool>
+              </property>
+              <property name="autoExclusive">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="9">
+             <widget class="DisplayButton" name="displayButton">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>70</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>60</height>
+               </size>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="checked">
+               <bool>false</bool>
+              </property>
+              <property name="autoExclusive">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="10">
+             <widget class="SourceButton" name="srcButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
                 <horstretch>0</horstretch>
@@ -539,10 +539,10 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="14">
-             <widget class="QPushButton" name="clearButton">
+            <item row="0" column="13">
+             <widget class="QPushButton" name="startButton">
               <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
                 <horstretch>0</horstretch>
                 <verstretch>0</verstretch>
                </sizepolicy>
@@ -555,19 +555,44 @@
               </property>
               <property name="maximumSize">
                <size>
+                <width>16777215</width>
+                <height>60</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Start</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="14">
+             <widget class="QPushButton" name="pushButton">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>70</width>
+                <height>39</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
                 <width>80</width>
                 <height>60</height>
                </size>
               </property>
               <property name="text">
-               <string>Clear</string>
+               <string>Pause</string>
               </property>
              </widget>
             </item>
            </layout>
           </item>
           <item row="0" column="2">
-           <widget class="QStackedWidget" name="overlay">
+           <widget class="ItemOverlay" name="overlay">
             <property name="maximumSize">
              <size>
               <width>140</width>
@@ -578,7 +603,7 @@
              <string notr="true">background-color: rgb(53, 53, 53);</string>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>4</number>
             </property>
             <widget class="QWidget" name="gateMuxPage">
              <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -769,7 +794,7 @@
                </widget>
               </item>
               <item>
-               <widget class="QTextEdit" name="textEdit"/>
+               <widget class="QTextEdit" name="srcTextEdit"/>
               </item>
              </layout>
             </widget>
@@ -847,6 +872,12 @@
    <class>DisplayButton</class>
    <extends>QPushButton</extends>
    <header>Toolbar.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ItemOverlay</class>
+   <extends>QStackedWidget</extends>
+   <header>Toolbar.h</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -28,7 +28,7 @@ enum class IOType : u8 {IN,OUT};
 
 struct Register {
 	u32 inID;
-    u32 InID2; // either R or K input in SR and JK case
+    u32 InID2; // R input in SR D T and K in JK case
 	u32 outID;  
 	u32 clkID;
 	u32 enableID;
@@ -77,7 +77,6 @@ struct ExportGraph
     std::vector<Mux> muxes;
 
     std::vector<u32> gateInputs;   
-    //std::vector<u32> sourceCycleValues;
 
     void clear()
     {
@@ -91,7 +90,7 @@ struct ExportGraph
 
 struct SimResult
 {
-    std::vector<bool> netValues;  // netValues[netId] = true/false
+    std::vector<bool> netValues;
 	std::vector<u8> sourcesCurrIdx;
 	std::vector<bool> registerValues;
 };

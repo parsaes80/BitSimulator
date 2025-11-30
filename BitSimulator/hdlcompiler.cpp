@@ -259,7 +259,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 bool hideNames = netData["hide_name"].toInt() == 1;
                 if (!hideNames && netData.contains("bits") && netData["bits"].isArray()) {
                     QJsonArray bits = netData["bits"].toArray();
-                    for (const QJsonValue& bitVal : bits) {
+                    for (const QJsonValue& bitVal : std::as_const(bits)) {
                         int bitNum = bitVal.toInt();
                         m_bitToNet[bitNum] = netName;
                     }
@@ -299,7 +299,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                 ioPort.type = (direction == "input") ? PortType::OUT : PortType::IN; // Note: reversed for I/O nodes
                 
                 // Store bit connections
-                for (const QJsonValue& bitVal : bits) {
+                for (const QJsonValue& bitVal : std::as_const(bits)) {
                     ioPort.connections.append(bitVal.toInt());
                 }
                 
@@ -388,7 +388,7 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
                         }
                         
                         // Store bit numbers as connections
-                        for (const QJsonValue& bitVal : bitArray) {
+                        for (const QJsonValue& bitVal : std::as_const(bitArray)) {
                             port.connections.append(bitVal.toInt());
                         }
                         

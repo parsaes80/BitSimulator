@@ -50,7 +50,7 @@ public:
     }
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override {
-        painter->fillRect(rect, QColor(10, 100, 100));};// Draw background color
+        painter->fillRect(rect, QColor(10, 100, 100));};
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;

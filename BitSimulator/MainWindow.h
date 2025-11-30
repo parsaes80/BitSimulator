@@ -34,6 +34,10 @@ private slots:
 
     void on_clearButton_clicked();
 
+    void on_srcTextEdit_textChanged();
+
+    void on_pushButton_clicked();
+
 signals:
     void sendTimerPeriod(int milliseconds);
 private:
