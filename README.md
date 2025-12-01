@@ -38,3 +38,18 @@ endmodule
 
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
+
+# Third Party Software
+
+
+This project includes binaries from:
+
+- Yosys – Licensed under the ISC License.
+  Copyright (C) 2012-2025 Claire Xenia Wolf.
+  License in ./Licenses/Yosys-ISC.txt
+
+- Graphviz – Licensed under the Common Public License 1.0.
+  License in ./Licenses/Graphviz-CPL.txt
+
+This project uses Qt under the terms of LGPLv3. No Qt code or binaries
+are distributed; only dynamically linked. License in ./licenses/Qt-LGPL3.txt
