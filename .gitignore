@@ -469,5 +469,7 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
+build
+
 CMakeUserPresets.json
 CMakePresets.json
