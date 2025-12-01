@@ -306,7 +306,7 @@ QRectF WireItem::boundingRect() const
     }
 
     qreal penWidth = m_pen.width();
-    qreal extra = penWidth / 2.0 + 2; // Small extra margin for selection
+    qreal extra = penWidth / 2.0 + 5; // Small extra margin for selection
 
     qreal left = qMin(localStartPos.x(), localEndPos.x());
     qreal right = qMax(localStartPos.x(), localEndPos.x());
@@ -772,7 +772,7 @@ DisplayItem::DisplayItem(int numInputs,int numOutputs, QGraphicsItem* parent):
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
 
     int bitWidth = std::max(m_numInputs,m_numOutputs);
-    int x = -20;
+    int x = -23;
     int y = x - (bitWidth*4);
     int height = y* -2;
     int width = x * -2;

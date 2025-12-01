@@ -33,7 +33,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
 
     // Run Yosys synthesis
     QStringList arguments;
-    arguments << "-p" << "read_verilog code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR; write_json code_netlist.json; show -format dot -format svg -prefix code_graph";
+    arguments << "-p" << "read_verilog code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR; write_json code_netlist.json; show -format dot -prefix code_graph";
     Process->start(yosysPath, arguments);
 
     if (!Process->waitForFinished(30000)) {
