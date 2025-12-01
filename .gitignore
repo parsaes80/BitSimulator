@@ -468,3 +468,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+CMakeUserPresets.json
+CMakePresets.json

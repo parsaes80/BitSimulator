@@ -1,21 +1,23 @@
 #include "Toolbar.h"
+#include "Items.h"
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QTextEdit>
 
 GateButton::GateButton(GType gateType, QWidget* parent)
     : QPushButton(parent)
     , m_gateType(gateType)
 {
-    setText("");        // Remove text
-    setCheckable(false); // Allow toggle state
+    setText("");
+    setCheckable(false); 
     
     connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
 }
 GateButton::GateButton(QWidget* parent): QPushButton(parent)
 {
-    setText("");         // Remove text
-    setCheckable(false); // Allow toggle state
+    setText("");   
+    setCheckable(false); 
     connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
 }
 void GateButton::paintEvent(QPaintEvent* event)
@@ -27,9 +29,8 @@ void GateButton::paintEvent(QPaintEvent* event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    // Use 75% of button size for gate drawing
     QRect buttonRect = rect();
-    double gateWidth = buttonRect.width() * 0.75;
+    double gateWidth = buttonRect.width() * 0.7;
     double gateHeight = buttonRect.height() * 0.75;
     
     // Center the gate in the button
@@ -41,7 +42,7 @@ void GateButton::paintEvent(QPaintEvent* event)
     );
     
     painter.translate(gateRect.center());
-    painter.scale(1.0, 1.0);  // No additional scaling needed
+    painter.scale(1.0, 1.0);  
 
     drawGateSymbol(&painter, gateWidth, gateHeight);
 }
@@ -54,122 +55,283 @@ void GateButton::drawGateSymbol(QPainter* painter, double width, double height)
     
     switch (m_gateType) {
     case GType::AND:
-        drawAndGate(painter, width, height);
+        drawANDGate(painter, width, height);
         break;
     case GType::OR:
-        drawOrGate(painter, width, height);
+        drawORGate(painter, width, height);
         break;
     case GType::XOR:
-        drawXorGate(painter, width, height);
+        drawXORGate(painter, width, height);
         break;
     case GType::NAND:
-        drawAndGate(painter, width, height);
-        drawNotBubble(painter, width, height);
+        drawNANDGate(painter, width, height);
+        drawNOTBubble(painter, width, height);
         break;
     case GType::NOR:
-        drawOrGate(painter, width, height);
-        drawNotBubble(painter, width, height);
+        drawNORGate(painter, width, height);
+        drawNOTBubble(painter, width, height);
         break;
     case GType::XNOR:
-        drawXorGate(painter, width, height);
-        drawNotBubble(painter, width, height);
+        drawXNORGate(painter, width, height);
+        drawNOTBubble(painter, width, height);
         break;
     case GType::NOT:
-        drawNotGate(painter, width, height);
+        drawNOTGate(painter, width, height);
         break;
     }
 }
 
-void GateButton::drawAndGate(QPainter* painter, double width, double height)
-{
+void GateButton::drawANDGate(QPainter* painter, double width, double height)
+{  
     QPainterPath path;
     
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double arcWidth = width * 0.4;  // 40% of total width for the arc
 
     path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(-halfWidth + arcWidth, -halfHeight);
-    path.arcTo(-halfWidth + arcWidth, -halfHeight, arcWidth, height, 90, -180);
+    path.lineTo(0, -halfHeight);
+    path.arcTo(0, -halfHeight, halfWidth, height, 90, -180);
     path.lineTo(-halfWidth, halfHeight);
-    path.closeSubpath();
-    
+    path.lineTo(-halfWidth, -halfHeight);
+
+    painter->setBrush(QColor(255, 215, 150));
+
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
+
+    // Draw "AND" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+    
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "AND");
 }
 
-void GateButton::drawOrGate(QPainter* painter, double width, double height)
+void GateButton::drawNANDGate(QPainter* painter, double width, double height)
 {
+    QPainterPath path;
+
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+
+    path.moveTo(-halfWidth, -halfHeight);
+    path.lineTo(0, -halfHeight);
+    path.arcTo(0, -halfHeight, halfWidth, height, 90, -180);
+    path.lineTo(-halfWidth, halfHeight);
+    path.lineTo(-halfWidth, -halfHeight);
+
+    painter->setBrush(QColor(255, 215, 150));
+
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
+
+    // Draw "AND" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "NAND");
+}
+void GateButton::drawORGate(QPainter* painter, double width, double height)
+{
+    painter->setBrush(QColor(0, 255, 140));
+
     QPainterPath path;
     
     double halfWidth = width / 2;
     double halfHeight = height / 2;
     
     path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth * 0.3, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth * 0.6, halfHeight);
-    path.quadTo(halfWidth, 0, halfWidth * 0.6, -halfHeight);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth / 2, halfHeight);
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
-    
+
+    painter->setBrush(QColor(0, 255, 140));
+
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
+
+    // Draw "OR" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "OR");
 }
 
-void GateButton::drawXorGate(QPainter* painter, double width, double height)
+void GateButton::drawNORGate(QPainter* painter, double width, double height)
 {
-    drawOrGate(painter, width, height);
+    painter->setBrush(QColor(0, 255, 140));
 
-    painter->setBrush(Qt::NoBrush);
+    QPainterPath path;
+
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+
+    path.moveTo(-halfWidth, -halfHeight);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth / 2, halfHeight);
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
+    path.lineTo(-halfWidth, -halfHeight);
+
+    painter->setBrush(QColor(0, 255, 140));
+
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
+
+    // Draw "OR" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "NOR");
+}
+void GateButton::drawXORGate(QPainter* painter, double width, double height)
+{
+    painter->setBrush(QColor(142, 43, 255));
+
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+
+    QPainterPath path;
+
+    path.moveTo(-halfWidth, -halfHeight);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth / 2, halfHeight);
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
+    path.lineTo(-halfWidth, -halfHeight);
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
 
     QPainterPath extraLine;
-    
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-    double offset = width * 0.08;  // Small offset from the main gate
-    
-    extraLine.moveTo(-halfWidth - offset, -halfHeight * 0.8);
-    extraLine.quadTo(-halfWidth * 0.4, 0, -halfWidth - offset, halfHeight * 0.8);
-    painter->drawPath(extraLine);
-}
 
-void GateButton::drawNotGate(QPainter* painter, double width, double height)
+    painter->setBrush(Qt::NoBrush);
+    double offset = width * 0.1;
+    extraLine.moveTo(-halfWidth - offset, -halfHeight*0.9 );
+    extraLine.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight*0.9);
+    painter->drawPath(extraLine);
+
+    // Draw "XOR" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "XOR");
+}
+void GateButton::drawXNORGate(QPainter* painter, double width, double height)
 {
-    QPainterPath path;
-    
+    painter->setBrush(QColor(142, 43, 255));
+
     double halfWidth = width / 2;
     double halfHeight = height / 2;
-    double bubbleRadius = width * 0.08;  // Bubble size relative to width
+
+    QPainterPath path;
 
     path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(halfWidth - bubbleRadius * 2, 0);
+    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+    path.lineTo(halfWidth / 2, halfHeight);
+    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
-    
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
-    // Draw NOT bubble at the tip
-    painter->setBrush(Qt::white);
-    painter->drawEllipse(QRectF(halfWidth - bubbleRadius * 2, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
+    QPainterPath extraLine;
+
+    painter->setBrush(Qt::NoBrush);
+    double offset = width * 0.1;
+    extraLine.moveTo(-halfWidth - offset, -halfHeight*0.9 );
+    extraLine.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight*0.9);
+    painter->drawPath(extraLine);
+
+    // Draw "XNOR" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "XNOR");
+}
+void GateButton::drawNOTGate(QPainter* painter, double width, double height)
+{
+    painter->setBrush(QColor(255, 0, 0));
+    QPainterPath path;
+
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+
+    path.moveTo(-halfWidth, -halfHeight);
+    path.lineTo(-halfWidth, halfHeight);
+    path.lineTo(halfWidth , 0);
+    path.lineTo(-halfWidth, -halfHeight);
+    painter->fillPath(path, painter->brush());
+    painter->drawPath(path);
+
+    // Draw "NOT" text on top
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setPen(QPen(Qt::black, 1));
+    QFont font = painter->font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter->setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth*4/3, -halfHeight, width, height);
+    painter->drawText(textRect, Qt::AlignCenter, "NOT");
 }
 
-void GateButton::drawNotBubble(QPainter* painter, double width, double height)
+void GateButton::drawNOTBubble(QPainter* painter, double width, double height)
 {
-    painter->setBrush(Qt::white);
+    painter->setBrush(Qt::red);
     double bubbleRadius = width * 0.08;  // Bubble size relative to width
     double QuarterWidth = width / 4;
     
-    painter->drawEllipse(QRectF(QuarterWidth + bubbleRadius, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
+    painter->drawEllipse(QRectF(QuarterWidth + 3*bubbleRadius, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
 }
 
 //===================== SourceButton ========================
 
 SourceButton::SourceButton(QWidget* parent) : QPushButton(parent)
 {
-    setText("");         // Remove text
-    setCheckable(false);  // Allow toggle state
-    
-    // Connect the button click to our slot
+    setText("");  
+    setCheckable(false); 
+
     connect(this, &QPushButton::clicked, this, &SourceButton::onButtonClicked);
 }
 
@@ -212,10 +374,9 @@ void SourceButton::paintEvent(QPaintEvent* event)
 //===================== RegisterButton ========================
 
 RegisterButton::RegisterButton(QWidget* parent) : QPushButton(parent) {
-    setText("");         // Remove text
-    setCheckable(false);  // Allow toggle state
+    setText("");   
+    setCheckable(false);  
 
-    // Connect the button click to our slot
     connect(this, &QPushButton::clicked, this, &RegisterButton::onButtonClicked);
 }
 
@@ -241,7 +402,7 @@ void RegisterButton::paintEvent(QPaintEvent* event)
     painter.setBrush(QColor(100, 150, 255)); // Blue color (different from source)
     
     // Draw rectangle that's taller than wide (register shape)
-    QRectF registerRect(-10, -14, 20, 28);  // Width: 20, Height: 28 (taller)
+    QRectF registerRect(-10, -14, 20, 28); 
     painter.fillRect(registerRect, painter.brush());
     painter.drawRect(registerRect);
     
@@ -264,3 +425,145 @@ void RegisterButton::paintEvent(QPaintEvent* event)
     painter.fillPath(clockTriangle, painter.brush());
     painter.drawPath(clockTriangle);
 }
+
+//===================== MuxButton ========================
+MuxButton::MuxButton(QWidget* parent) : QPushButton(parent) {
+    setText("");     
+    setCheckable(false);  
+
+    connect(this, &QPushButton::clicked, this, &MuxButton::onButtonClicked);
+}
+
+void MuxButton::paintEvent(QPaintEvent* event)
+{
+    // Draw button background first
+    QPushButton::paintEvent(event);
+
+    // Draw register symbol on top
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Center the drawing area
+    QRect drawRect = rect().adjusted(8, 8, -8, -8);
+    painter.translate(drawRect.center());
+    QPainterPath path;
+    double width = drawRect.width();
+    double height = drawRect.height();
+    double halfWidth = width / 2;
+    double halfHeight = height / 2;
+    double qurtHeight = halfHeight / 2;
+    path.moveTo(-halfWidth,-halfHeight);
+    path.lineTo(halfWidth,-qurtHeight);
+    path.lineTo(halfWidth,qurtHeight);
+    path.lineTo(-halfWidth,halfHeight);
+    path.lineTo(-halfWidth,-halfHeight);
+    painter.setBrush(QColor(255, 164, 0));
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 4));
+    painter.drawPath(path);
+    painter.fillPath(path, painter.brush());
+
+    // Draw "MUX" text on top
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setPen(QPen(Qt::black, 1));
+    QFont font = painter.font();
+    font.setBold(false);
+    font.setItalic(false);
+    font.setPointSize(8);  
+    painter.setFont(font);
+
+    // Draw text centered in the gate
+    QRectF textRect(-halfWidth, -halfHeight, width, height);
+    painter.drawText(textRect, Qt::AlignCenter, "MUX");
+}
+//===================== DisplayButton ========================
+
+DisplayButton::DisplayButton(QWidget* parent) : QPushButton(parent) {
+    setText("");  
+    setCheckable(false); 
+
+
+    connect(this, &QPushButton::clicked, this, &DisplayButton::onButtonClicked);
+}
+
+void DisplayButton::paintEvent(QPaintEvent* event)
+{
+    // Draw button background first
+    QPushButton::paintEvent(event);
+
+    // Draw display symbol on top
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Center the drawing area
+    QRect drawRect = rect().adjusted(8, 8, -8, -8);
+    painter.translate(drawRect.center());
+
+    // Scale to fit button
+    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 60.0);
+    painter.scale(scale, scale);
+
+    // Draw outer border (dark gray casing)
+    QRectF outerRect(-20, -30, 40, 60);
+    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
+    painter.setBrush(QColor(40, 40, 40));
+    painter.drawRect(outerRect);
+
+    // Draw inner display area (LED-style display)
+    QRectF displayArea = outerRect.adjusted(5, 5, -5, -5);
+    painter.setPen(QPen(QColor(20, 20, 20), 1));
+    painter.setBrush(QColor(20, 60, 20)); // Dark green background
+    painter.drawRect(displayArea);
+
+    // Draw a sample number (8) in LED green color
+    painter.setPen(QPen(QColor(0, 255, 0), 2));
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setFamily("Courier");
+    font.setPointSize(16);
+    painter.setFont(font);
+    painter.drawText(displayArea, Qt::AlignCenter, "8");
+}
+
+//===================== ItemOverlay ========================
+
+ItemOverlay::ItemOverlay(QWidget* parent) : QStackedWidget(parent) {}
+
+void ItemOverlay::onSourceClicked(SourceItem* sourcePtr) {
+    m_currentSource = sourcePtr;
+    this->setCurrentIndex(4);
+    
+    // Find the text edit widget in page 4 (current page)
+    QWidget* currentPage = this->widget(4);
+    QTextEdit* textEdit = currentPage->findChild<QTextEdit*>("srcTextEdit"); 
+    
+    if (!textEdit) {
+        qDebug() << "TextEdit not found!";
+        return;
+    }
+    
+    auto values = sourcePtr->getValues();
+    
+    if (std::holds_alternative<QList<bool>>(values)) {
+        const auto& boolValues = std::get<QList<bool>>(values);
+        
+        // Convert bool list to comma-separated string
+        QStringList strList;
+        for (bool val : boolValues) {
+            strList << (val ? "1" : "0");
+        }
+        
+        textEdit->setPlainText(strList.join(", "));
+    }
+    else {
+        const auto& intValues = std::get<QList<int>>(values);
+        
+        // Convert int list to comma-separated string
+        QStringList strList;
+        for (int val : intValues) {
+            strList << QString::number(val);
+        }
+        
+        textEdit->setPlainText(strList.join(", "));
+    }
+}
+

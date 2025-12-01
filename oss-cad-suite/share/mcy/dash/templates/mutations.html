@@ -1,0 +1,80 @@
+{% include 'header.html' %}
+<!-- Begin Page Content -->
+<div class="container-fluid">
+
+  <!-- Page Heading -->
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Mutations</h1>
+  </div>
+
+  {% if not errorCode==0 %}
+
+  <div class="card shadow mb-4 bg-danger text-white shadow">
+    <div class="card-body">
+      <i class="fas fa-exclamation-circle text-white-300"></i> &nbsp;
+      {% if errorCode==1 %}
+      <form action="/index.html" method="post" class="d-none d-sm-inline-block form-inline">
+      <input name="action" type="hidden" value="initialize"/>
+      Database does not exist.&nbsp;
+      <button type="submit" class="btn btn-danger btn-icon-split btn-sm shadow">
+        <span class="icon text-white-50">
+          <i class="fas fa-database"></i>
+        </span>
+        <span class="text">Initialize database</span>
+      </button>
+      </form>
+      {% elif errorCode==2 %}
+      Error accessing database
+      {% endif %}
+    </div>
+  </div>
+  
+  {% else %}  
+
+  <!-- Content Row -->
+  <div class="card shadow mb-4">
+    <div class="card-body">      
+    <div class="table-responsive">   
+    <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Mutation</th>
+          {% for tag in tags %}
+          <th>{{ tag[0] }}</th>
+          {% endfor %}  
+        </tr>
+      </thead>
+      <tfoot>
+        <tr>
+          <th>ID</th>
+          <th>Mutation</th>
+          {% for tag in tags %}
+          <th>{{ tag[0] }}</th>
+          {% endfor %}  
+        </tr>
+      </tfoot>
+      <tbody>                
+        {% for mutation in mutations %}
+        <tr>
+          <td>{{ mutation[0] }}</td>
+          <td>{{ mutation[1] }}</td>
+          {% for tag in tags %}
+          <th> {% if (mutation[2 + loop.index0])  %}X{% endif %}</th>
+          {% endfor %}  
+        </tr>
+        {% endfor %}                 
+      </tbody>
+    </table>
+  </div>
+  </div>          
+  {% endif %}
+</div>
+<!-- /.container-fluid -->
+  {% include 'footer.html' %}
+  <!-- Page level plugins -->
+  <script src="js/jquery.dataTables.min.js"></script>
+  <script src="js/dataTables.bootstrap4.min.js"></script>
+  <!-- Page level custom scripts -->
+  <script src="js/datatables-demo.js"></script>
+  

@@ -1,19 +1,24 @@
 #include "CircuitCanvas.h"
-#include <QHash> // Add this line
+#include <QHash>
 #include <QMouseEvent>
-#include <QQueue> // Add this line
-#include <QSet>   // Add this line
+#include <QQueue>
+#include <QSet>
 #include <QKeyEvent>
 #include <QDebug>
 #include <qscrollbar.h>
 #include <vector>
+#include "Toolbar.h"
+
 extern GlobalMap map;
+extern ItemOverlay* overlayPtr;
+extern QGraphicsScene* scenePtr;
+
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent), m_connectingWire(false), m_currWire(nullptr)
 {
-    setSceneRect(0, 0, 4000, 2000); // Large canvas
+    setSceneRect(0, 0, 160000, 100000); // Large canvas
 
     // Force full scene update on any change
     connect(this, &QGraphicsScene::changed, this, [this]() { update(); });
@@ -22,30 +27,59 @@ CircuitScene::CircuitScene(QObject* parent)
     connect(this, &QGraphicsScene::selectionChanged, this, [this]() { update(); });
 }
 
-void CircuitScene::addGate(GType gateType, QPointF position)
+QGraphicsObject* CircuitScene::addGate(GType gateType,int numIn, QPointF position)
 {
-    GateItem* gate = new GateItem(gateType);
+    GateItem* gate = new GateItem(gateType,numIn);
     gate->setPos(position);
     addItem(gate);
+    return gate;
 }
-void CircuitScene::addSource(QPointF position)
+QGraphicsObject* CircuitScene::addSource(QPointF position)
 {
-    SourceItem* source = new SourceItem(m_nextSrcCycleValues);
+    SourceItem* source = new SourceItem(m_srcValues);
     source->setPos(position);
     addItem(source);
+    connect(source, &SourceItem::setOverlay, overlayPtr, &ItemOverlay::onSourceClicked);
+    return source;
 }
-void CircuitScene::addRegister(RType RegType, QPointF position) {
-    RegisterItem* Reg = new RegisterItem(RegType);
+QGraphicsObject* CircuitScene::addSource(std::variant<QList<bool>,QList<int>> srcValues,int numOut,QPointF position)
+{
+    SourceItem* source = new SourceItem(srcValues,numOut);
+    source->setPos(position);
+    addItem(source);
+    connect(source, &SourceItem::setOverlay, overlayPtr, &ItemOverlay::onSourceClicked);
+    return source;
+}
+QGraphicsObject* CircuitScene::addRegister(RType RegType, QPointF position) {
+    RegisterItem* Reg = new RegisterItem(RegType,m_isFlipFlop,m_hasEnable);
     Reg->setPos(position);
     addItem(Reg);
+    return Reg;
 }
-// Add to CircuitScene
+QGraphicsObject* CircuitScene::addRegister(RType RegType,bool hasEnable, QPointF position) {
+    RegisterItem* Reg = new RegisterItem(RegType,true,hasEnable);
+    Reg->setPos(position);
+    addItem(Reg);
+    return Reg;
+}
+QGraphicsObject* CircuitScene::addMux(MType MuxType,int numIn, QPointF position) {
+    MuxItem* Mux = new MuxItem(MuxType,m_numInputs);
+    Mux->setPos(position);
+    addItem(Mux);
+    return Mux;
+}
+QGraphicsObject* CircuitScene::addDisplay(int numIn,int numOut, QPointF position) {
+    DisplayItem* Display = new DisplayItem(numIn,numOut);
+    Display->setPos(position);
+    addItem(Display);
+    return Display;
+}
+
 PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshold)
 {
     PortItem* nearestPort = nullptr;
     double minDistance = threshold;
 
-    // Check all items in the scene
     for (QGraphicsItem* item : items(QRectF(scenePos - QPointF(threshold, threshold),
         QSizeF(threshold * 2, threshold * 2)))) {
         PortItem* port = dynamic_cast<PortItem*>(item);
@@ -64,7 +98,6 @@ PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshol
 
 void CircuitScene::clearHighlights()
 {
-    // Find all PortItem objects and unhighlight them
     for (QGraphicsItem* item : items()) {
         PortItem* port = dynamic_cast<PortItem*>(item);
         if (port) {
@@ -132,7 +165,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
     if (m_connectingWire && m_currWire) {
         PortItem* endPort = findNearestPort(endPoint);
 
-        if (endPort && m_currWireStartPort && endPort->canConnectTo(m_currWireStartPort) 
+        if (endPort && m_currWireStartPort && endPort->canConnectTo(m_currWireStartPort)
             && endPort->getPortType() == PortType::IN && endPort->getConnections().isEmpty()) {
             // Set the ports
             m_currWire->setStartPort(m_currWireStartPort);
@@ -143,8 +176,8 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
             endPort->addConnection(m_currWire);
 
             // Connect position change signals to wire update
-            QGraphicsObject* startGate = m_currWireStartPort->getParentGate();
-            QGraphicsObject* endGate = endPort->getParentGate();
+            QGraphicsObject* startGate = m_currWireStartPort->getParent();
+            QGraphicsObject* endGate = endPort->getParent();
 
             if (startGate) {
                 connect(startGate,&QGraphicsObject::xChanged,m_currWire,&WireItem::updateWirePosition);
@@ -157,7 +190,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
             }
             // Set final wire appearance
             m_currWire->setPen(QPen(Qt::black, 2));
-            m_currWire->updateWirePosition(); 
+            m_currWire->updateWirePosition();
         } else {
             // Remove invalid wire
             removeItem(m_currWire);
@@ -176,12 +209,16 @@ void CircuitScene::startSim()
 {
     ExportGraph graph;
     graph.clear();
+    map.clear();
 
     // Collections to track items and assign IDs
     QList<GateItem*> gateItems;
     QList<SourceItem*> sourceItems;
     QList<WireItem*> wireItems;
     QList<RegisterItem*> registerItems;
+    QList<MuxItem*> muxItems;
+    QList<DisplayItem*> displayItems;
+
     for (QGraphicsItem* item : items()) {
         if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
             wireItems.push_back(wire);
@@ -195,71 +232,107 @@ void CircuitScene::startSim()
         else if (RegisterItem* reg = dynamic_cast<RegisterItem*>(item)) {
             registerItems.push_back(reg);
         }
+        else if (MuxItem* mux = dynamic_cast<MuxItem*>(item)) {
+            muxItems.push_back(mux);
+        }
+        else if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
+            displayItems.push_back(display);
+        }
     }
-    
-    //QSet<QPair< QGraphicsObject*, QGraphicsObject*>> connections;
 
-    //for (const auto* wire : wireItems) {
-    //    QGraphicsObject* startItem = wire->getStartPort()->getParentGate();
-    //    QGraphicsObject* endItem = wire->getEndPort()->getParentGate();
-    //    connections.insert(QPair(startItem, endItem));
-    //}
-
-    for (int i = 0; i < gateItems.size(); i++) { map.gate2Idx[gateItems[i]] = i; map.Idx2gate[i] = gateItems[i]; }
-    for (int i = 0; i < sourceItems.size(); i++) { map.source2Idx[sourceItems[i]] = i; map.Idx2source[i] = sourceItems[i];}
-    for (int i = 0; i < registerItems.size(); i++) { map.reg2Idx[registerItems[i]] = i; map.Idx2reg[i] = registerItems[i];}
-
-    // wire,net mapping 
+    // wire,net mapping
     QHash<PortItem*, u32> outputPortToNet;
-    u32 netCounter = 1; 
+    u32 netCounter = 1;
+
     for (WireItem* wire : wireItems) {
         PortItem* startPort = wire->getStartPort();
+        // Skip display output wires in first pass
+        if(dynamic_cast<DisplayItem*>(startPort->getParent())) {continue;}
 
         // If this output port doesn't have a net ID yet, assign one
-        if (!outputPortToNet.contains(startPort)) {
-            outputPortToNet[startPort] = netCounter++;
-        }
+        if (!outputPortToNet.contains(startPort)) {outputPortToNet[startPort] = netCounter++;}
 
         // All wires from the same output port get the same net ID
         u32 netId = outputPortToNet[startPort];
         map.wire2net[wire] = netId;
 
-        // Store first wire for each net (for UI mapping)
+        // Store wire for each net (for UI mapping)
         map.net2wire[netId].push_back(wire);
     }
+    // SECOND PASS: Process display output wires (inputs are already mapped)
+    for (WireItem* wire : wireItems) {
+        PortItem* startPort = wire->getStartPort();
 
+        // Only handle display output ports
+        auto* display = dynamic_cast<DisplayItem*>(startPort->getParent());
+        if(!display) {
+            continue; // Already processed in first pass
+        }
+
+        // Get the index of this output port
+        int outputIndex = display->getOutputPorts().indexOf(startPort);
+
+        if(outputIndex != -1 && outputIndex < display->getInputPorts().size()) {
+            // Get the corresponding input port
+            PortItem* matchedInputPort = display->getInputPorts().at(outputIndex);
+
+            // Check if the matched input port has a connection
+            if(!matchedInputPort->getConnections().isEmpty()) {
+                WireItem* matchedInputWire = matchedInputPort->getConnections().at(0);
+
+                // Now the input wire SHOULD have a net ID from first pass
+                if(map.wire2net.contains(matchedInputWire)) {
+                    u32 netId = map.wire2net[matchedInputWire];
+                    map.wire2net[wire] = netId;
+                    map.net2wire[netId].push_back(wire);
+                } else {
+                    // Fallback: input not connected, assign new net
+                    if (!outputPortToNet.contains(startPort)) {
+                        outputPortToNet[startPort] = netCounter++;
+                    }
+                    u32 netId = outputPortToNet[startPort];
+                    map.wire2net[wire] = netId;
+                    map.net2wire[netId].push_back(wire);
+                }
+            }
+            else{
+                map.wire2net[wire] = 0;
+                map.net2wire[0].push_back(wire);
+            }
+        }
+    }
     std::vector<Gate> gates;
     std::vector<Source> sources;
     std::vector<Register> registers;
     std::vector<u32> gateInputs;
-    //std::vector<u32> sourceOutputs;
 
     auto getNetId = [&](PortItem* port) -> u32 {
-        return (port && !port->getConnections().isEmpty()) ?
-            map.wire2net[port->getConnections()[0]] : 0;
+        if (!port || port->getConnections().isEmpty()) {
+            return 0;
+        }
+        return map.wire2net[port->getConnections().at(0)];
     };
 
     // Wire,Gate Mapping
     u32 gateInputindex = 0;
-    for (auto* gateItem : gateItems)
+    for (int gateItemIdx = 0; gateItemIdx < gateItems.size(); gateItemIdx++)
     {
+        auto* gateItem = gateItems[gateItemIdx];
+
+        // Store the gate index for this GateItem
+        map.gate2Idx[gateItem] = gateItemIdx;
+        map.Idx2gate[gateItemIdx] = gateItem;
+
         QList<u32> inputnets;
         for (auto port:gateItem->getInputPorts()) {
-            if (!port->getConnections().isEmpty()) {
-                WireItem* inputWire = port->getConnections()[0];
-                u32 netID = map.wire2net[inputWire];
-                inputnets.append(netID);
-            }
-            else {
-                inputnets.append(0);
-            }
+            inputnets.append(getNetId(port));
         }
 
         u32 outNet = 0;
         if (!gateItem->getOutputPort()->getConnections().isEmpty()) {
-            WireItem* outwire = gateItem->getOutputPort()->getConnections()[0];
+            WireItem* outwire = gateItem->getOutputPort()->getConnections().at(0);
             outNet = map.wire2net[outwire];
-        }    
+        }
 
         for (auto inputnet : inputnets) { gateInputs.push_back(inputnet);};
 
@@ -268,33 +341,98 @@ void CircuitScene::startSim()
     }
 
     //Wire, Source Mapping
-    u32 outNet;
-    for (auto* sourceItem : sourceItems)
-    {   
+    u32 outNet, inNet2, inNet, readEnbNet, clkNet;
+    for (int sourceItemIdx = 0; sourceItemIdx < sourceItems.size(); sourceItemIdx++)
+    {
+        auto* sourceItem = sourceItems[sourceItemIdx];
+
+        // Store the starting sim source index for this SourceItem
+        int startingSimIndex = sources.size();
+        map.source2Idx[sourceItem] = startingSimIndex;
+        map.Idx2source[startingSimIndex] = sourceItem;
+
+        if(std::holds_alternative<QList<bool>>(sourceItem->getValues())){
+            // Single output port, cycling through bool values
+            outNet = 0;
+            if (!sourceItem->getOutputPorts().at(0)->getConnections().isEmpty()) {
+                WireItem* outwire = sourceItem->getOutputPorts().at(0)->getConnections().at(0);
+                outNet = map.wire2net[outwire];
+            }
+
+            std::vector<bool> cycleValues;
+            for (auto value : std::get<QList<bool>>(sourceItem->getValues())) {
+                cycleValues.push_back(value);
+            }
+            sources.push_back(Source(outNet, cycleValues));
+        }
+        else if(std::holds_alternative<QList<int>>(sourceItem->getValues())){
+            // Multiple output ports (one per bit), cycling through int values
+            const auto intValues = std::get<QList<int>>(sourceItem->getValues());
+
+            // For each bit position (output port)
+            for (int bitIndex = 0; bitIndex < sourceItem->getNumOutputPorts(); bitIndex++)
+            {
+                outNet = 0;
+                if (!sourceItem->getOutputPorts().at(bitIndex)->getConnections().isEmpty()) {
+                    WireItem* outwire = sourceItem->getOutputPorts().at(bitIndex)->getConnections().at(0);
+                    outNet = map.wire2net[outwire];
+                }
+
+                // Extract this bit from each int value in the cycle
+                std::vector<bool> cycleValues;
+                for (int value : intValues) {
+                    bool bitValue = (value >> bitIndex) & 1;
+                    cycleValues.push_back(bitValue);
+                }
+
+                sources.push_back(Source(outNet, cycleValues));
+            }
+        }
+    }
+    //Wire, Mux Mapping
+    std::vector<Mux> muxes;
+    for (auto* muxItem : muxItems)
+    {
+        std::vector<u32> dataInputNets;
+        std::vector<u32> addressInputNets;
         outNet = 0;
-        if (!sourceItem->getOutputPorts()[0]->getConnections().isEmpty()) {
-            WireItem* outwire = sourceItem->getOutputPorts()[0]->getConnections()[0];
+
+        for (auto port : muxItem->getInputPorts()) {
+            dataInputNets.push_back(getNetId(port));
+        }
+
+        for (auto port : muxItem->getAddressPorts()) {
+            addressInputNets.push_back(getNetId(port));
+        }
+
+        if (!muxItem->getOutputPort()->getConnections().isEmpty()) {
+            WireItem* outwire = muxItem->getOutputPort()->getConnections()[0];
             outNet = map.wire2net[outwire];
         }
-        std::vector<bool> cycleValues;
-        for (auto value : sourceItem->getValues()) {cycleValues.push_back(value);};
-        sources.push_back(Source(outNet, cycleValues));
+
+        muxes.push_back(Mux(dataInputNets, addressInputNets, outNet));
     }
 
-    u32 inNet, readEnbNet, clkNet;
-    for (auto* regItem : registerItems)
+    for (int regItemIdx = 0; regItemIdx < registerItems.size(); regItemIdx++)
     {
-        outNet = 0; inNet = 0; readEnbNet = 0; clkNet = 0;
+        auto* regItem = registerItems[regItemIdx];
+
+        map.reg2Idx[regItem] = regItemIdx;
+        map.Idx2reg[regItemIdx] = regItem;
+
         clkNet = getNetId(regItem->getClkPort());
         readEnbNet = getNetId(regItem->getReadEnablePort());
-        inNet = getNetId(regItem->getInputPort());
         outNet = getNetId(regItem->getOutputPort());
-        // Update constructor call to include read enable
-        registers.push_back(Register(RType::D, inNet, outNet, clkNet,readEnbNet));
+        inNet = getNetId(regItem->getInputPort());
+        inNet2 = getNetId(regItem->getInputPortTwo());
+        getNetId(regItem->getInputPortTwo());
+        registers.push_back(Register(regItem->getRegType(), inNet, inNet2, outNet, clkNet,readEnbNet));
     }
+
     graph.gates = gates;
     graph.sources = sources;
     graph.registers = registers;
+    graph.muxes = muxes;
     graph.gateInputs = gateInputs;
     emit startSimSIG(graph);
 }
@@ -317,35 +455,372 @@ void CircuitScene::receiveResult(SimResult result)
         }
     }
 
-    for (int i = 0; i < result.sourcesCurrIdx.size(); i++) {
-        auto source = map.Idx2source[i];
-        source->setIdx(result.sourcesCurrIdx[i]);    
+    for (auto [source,Idx]: map.source2Idx) {
+        source->setIdx(result.sourcesCurrIdx[Idx]);
     }
     for (int i = 0; i < result.registerValues.size(); i++) {
         auto reg = map.Idx2reg[i];
         reg->setValue(result.registerValues[i]);
     }
+
+    for (QGraphicsItem* item : items()) {
+        if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
+            display->updateValue();
+        }
+    }
+}
+
+void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
+{
+    qDebug() << "Received graph with" << graph.size() << "nodes";
+    clear();
+
+    QHash<QString,QGraphicsObject*> node2Item;
+
+    for (auto it = graph.begin(); it != graph.end(); ++it) {
+        const QString& nodeId = it.key();
+        const Node& node = it.value();
+        QGraphicsObject* item=nullptr;
+
+        if( std::holds_alternative<GType>(node.type)){
+
+            item = addGate(std::get<GType>(node.type),2,node.position);
+        }
+        else if( std::holds_alternative<RType>(node.type)){
+            item = addRegister(std::get<RType>(node.type),false,node.position);
+        }
+        else if( std::holds_alternative<MType>(node.type)){
+            item = addMux(std::get<MType>(node.type),2,node.position);
+        }
+        else if( std::holds_alternative<IOType>(node.type)){
+            auto IoType = std::get<IOType>(node.type);
+            if (IoType == IOType::IN){
+                int bitWidth = node.ports[node.id].connections.size();
+                if (bitWidth==1)
+                    item = addSource(QList<bool>{false,true},bitWidth,node.position);
+                else{
+                    QList<int> values;
+                    int maxValue = 1 << bitWidth;
+                    for (int i = 0; i < maxValue; i++) {values.append(i); values.append(i);}
+                    item = addSource(values,bitWidth,node.position);
+                }
+            }
+            else{
+                int bitWidth = node.ports[node.id].connections.size();
+                item = addDisplay(bitWidth,0,node.position);
+            }
+        }
+        node2Item[nodeId]=item;
+    }
+
+    QHash<int, QList<QPair<QString, QString>>> bitToInputs; // bit -> [(nodeId, portName), ...]
+    QHash<int, QPair<QString, QString>> bitToOutput; // bit -> (nodeId, portName)
+
+    for (auto it = graph.begin(); it != graph.end(); ++it) {
+        const QString& nodeId = it.key();
+        const Node& node = it.value();
+
+        for (auto portIt = node.ports.begin(); portIt != node.ports.end(); ++portIt) {
+            const QString& portName = portIt.key();
+            const Port& port = portIt.value();
+
+            for (int bitNum : port.connections) {
+                if (port.type == PortType::IN) {
+                    bitToInputs[bitNum].append({nodeId, portName});
+                } else if (port.type == PortType::OUT) {
+                    bitToOutput[bitNum] = {nodeId, portName};
+                }
+            }
+        }
+    }
+
+    for (auto bitIt = bitToInputs.begin(); bitIt != bitToInputs.end(); ++bitIt) {
+        int bitNum = bitIt.key();
+        const QList<QPair<QString, QString>>& inputs = bitIt.value();
+
+        if (!bitToOutput.contains(bitNum)) {
+            qDebug() << "Warning: Bit" << bitNum << "has no output source";
+            continue;
+        }
+
+        const auto& [outputNodeId, outputPortName] = bitToOutput[bitNum];
+
+        QGraphicsObject* outputItem = node2Item[outputNodeId];
+        PortItem* outPort =nullptr;
+        QList<PortItem*> outPorts;
+
+        if (auto ptr = dynamic_cast<GateItem*>(outputItem)){
+            outPort = ptr->getOutputPort();
+        }
+        else if (auto ptr = dynamic_cast<MuxItem*>(outputItem)){
+            outPort = ptr->getOutputPort();
+        }
+        else if (auto ptr = dynamic_cast<RegisterItem*>(outputItem)){
+            outPort = ptr->getOutputPort();
+        }
+        else if(auto ptr = dynamic_cast<SourceItem*>(outputItem)){
+            outPorts = ptr->getOutputPorts();
+            // Find which port outputs this specific bit
+            const Node& outputNode = graph[outputNodeId];
+            for (auto portIt = outputNode.ports.begin(); portIt != outputNode.ports.end(); ++portIt) {
+                const Port& port = portIt.value();
+                if (port.type == PortType::OUT) {
+                    int bitIndex = port.connections.indexOf(bitNum);
+                    if (bitIndex != -1 && bitIndex < outPorts.size()) {
+                        outPort = outPorts[bitIndex];
+                        break;
+                    }
+                }
+            }
+        }
+        else if(auto ptr = dynamic_cast<DisplayItem*>(outputItem)){
+            outPorts = ptr->getOutputPorts();
+            // Find which port outputs this specific bit
+            const Node& outputNode = graph[outputNodeId];
+            for (auto portIt = outputNode.ports.begin(); portIt != outputNode.ports.end(); ++portIt) {
+                const Port& port = portIt.value();
+                if (port.type == PortType::OUT) {
+                    int bitIndex = port.connections.indexOf(bitNum);
+                    if (bitIndex != -1 && bitIndex < outPorts.size()) {
+                        outPort = outPorts[bitIndex];
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (const auto& [inputNodeId, inputPortName] : inputs) {
+            QGraphicsObject* inputItem = node2Item[inputNodeId];
+            PortItem* inPort = nullptr;
+            QList<PortItem*> inPorts;
+
+            if (auto ptr = dynamic_cast<GateItem*>(inputItem)){
+                inPorts = ptr->getInputPorts();
+                const Node& inputNode = graph[inputNodeId];
+
+                int portCounter = 0;  
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN) {
+                        if (port.name == inputPortName && port.connections.contains(bitNum)) {
+                            if (portCounter < inPorts.size()) {
+                                inPort = inPorts[portCounter];
+                            }
+                            break;
+                        }
+                        portCounter++;
+                    }
+                }
+            }
+            else if (auto ptr = dynamic_cast<MuxItem*>(inputItem)){
+                inPorts = ptr->getInputPorts();
+                QList<PortItem*> addrPorts = ptr->getAddressPorts();
+
+                const Node& inputNode = graph[inputNodeId];
+
+                // Determine if this is an address port by checking the port name
+                bool isAddressPort = inputPortName.contains("S") || inputPortName.contains("addr") || inputPortName.contains("sel");
+
+                int portCounter = 0;  
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN) {
+                        bool thisIsAddress = port.name.contains("S") || port.name.contains("addr") || port.name.contains("sel");
+
+                        if (thisIsAddress == isAddressPort) {
+                            if (port.name == inputPortName && port.connections.contains(bitNum)) {
+                                if (isAddressPort && portCounter < addrPorts.size()) {
+                                    inPort = addrPorts[portCounter];
+                                } else if (!isAddressPort && portCounter < inPorts.size()) {
+                                    inPort = inPorts[portCounter];
+                                }
+                                break;
+                            }
+                            portCounter++;  
+                        }
+                    }
+                }
+            }
+            else if(auto ptr = dynamic_cast<DisplayItem*>(inputItem)){
+                inPorts = ptr->getInputPorts();
+                const Node& inputNode = graph[inputNodeId];
+
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN) {
+                        if (port.name == inputPortName && port.connections.contains(bitNum)) {
+                            int portIndex = port.connections.indexOf(bitNum);
+                            inPort = inPorts[portIndex];
+                            break;
+                        }
+                    }
+                }
+            }
+            else if (auto ptr = dynamic_cast<RegisterItem*>(inputItem)){
+                const Node& inputNode = graph[inputNodeId];
+                for (auto portIt = inputNode.ports.begin(); portIt != inputNode.ports.end(); ++portIt) {
+                    const Port& port = portIt.value();
+                    if (port.type == PortType::IN && port.name == inputPortName) {
+                        // Map port name to the correct register port
+                        if (inputPortName.contains("D") || inputPortName.toLower().contains("data")) {
+                            inPort = ptr->getInputPort();
+                        }
+                        else if (inputPortName.contains("C") || inputPortName.toLower().contains("c")) {
+                            inPort = ptr->getClkPort();
+                        }
+                        else if (inputPortName.contains("EN") || inputPortName.toLower().contains("enable")) {
+                            inPort = ptr->getReadEnablePort();
+                        }
+                        else if (inputPortName.contains("R") || inputPortName.toLower().contains("reset")) {
+                            inPort = ptr->getInputPortTwo();
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (!inPort) {
+                qDebug() << "Warning: Could not find input port" << inputPortName << "on node" << inputNodeId;
+                continue;
+            }
+
+            QPointF outPos = outPort->mapToScene(QPointF(0, 0));
+            QPointF endPos = inPort->mapToScene(QPointF(0, 0));
+
+            WireItem* wire = new WireItem(outPos, endPos);
+            wire->setStartPort(outPort);
+            wire->setEndPort(inPort);
+
+            outPort->addConnection(wire);
+            inPort->addConnection(wire);
+
+            addItem(wire);
+
+            connect(outputItem,&QGraphicsObject::xChanged,wire,&WireItem::updateWirePosition);
+            connect(outputItem,&QGraphicsObject::yChanged,wire,&WireItem::updateWirePosition);
+
+            connect(inputItem,&QGraphicsObject::xChanged,wire,&WireItem::updateWirePosition);
+            connect(inputItem,&QGraphicsObject::yChanged,wire,&WireItem::updateWirePosition);
+
+            wire->updateWirePosition();
+
+            qDebug() << "Created wire: bit" << bitNum << "from" << outputNodeId << outputPortName
+                     << "to" << inputNodeId << inputPortName;
+        }
+    }
+
+    // QList<QGraphicsObject*> components;
+    // for (QGraphicsItem* item : items()) {
+    //     if (GateItem* gate = dynamic_cast<GateItem*>(item)) {
+    //         components.push_back(gate);
+    //     }
+    //     else if (SourceItem* source = dynamic_cast<SourceItem*>(item)) {
+    //         components.push_back(source);
+    //     }
+    //     else if (RegisterItem* reg = dynamic_cast<RegisterItem*>(item)) {
+    //         components.push_back(reg);
+    //     }
+    //     else if (MuxItem* mux = dynamic_cast<MuxItem*>(item)) {
+    //         components.push_back(mux);
+    //     }
+    //     else if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
+    //         components.push_back(display);
+    //     }
+    // }
+    // // Group items by vertical proximity (within 100 pixels)
+    // QList<QList<QGraphicsObject*>> groups;
+    // QSet<QGraphicsObject*> processed;
+
+    // for (auto* comp : components) {
+    //     if (processed.contains(comp)) continue;
+
+    //     QList<QGraphicsObject*> group;
+    //     group.append(comp);
+    //     processed.insert(comp);
+
+    //     qreal compY = comp->pos().x();
+
+    //     // Find all items at similar Y position
+    //     for (auto* other : components) {
+    //         if (processed.contains(other)) continue;
+
+    //         qreal otherY = other->pos().x();
+    //         if (qAbs(compY - otherY) < 100) {  // Within 100 pixels vertically
+    //             group.append(other);
+    //             processed.insert(other);
+    //         }
+    //     }
+
+    //     if (group.size() > 1) {
+    //         groups.append(group);
+    //     }
+    // }
+
+    // // Process each group
+    // for (auto& group : groups) {
+    //     // Sort group by Y position (top to bottom)
+    //     std::sort(group.begin(), group.end(), [](QGraphicsObject* a, QGraphicsObject* b) {
+    //         return a->pos().y() < b->pos().y();
+    //     });
+
+    //     int groupSize = group.size();
+
+    //     if (groupSize == 1) {
+    //         continue; 
+    //     }
+
+    //    
+    //     for (int i = 0; i < groupSize; i++) {
+    //         QGraphicsObject* obj = group[i];
+
+    //         qreal shift;
+    //         if (groupSize == 2) {
+    //             // Special case: only 2 items
+    //             shift = (i == 0) ? -5.0 : 5.0;
+    //         } else {
+    //             // 3 or more items: linear interpolation from -5 to +5
+    //             // Middle item(s) should be close to 0
+    //             shift = -200.0 + (100.0 * i / (groupSize - 1));
+    //         }
+
+    //      
+    //         QPointF currentPos = obj->pos();
+    //         obj->setPos(currentPos.x() + shift, currentPos.y());
+    //     }
+    // }
+
+    // // Update all wires after moving components
+    // for (QGraphicsItem* wireItem : items()) {
+    //     if (auto* wire = dynamic_cast<WireItem*>(wireItem)) {
+    //         wire->updateWirePosition();
+    //     }
+    // }
+
+    return;
 }
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
-    // Handle our custom cases first
+
     if (event->button() == Qt::LeftButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
         if (!clickedItem) {
-            // Only add items if we didn't click on an existing item
             std::visit([&](auto&& arg) {
                 using T = std::decay_t<decltype(arg)>;
-
                 if constexpr (std::is_same_v<T, GType>) {
-                    addGate(arg, event->scenePos());
+                    addGate(arg,m_numInputs, event->scenePos());
                 }
                 else if constexpr (std::is_same_v<T, RType>) {
                     addRegister(arg, event->scenePos());
                 }
-                else if constexpr (std::is_same_v<T, bool>) {
-                    addSource(event->scenePos());
+                else if constexpr (std::is_same_v<T, MType>) {
+                    addMux(arg,m_numInputs,event->scenePos());
                 }
-                }, 
+                else if constexpr (std::is_same_v<T, bool>) {
+                    if (arg)
+                        addSource(event->scenePos());
+                    else
+                        addDisplay(m_numInputs,m_numOutputs,event->scenePos());
+                }},
                 m_nextItem);
 
             event->accept();
@@ -353,13 +828,11 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         }
     }
     else if (event->button() == Qt::RightButton) {
-        // Right click starts wire connection
         startWireConnection(event->scenePos());
         event->accept();
         return;
     }
 
-    // Pass other events to base class
     QGraphicsScene::mousePressEvent(event);
 }
 
@@ -368,7 +841,7 @@ void CircuitScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
     if (m_connectingWire) {
         updateWireConnection(event->scenePos());
 
-    } else { 
+    } else {
         QGraphicsScene::mouseMoveEvent(event);
     }
 }
@@ -391,6 +864,7 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
 {
     m_scene = new CircuitScene(this);
     setScene(m_scene);
+    scenePtr = m_scene;
 
     // Configure view
     setDragMode(QGraphicsView::RubberBandDrag);
@@ -411,7 +885,7 @@ void CircuitCanvas::keyPressEvent(QKeyEvent* event)
     {
         QList<QGraphicsItem*> selectedItems = m_scene->selectedItems();
 
-        for (QGraphicsItem* item : selectedItems) {
+        for (QGraphicsItem* item : std::as_const(selectedItems)) {
             // Let the items handle their own deletion (they have keyPressEvent handlers)
             QKeyEvent deleteEvent(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
             m_scene->sendEvent(item, &deleteEvent);
@@ -437,48 +911,74 @@ void CircuitCanvas::mousePressEvent(QMouseEvent* event)
         event->accept();
         return;
     }
-   
-    QGraphicsView::mousePressEvent(event); // Call base class implementation
+
+    QGraphicsView::mousePressEvent(event);
 }
 
 void CircuitCanvas::mouseMoveEvent(QMouseEvent* event)
 {
     if (m_middleMousePressed) {
-        // Calculate movement delta
+
         QPoint delta = event->pos() - m_lastPanPoint;
         m_lastPanPoint = event->pos();
-        
-        // Move the viewport in the same direction as mouse movement
+
         QScrollBar* hBar = horizontalScrollBar();
         QScrollBar* vBar = verticalScrollBar();
-        
+
         hBar->setValue(hBar->value() - delta.x());
         vBar->setValue(vBar->value() - delta.y());
-        
+
         event->accept();
         return;
     }
-    
+
     QGraphicsView::mouseMoveEvent(event);
 }
 
 void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::MiddleButton && m_middleMousePressed) {
-        // Stop camera dragging
+
         m_middleMousePressed = false;
         setCursor(Qt::ArrowCursor);
         event->accept();
         return;
     }
-    
+
     QGraphicsView::mouseReleaseEvent(event);
 }
 
 void CircuitCanvas::wheelEvent(QWheelEvent* event)
 {
-    // Zoom with mouse wheel
+    // Get current transform and scene rect
+    QTransform currentTransform = transform();
+    double currentScale = currentTransform.m11();
+    QRectF sceneRect = m_scene->sceneRect();
+
     const double scaleFactor = 1.15;
+
+    // Calculate what the new scale would be
+    double newScale = currentScale;
+    if (event->angleDelta().y() > 0) {
+        newScale *= scaleFactor;  // Zoom in
+    } else {
+        newScale /= scaleFactor;  // Zoom out
+    }
+
+    // Check if zooming out would make the view larger than the scene
+    if (newScale < currentScale) {  
+        QRectF viewportRect = viewport()->rect();
+
+        double newViewWidth = viewportRect.width() / newScale;
+        double newViewHeight = viewportRect.height() / newScale;
+
+        // Don't zoom out if the view would become larger than the scene
+        if (newViewWidth >= sceneRect.width() || newViewHeight >= sceneRect.height()) {
+            return;  
+        }
+    }
+
+    // Apply the zoom
     if (event->angleDelta().y() > 0) {
         scale(scaleFactor, scaleFactor);
     } else {
@@ -486,20 +986,3 @@ void CircuitCanvas::wheelEvent(QWheelEvent* event)
     }
 }
 
-void CircuitCanvas::dragEnterEvent(QDragEnterEvent* event)
-{
-    if (event->mimeData()->hasText() && event->mimeData()->text().startsWith("gate:")) {
-        event->acceptProposedAction();
-    }
-}
-
-void CircuitCanvas::dropEvent(QDropEvent* event)
-{
-    QString gateData = event->mimeData()->text();
-    if (gateData.startsWith("gate:")) {
-        int gateTypeInt = gateData.mid(5).toInt();
-        GType gateType = static_cast<GType>(gateTypeInt);
-        addGate(gateType, event->position().toPoint());
-        event->acceptProposedAction();
-    }
-}

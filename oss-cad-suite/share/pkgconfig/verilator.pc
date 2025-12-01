@@ -1,0 +1,13 @@
+prefix=/yosyshq
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+datarootdir=${prefix}/share
+includedir=${datarootdir}/verilator/include
+
+Name: verilator
+Description: fast free Verilog simulator
+URL: https://verilator.org
+Version: 5.041
+Requires:
+Libs:
+Cflags: -I${includedir} -I${includedir}/vltstd
