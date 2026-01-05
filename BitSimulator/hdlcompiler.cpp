@@ -33,10 +33,13 @@ bool HDLCompiler::compile(const QString& hdlCode) {
 
     // Run Yosys synthesis
     QStringList arguments;
-    arguments << "-p" << "read_verilog code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR; write_json code_netlist.json; show -format dot -prefix code_graph";
+    arguments << "-p" << "read_verilog code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
+
+    auto startTime = std::chrono::high_resolution_clock::now();
+
     Process->start(yosysPath, arguments);
 
-    if (!Process->waitForFinished(30000)) {
+    if (!Process->waitForFinished(100000)) {
         qDebug() << "Process timeout or failed to start";
         emit error("Yosys process timeout");
         return false;
@@ -49,21 +52,36 @@ bool HDLCompiler::compile(const QString& hdlCode) {
         return false;
     }
 
-    qDebug() << "Yosys compilation successful";
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+    qDebug() << "Yosys execution time: " << duration.count() << " ms";
 
     QStringList dotArgs;
 
-    // Output a positioned .dot file (plain format has coordinates)
-    dotArgs << "-Tdot" << "code_graph.dot" << "-o" << "code_graph_positioned.dot";
+    dotArgs
+        << "-Tdot" //dot output
+        << "-Kdot" // dot layout engine
+        << "-Grankdir=LR" // Left to right
+        << "code_graph.dot"
+        << "-o"
+        << "code_graph_positioned.dot";
+
+    startTime = std::chrono::high_resolution_clock::now();
     Process->start("./dot", dotArgs);
 
-    if (!Process->waitForFinished(10000)) {
+
+    if (!Process->waitForFinished(100000)) {
         qDebug() << "Dot process timeout";
         Process->deleteLater();
         emit success();
         return false;
     }
 
+    endTime = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+    qDebug() << "Dot execution time: " << duration.count() << " ms";
     if (Process->exitCode() != 0) {
         qDebug() << "Dot layout failed:" << Process->readAllStandardError();
         Process->deleteLater();
@@ -78,7 +96,6 @@ bool HDLCompiler::compile(const QString& hdlCode) {
     if(!processJsonFile("code_netlist.json")) return false;
 
     emit sendGraph(m_components);
-    emit success();
     return true;
 }
 

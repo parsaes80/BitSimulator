@@ -801,7 +801,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 
-    if (event->button() == Qt::LeftButton) {
+    if (event->button() == Qt::MiddleButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
         if (!clickedItem) {
             std::visit([&](auto&& arg) {
@@ -903,13 +903,19 @@ void CircuitCanvas::keyPressEvent(QKeyEvent* event)
 
 void CircuitCanvas::mousePressEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::MiddleButton) {
-        // Start camera dragging
-        m_middleMousePressed = true;
-        m_lastPanPoint = event->pos();
-        setCursor(Qt::ClosedHandCursor);
-        event->accept();
-        return;
+    if (event->button() == Qt::LeftButton) {
+        // Check if we clicked on an item
+        QGraphicsItem* itemUnderMouse = itemAt(event->pos());
+        
+        if (!itemUnderMouse) {
+            // Clicked on empty space - start camera dragging
+            m_middleMousePressed = true;
+            m_lastPanPoint = event->pos();
+            setCursor(Qt::ClosedHandCursor);
+            event->accept();
+            return;
+        }
+        // If we clicked on an item, fall through to let QGraphicsView handle it
     }
 
     QGraphicsView::mousePressEvent(event);
@@ -937,7 +943,7 @@ void CircuitCanvas::mouseMoveEvent(QMouseEvent* event)
 
 void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::MiddleButton && m_middleMousePressed) {
+    if (event->button() == Qt::LeftButton && m_middleMousePressed) {
 
         m_middleMousePressed = false;
         setCursor(Qt::ArrowCursor);

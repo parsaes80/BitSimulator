@@ -403,8 +403,7 @@ void Simulator::SimController() {
             auto endTime = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
         
-            qDebug() << "Tick execution time:" << duration.count() << "microseconds ("
-                     << duration.count() / 1000.0 << "ms)";
+            qDebug() << "Tick execution time:" << duration.count() << "microseconds";
         }
         });
     m_timer->start(100);  
