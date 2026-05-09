@@ -25,82 +25,66 @@ void Simulator::clearCircuit() {
     m_registers.clear();
     m_sources.clear();
     m_gateInputs.clear();
+    m_gateFanout.clear();
+    m_registerFanout.clear();
+    m_MuxFanout.clear();
 }
 
-void Simulator::processGates(u32 changedNetId, std::set<u32>& eventQueue) {
-    // Find all gates that have this net as an input
-    for (size_t gateIdx = 0; gateIdx < m_gates.size(); gateIdx++) {
+void Simulator::processGates(u32 changedNetId) {
+    const auto& fanout = m_gateFanout[changedNetId];
+    for (u32 gateIdx : fanout) {
         Gate& gate = m_gates[gateIdx];
 
-        // Check if this gate uses the changed net as input
-        bool gateUsesNet = false;
-        for (u16 i = 0; i < gate.numInputs; i++) {
-            u32 inputNetId = m_gateInputs[gate.inID + i];
-            if (inputNetId == changedNetId) {
-                gateUsesNet = true;
-                break;
-            }
+        if (gate.outID == 0) {
+            continue;
         }
 
-        if (!gateUsesNet || gate.outID == 0) {
-            continue; // This gate doesn't use the changed net
-        }
+        std::vector<u32> &inputs = gate.inIDs;
 
-        // Gather all inputs first
-        std::vector<bool> inputs;
-        inputs.reserve(gate.numInputs);
-
-        for (u16 i = 0; i < gate.numInputs; i++) {
-            u32 inputNetId = m_gateInputs[gate.inID + i];
-            bool inputValue = (inputNetId < m_nets.size()) ? m_nets[inputNetId] : false;
-            inputs.push_back(inputValue);
-        }
-        
-        // ===== Evaluate gate logic ONCE with all inputs =====
         bool newOutput;
 
         switch (gate.gateType) {
         case GType::AND:
             newOutput = true;
-            for (bool input : inputs) {
-                newOutput = newOutput && input;
+            for (u32 netId : inputs) {
+                newOutput = newOutput && m_nets[netId];
             }
             break;
         case GType::OR:
             newOutput = false;
-            for (bool input : inputs) {
-                newOutput = newOutput || input;
+            for (u32 netId : inputs) {
+                newOutput = newOutput || m_nets[netId];
             }
             break;
         case GType::NAND:
             newOutput = true;
-            for (bool input : inputs) {
-                newOutput = newOutput && input;
+            for (u32 netId : inputs) {
+                newOutput = newOutput && m_nets[netId];
             }
-            newOutput = !newOutput;  
+            newOutput = !newOutput;
             break;
         case GType::NOR:
             newOutput = false;
-            for (bool input : inputs) {
-                newOutput = newOutput || input;
+            for (u32 netId : inputs) {
+                newOutput = newOutput || m_nets[netId];
             }
-            newOutput = !newOutput;  
+            newOutput = !newOutput;
             break;
         case GType::XOR:
             newOutput = false;
-            for (bool input : inputs) {
-                newOutput = newOutput ^ input;
+            for (u32 netId : inputs) {
+                newOutput = newOutput ^ m_nets[netId];
             }
             break;
         case GType::XNOR:
             newOutput = false;
-            for (bool input : inputs) {
-                newOutput = newOutput ^ input;
+            for (u32 netId : inputs) {
+                newOutput = newOutput ^ m_nets[netId];
             }
-            newOutput = !newOutput;  
+            newOutput = !newOutput;
             break;
         case GType::NOT:
-            newOutput = !inputs[0];
+            newOutput = inputs.empty() ? false : !m_nets[inputs[0]];
             break;
         default:
             newOutput = false;
@@ -109,43 +93,25 @@ void Simulator::processGates(u32 changedNetId, std::set<u32>& eventQueue) {
 
         // ===== Check if output changed =====
         u32 outputNetId = gate.outID;
-        if (outputNetId < m_nets.size()) {
-            bool oldValue = m_nets[outputNetId];
 
-            if (oldValue != newOutput) {
-                // Output changed - update net and queue it
-                m_nets[outputNetId] = newOutput;
-                eventQueue.insert(outputNetId);
-            }
+        bool oldValue = m_nets[outputNetId];
+
+        if (oldValue != newOutput) {
+            // Output changed - update net and queue it
+            m_nets[outputNetId] = newOutput;
+            eventQueue.insert(outputNetId);
         }
+
     }
 }
 
-void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
-    for (size_t muxIdx = 0; muxIdx < m_muxes.size(); muxIdx++) {
+void Simulator::processMuxes(u32 changedNetId) {
+    const auto& fanout = m_MuxFanout[changedNetId];
+    for (u32 muxIdx : fanout) {
         Mux& mux = m_muxes[muxIdx];
 
-        // Check if this MUX uses the changed net (either data or address input)
-        bool muxUsesNet = false;
-
-        for (u32 dataNetId : mux.inData) {
-            if (dataNetId == changedNetId) {
-                muxUsesNet = true;
-                break;
-            }
-        }
-
-        if (!muxUsesNet) {
-            for (u32 addrNetId : mux.inAddress) {
-                if (addrNetId == changedNetId) {
-                    muxUsesNet = true;
-                    break;
-                }
-            }
-        }
-
-        if (!muxUsesNet || mux.outID == 0) {
-            continue; // This MUX doesn't use the changed net
+        if (mux.outID == 0) {
+            continue;
         }
 
         // Read address inputs and compute selected index
@@ -168,18 +134,17 @@ void Simulator::processMuxes(u32 changedNetId, std::set<u32>& eventQueue) {
 
         // Update output if changed
         u32 outputNetId = mux.outID;
-        if (outputNetId < m_nets.size()) {
-            bool oldValue = m_nets[outputNetId];
-            if (oldValue != newOutput) {
-                m_nets[outputNetId] = newOutput;
-                eventQueue.insert(outputNetId);
-            }
+
+        bool oldValue = m_nets[outputNetId];
+        if (oldValue != newOutput) {
+            m_nets[outputNetId] = newOutput;
+            eventQueue.insert(outputNetId);
         }
+
     }
 }
 
-inline void Simulator::processRegisters() {
-    // Update register processing in tick() - handles all flip-flop types
+void Simulator::processRegisters() {
     for (auto& reg : m_registers) {
 
         bool currentClock = m_nets[reg.clkID];
@@ -319,15 +284,13 @@ inline void Simulator::processRegisters() {
 void Simulator::tick() {
     sim_running = true;
 
-    std::set<u32> eventQueue;
-
-        if (firstTick) {
-            for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
-                eventQueue.insert(i);
-            }
-        firstTick = false;
+    if (firstTick) {
+        for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
+            eventQueue.insert(i);
+        }
+    firstTick = false;
     }
-    
+
     for (auto& reg : m_registers) {
         if(!reg.outID){continue;} // dont't write to net 0
         bool oldValue = m_nets[reg.outID];
@@ -355,13 +318,13 @@ void Simulator::tick() {
         u32 changedNetId = *it;
         eventQueue.erase(it);
 
-        processGates(changedNetId, eventQueue);
+        processGates(changedNetId);
 
-        processMuxes(changedNetId, eventQueue);
+        processMuxes(changedNetId);
 
         propagationStep++;
     }
-    
+
     processRegisters();
 
     SimResult result;
@@ -381,12 +344,53 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_sources = graph.sources;
     m_registers = graph.registers;
     m_muxes = graph.muxes;
-    m_gateInputs = graph.gateInputs;
+
     firstTick = true;
     auto numNets = map.net2wire.size();
     for (int i = 0; i <= numNets; i++) { m_nets.push_back(false);};
 
+    m_gateFanout.assign(numNets + 1, {});
+    m_registerFanout.assign(numNets + 1, {});
+    m_MuxFanout.assign(numNets + 1, {});
 
+    for (size_t gateIdx = 0; gateIdx < m_gates.size(); gateIdx++) {
+        Gate& gate = m_gates[gateIdx];
+        for (auto inputNetId: gate.inIDs) {
+            if (inputNetId != 0) {
+                m_gateFanout[inputNetId].push_back(gateIdx);
+            }
+        }
+    }
+
+    for (size_t muxIdx = 0; muxIdx < m_muxes.size(); muxIdx++) {
+        Mux& mux = m_muxes[muxIdx];
+        for (auto inputNetId : mux.inData) {
+            if (inputNetId != 0) {
+                m_MuxFanout[inputNetId].push_back(muxIdx);
+            }
+        }
+        for (auto inputNetId : mux.inAddress) {
+            if (inputNetId != 0) {
+                m_MuxFanout[inputNetId].push_back(muxIdx);
+            }
+        }
+    }
+
+    for (size_t regIdx = 0; regIdx < m_registers.size(); regIdx++) {
+        Register& reg = m_registers[regIdx];
+        if (reg.inID != 0) {
+            m_registerFanout[reg.inID].push_back(regIdx);
+        }
+        if (reg.InID2 != 0) {
+            m_registerFanout[reg.InID2].push_back(regIdx);
+        }
+        if (reg.clkID != 0) {
+            m_registerFanout[reg.clkID].push_back(regIdx);
+        }
+        if (reg.enableID != 0) {
+            m_registerFanout[reg.enableID].push_back(regIdx);
+        }
+    }
 
     sim_running = true;
 }
@@ -416,7 +420,7 @@ void Simulator::SimController() {
         if (sim_running) {
             auto startTime = std::chrono::high_resolution_clock::now();
             tick();
-            
+
             auto endTime = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
@@ -427,5 +431,5 @@ void Simulator::SimController() {
                 qDebug() << "Tick execution time:" << time << "microseconds";}
         }
         });
-    m_timer->start(100);  
+    m_timer->start(100);
 }

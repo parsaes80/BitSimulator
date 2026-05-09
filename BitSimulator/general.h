@@ -43,12 +43,11 @@ struct Register {
 };
 
 struct Gate {
-	u32 inID;    
+    std::vector<u32> inIDs;
 	u32 outID;    
-	u16 numInputs; 
 	GType gateType;
 	Gate() = default;
-	Gate(GType t, u32 inId, u32 outId, u16 inNum) : gateType(t), inID(inId), outID(outId), numInputs(inNum) {}
+    Gate(GType t, std::vector<u32> inIds, u32 outId) : gateType(t), inIDs(inIds), outID(outId) {}
 };
 
 struct Source {
@@ -76,13 +75,10 @@ struct ExportGraph
 	std::vector<Register> registers;
     std::vector<Mux> muxes;
 
-    std::vector<u32> gateInputs;   
-
     void clear()
     {
         gates.clear();
         sources.clear();
-        gateInputs.clear();
         registers.clear();
         muxes.clear();
     }

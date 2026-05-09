@@ -314,7 +314,6 @@ void CircuitScene::startSim()
     };
 
     // Wire,Gate Mapping
-    u32 gateInputindex = 0;
     for (int gateItemIdx = 0; gateItemIdx < gateItems.size(); gateItemIdx++)
     {
         auto* gateItem = gateItems[gateItemIdx];
@@ -336,8 +335,8 @@ void CircuitScene::startSim()
 
         for (auto inputnet : inputnets) { gateInputs.push_back(inputnet);};
 
-        gates.push_back(Gate(gateItem->getGateType(), gateInputindex, outNet, inputnets.size()));
-        gateInputindex += inputnets.size();
+        gates.push_back(Gate(gateItem->getGateType(), gateInputs, outNet));
+        gateInputs.clear();
     }
 
     //Wire, Source Mapping
@@ -433,7 +432,6 @@ void CircuitScene::startSim()
     graph.sources = sources;
     graph.registers = registers;
     graph.muxes = muxes;
-    graph.gateInputs = gateInputs;
     emit startSimSIG(graph);
 }
 

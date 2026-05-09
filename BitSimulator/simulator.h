@@ -19,8 +19,8 @@ public slots:
 signals:
     void sendResult(SimResult result);
 private:
-    void processGates(u32 changedNetId, std::set<u32>& eventQueue);
-    void processMuxes(u32 changedNetId, std::set<u32>& eventQueue);
+    void processGates(u32 changedNetId);
+    void processMuxes(u32 changedNetId);
     void processRegisters();
 
     QTimer* m_timer = nullptr;
@@ -39,6 +39,10 @@ private:
     std::vector<long> runData;
 
     std::vector<std::vector<u32>> m_gateFanout;
+    std::vector<std::vector<u32>> m_registerFanout;
+    std::vector<std::vector<u32>> m_MuxFanout;
+
+    std::set<u32> eventQueue;
 
 };
 
