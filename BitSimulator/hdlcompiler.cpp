@@ -39,7 +39,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
 
     qDebug() << "Created file:" << file.fileName();
     QTextStream out(&file);
-    out << testHdlCode;
+    out << hdlCode;
     file.close();
     qDebug() << "HDL code written to file";
 

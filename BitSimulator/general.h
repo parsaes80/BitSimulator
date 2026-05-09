@@ -86,7 +86,7 @@ struct ExportGraph
 
 struct SimResult
 {
-    std::vector<bool> netValues;
+    std::vector<u8> netValues;
 	std::vector<u8> sourcesCurrIdx;
 	std::vector<bool> registerValues;
 };

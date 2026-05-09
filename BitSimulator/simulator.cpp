@@ -26,7 +26,6 @@ void Simulator::clearCircuit() {
     m_sources.clear();
     m_gateInputs.clear();
     m_gateFanout.clear();
-    m_registerFanout.clear();
     m_MuxFanout.clear();
 }
 
@@ -140,7 +139,6 @@ void Simulator::processMuxes(u32 changedNetId) {
             m_nets[outputNetId] = newOutput;
             eventQueue.insert(outputNetId);
         }
-
     }
 }
 
@@ -350,7 +348,6 @@ void Simulator::receiveCircuit(ExportGraph graph){
     for (int i = 0; i <= numNets; i++) { m_nets.push_back(false);};
 
     m_gateFanout.assign(numNets + 1, {});
-    m_registerFanout.assign(numNets + 1, {});
     m_MuxFanout.assign(numNets + 1, {});
 
     for (size_t gateIdx = 0; gateIdx < m_gates.size(); gateIdx++) {
@@ -373,22 +370,6 @@ void Simulator::receiveCircuit(ExportGraph graph){
             if (inputNetId != 0) {
                 m_MuxFanout[inputNetId].push_back(muxIdx);
             }
-        }
-    }
-
-    for (size_t regIdx = 0; regIdx < m_registers.size(); regIdx++) {
-        Register& reg = m_registers[regIdx];
-        if (reg.inID != 0) {
-            m_registerFanout[reg.inID].push_back(regIdx);
-        }
-        if (reg.InID2 != 0) {
-            m_registerFanout[reg.InID2].push_back(regIdx);
-        }
-        if (reg.clkID != 0) {
-            m_registerFanout[reg.clkID].push_back(regIdx);
-        }
-        if (reg.enableID != 0) {
-            m_registerFanout[reg.enableID].push_back(regIdx);
         }
     }
 
@@ -419,16 +400,14 @@ void Simulator::SimController() {
         connect(m_timer, &QTimer::timeout, this, [this]() {
         if (sim_running) {
             auto startTime = std::chrono::high_resolution_clock::now();
+
             tick();
 
             auto endTime = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
             auto time = duration.count();
-
-            if (time>5) {// only store rising edge
-                runData.push_back(time);
-                qDebug() << "Tick execution time:" << time << "microseconds";}
+            runData.push_back(time);
         }
         });
     m_timer->start(100);

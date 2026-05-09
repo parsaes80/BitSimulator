@@ -25,7 +25,7 @@ private:
 
     QTimer* m_timer = nullptr;
 
-    std::vector<bool> m_nets;
+    std::vector<u8> m_nets; // not bool for performance
     std::vector<Gate> m_gates;
     std::vector<Register> m_registers;
     std::vector<Source> m_sources;
@@ -39,7 +39,6 @@ private:
     std::vector<long> runData;
 
     std::vector<std::vector<u32>> m_gateFanout;
-    std::vector<std::vector<u32>> m_registerFanout;
     std::vector<std::vector<u32>> m_MuxFanout;
 
     std::set<u32> eventQueue;
