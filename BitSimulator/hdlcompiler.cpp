@@ -24,10 +24,22 @@ bool HDLCompiler::compile(const QString& hdlCode) {
         Process->deleteLater();
         return false;
     }
+    QString testHdlCode=R"(module top (
+    input  wire       clk,
+    input  wire [7:0] a,
+    input  wire [7:0] b,
+    output reg  [15:0] result
+    );
+
+    always @(posedge clk) begin
+            result <= a * b;
+    end
+
+    endmodule)";
 
     qDebug() << "Created file:" << file.fileName();
     QTextStream out(&file);
-    out << hdlCode;
+    out << testHdlCode;
     file.close();
     qDebug() << "HDL code written to file";
 

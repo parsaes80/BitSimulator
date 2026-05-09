@@ -5,6 +5,7 @@
 
 bool sim_running;
 GlobalMap map;
+
 ItemOverlay* overlayPtr;
 QGraphicsScene* scenePtr;
 MainWindow* mainMenuPtr;
@@ -39,6 +40,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     qDebug() << "Closing application - stopping simulator thread...";
 
     if (simThread && simThread->isRunning()) {
+        simObj->printRunDataInfo();
         simThread->quit();
 
         if (!simThread->wait(3000)) {  // Wait up to 3 seconds

@@ -15,6 +15,7 @@ public slots:
     void receiveCircuit(ExportGraph graph);
     void SimController(); 
     void setTimerPeriod(int milliseconds);
+    void printRunDataInfo();
 signals:
     void sendResult(SimResult result);
 private:
@@ -34,5 +35,10 @@ private:
     std::vector<u32> m_sourceOutputs;
 
     bool firstTick = true;
+
+    std::vector<long> runData;
+
+    std::vector<std::vector<u32>> m_gateFanout;
+
 };
 

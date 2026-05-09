@@ -322,14 +322,14 @@ void Simulator::tick() {
     std::set<u32> eventQueue;
 
         if (firstTick) {
-        for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
-            eventQueue.insert(i);
-        }
+            for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
+                eventQueue.insert(i);
+            }
         firstTick = false;
     }
     
     for (auto& reg : m_registers) {
-        if(!reg.outID){continue;}
+        if(!reg.outID){continue;} // dont't write to net 0
         bool oldValue = m_nets[reg.outID];
         if(oldValue != reg.storedValue){
             m_nets[reg.outID] = reg.storedValue;  // Output the stored value
@@ -386,11 +386,28 @@ void Simulator::receiveCircuit(ExportGraph graph){
     auto numNets = map.net2wire.size();
     for (int i = 0; i <= numNets; i++) { m_nets.push_back(false);};
 
+
+
     sim_running = true;
 }
 
 void Simulator::setTimerPeriod(int milliseconds) {
     m_timer->setInterval(milliseconds);
+}
+
+void Simulator::printRunDataInfo() {
+    if (runData.empty()) {
+        qDebug() << "No tick timings recorded.";
+        return;
+    }
+
+    long long total = 0;
+    for (long value : runData) {
+        total += value;
+    }
+
+    double average = static_cast<double>(total) / static_cast<double>(runData.size());
+    qDebug() << "Average tick execution time:" << average << "microseconds";
 }
 
 void Simulator::SimController() {
@@ -402,8 +419,12 @@ void Simulator::SimController() {
             
             auto endTime = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-        
-            qDebug() << "Tick execution time:" << duration.count() << "microseconds";
+
+            auto time = duration.count();
+
+            if (time>5) {// only store rising edge
+                runData.push_back(time);
+                qDebug() << "Tick execution time:" << time << "microseconds";}
         }
         });
     m_timer->start(100);  
