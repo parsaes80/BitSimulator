@@ -10,7 +10,7 @@ This application is using **C++** and the **Qt framework** for the GUI layer. It
 
 # Running Bit Simulator
 
-Download the appropriate zip file for your OS. Unzip the zip file, and run the executable called **BitSimulator**.
+Download the appropriate zip file for your OS. Unzip the zip file, and run the executable called **BitSimulator**. On linux make sure you have the **graphviz** package installed.
 
 # Using Bit Simulator
 

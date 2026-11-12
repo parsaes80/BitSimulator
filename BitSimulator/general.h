@@ -92,8 +92,8 @@ struct SimResult
 };
 
 struct GlobalMap {
-	std::unordered_map <u32, std::vector<WireItem*>> net2wire;
-	std::unordered_map <WireItem*, u32> wire2net;    
+	std::unordered_map <u32, std::vector<WireItem*>> net2wire; // One net can be mapped to multiple WireItems
+	std::unordered_map <WireItem*, u32> wire2net;  // Multiple WireItems can be mapped to the same net
 
 	std::unordered_map <GateItem*, u32> gate2Idx;
 	std::unordered_map <u32, GateItem*> Idx2gate;

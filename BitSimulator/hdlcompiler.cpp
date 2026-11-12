@@ -45,7 +45,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
 
     // Run Yosys synthesis
     QStringList arguments;
-    arguments << "-p" << "read_verilog code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
+    arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -80,7 +80,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
         << "code_graph_positioned.dot";
 
     startTime = std::chrono::high_resolution_clock::now();
-    Process->start("./dot", dotArgs);
+    Process->start("dot", dotArgs);
 
 
     if (!Process->waitForFinished(100000)) {
