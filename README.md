@@ -14,8 +14,18 @@ Download the appropriate zip file for your OS. Unzip the zip file, and run the e
 
 # Using Bit Simulator
 
-You can add individual logic components to the project by selecting the component button and left clicking on the Schematic Editor. You can connect components to each other by pressing right click near a port of a component and dragging it to the port of another component, it the connection is **valid** it will connect.
-You can also drag schematic anywhere by holding the middle mouse button and dragging the mouse.
+You can add individual logic components to the project by selecting the component button in the toolbar and **middle clicking** on an empty spot in the Schematic Editor. You can connect components to each other by pressing **right click** near a port of a component and dragging it to the port of another component, if the connection is **valid** it will connect.
+
+Controls in the Schematic Editor:
+
+| Action | Control |
+|---|---|
+| Place the selected component | Middle click on empty space |
+| Connect two ports with a wire | Right click on a port and drag to another port |
+| Pan the schematic | Left click on empty space and drag |
+| Select / move a component | Left click on it / left click and drag it |
+| Delete the selected component | Delete or Backspace |
+| Zoom in / out | Mouse wheel |
 ![Image](https://github.com/user-attachments/assets/598f7088-9dfa-43cf-8e53-41b766eee1a3)
 You can also write **Verilog** code in the **HDL Editor** tab of the program. After that pressing the compile button will turn you Verilog code into a fully sythesized circuit, and you can simulate it. **THE MODULE MUST ALWAYS BE NAMED "top".**
 ![Image](https://github.com/user-attachments/assets/56b2722c-8d40-4972-800e-267351b7e81e)
