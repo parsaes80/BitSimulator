@@ -1,0 +1,6 @@
+# Commit this tool bundle in full, including binaries/libraries the root .gitignore skips
+!*
+
+# Not part of yosys: CachyOS system scripts that ended up in bin/ by accident
+bin/mkinitcpio
+bin/remove-nvidia

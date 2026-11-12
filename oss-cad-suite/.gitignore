@@ -1,0 +1,2 @@
+# Commit this tool bundle in full, including binaries/libraries the root .gitignore skips
+!*
