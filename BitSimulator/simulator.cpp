@@ -16,7 +16,6 @@ Simulator::Simulator(QObject *parent) : QObject(parent) {
     m_gates.reserve(500);
     m_registers.reserve(100);
     m_sources.reserve(100);
-    m_gateInputs.reserve(2000);  // Flat array for all gate inputs
 }
 
 void Simulator::clearCircuit() {
@@ -24,9 +23,11 @@ void Simulator::clearCircuit() {
     m_gates.clear();
     m_registers.clear();
     m_sources.clear();
-    m_gateInputs.clear();
+    m_muxes.clear();
     m_gateFanout.clear();
     m_MuxFanout.clear();
+    m_eventQueue.clear();
+    m_inQueue.clear();
 }
 
 void Simulator::processGates(u32 changedNetId) {
@@ -38,49 +39,35 @@ void Simulator::processGates(u32 changedNetId) {
             continue;
         }
 
-        std::vector<u32> &inputs = gate.inIDs;
+        const std::vector<u32>& inputs = gate.inIDs;
 
         bool newOutput;
 
+        // AND/OR families stop at the first controlling input; XOR needs every input
         switch (gate.gateType) {
         case GType::AND:
-            newOutput = true;
-            for (u32 netId : inputs) {
-                newOutput = newOutput && m_nets[netId];
-            }
-            break;
-        case GType::OR:
-            newOutput = false;
-            for (u32 netId : inputs) {
-                newOutput = newOutput || m_nets[netId];
-            }
-            break;
         case GType::NAND:
             newOutput = true;
             for (u32 netId : inputs) {
-                newOutput = newOutput && m_nets[netId];
+                if (!m_nets[netId]) { newOutput = false; break; }
             }
-            newOutput = !newOutput;
+            if (gate.gateType == GType::NAND) newOutput = !newOutput;
             break;
+        case GType::OR:
         case GType::NOR:
             newOutput = false;
             for (u32 netId : inputs) {
-                newOutput = newOutput || m_nets[netId];
+                if (m_nets[netId]) { newOutput = true; break; }
             }
-            newOutput = !newOutput;
+            if (gate.gateType == GType::NOR) newOutput = !newOutput;
             break;
         case GType::XOR:
-            newOutput = false;
-            for (u32 netId : inputs) {
-                newOutput = newOutput ^ m_nets[netId];
-            }
-            break;
         case GType::XNOR:
             newOutput = false;
             for (u32 netId : inputs) {
-                newOutput = newOutput ^ m_nets[netId];
+                newOutput ^= (m_nets[netId] != 0);
             }
-            newOutput = !newOutput;
+            if (gate.gateType == GType::XNOR) newOutput = !newOutput;
             break;
         case GType::NOT:
             newOutput = inputs.empty() ? false : !m_nets[inputs[0]];
@@ -98,9 +85,8 @@ void Simulator::processGates(u32 changedNetId) {
         if (oldValue != newOutput) {
             // Output changed - update net and queue it
             m_nets[outputNetId] = newOutput;
-            eventQueue.insert(outputNetId);
+            enqueue(outputNetId);
         }
-
     }
 }
 
@@ -137,7 +123,7 @@ void Simulator::processMuxes(u32 changedNetId) {
         bool oldValue = m_nets[outputNetId];
         if (oldValue != newOutput) {
             m_nets[outputNetId] = newOutput;
-            eventQueue.insert(outputNetId);
+            enqueue(outputNetId);
         }
     }
 }
@@ -284,7 +270,7 @@ void Simulator::tick() {
 
     if (firstTick) {
         for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
-            eventQueue.insert(i);
+            enqueue(i);
         }
     firstTick = false;
     }
@@ -294,7 +280,7 @@ void Simulator::tick() {
         bool oldValue = m_nets[reg.outID];
         if(oldValue != reg.storedValue){
             m_nets[reg.outID] = reg.storedValue;  // Output the stored value
-            eventQueue.insert(reg.outID);
+            enqueue(reg.outID);
         }
     }
 
@@ -304,17 +290,18 @@ void Simulator::tick() {
         bool oldValue = m_nets[source.outID];
         if(source.outID!=0 && oldValue != source.cycleValues[source.currentIndex]){
             m_nets[source.outID] = source.cycleValues[source.currentIndex];
-            eventQueue.insert(source.outID);
+            enqueue(source.outID);
         }
     }
 
     int propagationStep = 0;
     int maxSteps = 100000;
 
-    while (!eventQueue.empty() && propagationStep < maxSteps) {
-        auto it = eventQueue.begin();
-        u32 changedNetId = *it;
-        eventQueue.erase(it);
+    // FIFO worklist; nets enqueued while processing are appended and picked up by the same loop
+    size_t head = 0;
+    while (head < m_eventQueue.size() && propagationStep < maxSteps) {
+        u32 changedNetId = m_eventQueue[head++];
+        m_inQueue[changedNetId] = 0;
 
         processGates(changedNetId);
 
@@ -322,16 +309,19 @@ void Simulator::tick() {
 
         propagationStep++;
     }
+    // Drop processed entries; anything left after hitting maxSteps carries over to the next tick
+    m_eventQueue.erase(m_eventQueue.begin(), m_eventQueue.begin() + head);
 
     processRegisters();
 
     SimResult result;
-
-    for (int i = 0; i < m_sources.size(); i++) {result.sourcesCurrIdx.push_back(m_sources[i].currentIndex);}
-    for (int i = 0; i < m_registers.size(); i++) {result.registerValues.push_back(m_registers[i].storedValue);}
+    result.sourcesCurrIdx.reserve(m_sources.size());
+    for (const auto& source : m_sources) {result.sourcesCurrIdx.push_back(source.currentIndex);}
+    result.registerValues.reserve(m_registers.size());
+    for (const auto& reg : m_registers) {result.registerValues.push_back(reg.storedValue);}
 
     result.netValues = m_nets;
-    emit sendResult(result);
+    emit sendResult(std::move(result));
 }
 
 void Simulator::receiveCircuit(ExportGraph graph){
@@ -345,7 +335,9 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
     firstTick = true;
     auto numNets = map.net2wire.size();
-    for (int i = 0; i <= numNets; i++) { m_nets.push_back(false);};
+    m_nets.assign(numNets + 1, 0);
+    m_inQueue.assign(numNets + 1, 0);
+    m_eventQueue.reserve(numNets + 1);
 
     m_gateFanout.assign(numNets + 1, {});
     m_MuxFanout.assign(numNets + 1, {});

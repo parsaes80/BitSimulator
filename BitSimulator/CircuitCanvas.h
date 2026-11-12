@@ -14,6 +14,8 @@
 #include <QMimeData>
 #include <QDebug>
 #include <variant>
+#include <vector>
+#include <QPointer>
 #include "general.h"
 #include "Items.h"
 #include "hdlcompiler.h"
@@ -67,7 +69,7 @@ public slots:
     void setNumOutputs(const int value){m_numOutputs = value;}
     void setHasEnable(const bool value){m_hasEnable = value;}
     void setIsFlipFlop(const bool value){m_isFlipFlop = value;}
-    void receiveResult(SimResult result);
+    void receiveResult(const SimResult& result);
     void receiveGraph(QHash<QString,Node> graph);
 signals:
     void startSimSIG(ExportGraph graph);
@@ -85,6 +87,10 @@ private:
     std::variant<QList<bool>,QList<int>> m_srcValues = QList<int>{ 2, 5 };
     int m_numInputs = 2,m_numOutputs = 2;
     bool m_hasEnable = true, m_isFlipFlop = true;
+
+    // Cached per simulation run (rebuilt in startSim) so receiveResult avoids scanning items()
+    QList<QPointer<DisplayItem>> m_displays;
+    std::vector<u8> m_lastNetValues; // last applied net values; only changed nets are pushed to wires
 };
 
 class CircuitCanvas : public QGraphicsView {

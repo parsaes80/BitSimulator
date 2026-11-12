@@ -2,7 +2,6 @@
 #include <QObject>
 #include <QTimer>
 #include "general.h"
-#include <set>
 
 class Simulator : public QObject {
     Q_OBJECT
@@ -23,6 +22,14 @@ private:
     void processMuxes(u32 changedNetId);
     void processRegisters();
 
+    // Worklist + per-net "already queued" flag replaces std::set: O(1) dedup, no per-event allocation
+    inline void enqueue(u32 netId) {
+        if (!m_inQueue[netId]) {
+            m_inQueue[netId] = 1;
+            m_eventQueue.push_back(netId);
+        }
+    }
+
     QTimer* m_timer = nullptr;
 
     std::vector<u8> m_nets; // not bool for performance
@@ -31,7 +38,6 @@ private:
     std::vector<Source> m_sources;
     std::vector<Mux> m_muxes;
 
-    std::vector<u32> m_gateInputs;     
     std::vector<u32> m_sourceOutputs;
 
     bool firstTick = true;
@@ -41,7 +47,8 @@ private:
     std::vector<std::vector<u32>> m_gateFanout;
     std::vector<std::vector<u32>> m_MuxFanout;
 
-    std::set<u32> eventQueue;
+    std::vector<u32> m_eventQueue;
+    std::vector<u8> m_inQueue; // indexed by net id
 
 };
 

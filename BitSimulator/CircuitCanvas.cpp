@@ -240,6 +240,10 @@ void CircuitScene::startSim()
         }
     }
 
+    m_displays.clear();
+    for (DisplayItem* display : displayItems) {m_displays.push_back(display);}
+    m_lastNetValues.clear();   // net ids are reassigned below, so force a full repaint on the next result
+
     // wire,net mapping
     QHash<PortItem*, u32> outputPortToNet;
     u32 netCounter = 1;
@@ -435,36 +439,37 @@ void CircuitScene::startSim()
     emit startSimSIG(graph);
 }
 
-void CircuitScene::receiveResult(SimResult result)
+void CircuitScene::receiveResult(const SimResult& result)
 {
-    for (int i = 1; i < result.netValues.size();i++) {
-        std::vector<WireItem*> wires = map.net2wire[i];
-        for (auto* wire : wires) {
-            if (result.netValues[i]) {
-                wire->setValue(true);    // High signal = red
-                wire->getEndPort()->setValue(true);
-                wire->getStartPort()->setValue(true);
-            }
-            else {
-                wire->setValue(false);     // Low signal = black
-                wire->getEndPort()->setValue(false);
-                wire->getStartPort()->setValue(false);
-            }
+    const auto& nets = result.netValues;
+    // Size mismatch = first result of a run (cache cleared in startSim): repaint every net
+    const bool fullUpdate = m_lastNetValues.size() != nets.size();
+
+    for (size_t i = 1; i < nets.size(); i++) {
+        if (!fullUpdate && m_lastNetValues[i] == nets[i]) {continue;}
+
+        auto it = map.net2wire.find(static_cast<u32>(i));
+        if (it == map.net2wire.end()) {continue;}
+
+        const bool value = nets[i];   // true = red, false = black
+        for (auto* wire : it->second) {
+            wire->setValue(value);
+            wire->getEndPort()->setValue(value);
+            wire->getStartPort()->setValue(value);
         }
     }
+    m_lastNetValues = nets;
 
     for (auto [source,Idx]: map.source2Idx) {
-        source->setIdx(result.sourcesCurrIdx[Idx]);
+        if (Idx < result.sourcesCurrIdx.size()) {source->setIdx(result.sourcesCurrIdx[Idx]);}
     }
-    for (int i = 0; i < result.registerValues.size(); i++) {
-        auto reg = map.Idx2reg[i];
-        reg->setValue(result.registerValues[i]);
+    for (size_t i = 0; i < result.registerValues.size(); i++) {
+        auto it = map.Idx2reg.find(static_cast<u32>(i));
+        if (it != map.Idx2reg.end()) {it->second->setValue(result.registerValues[i]);}
     }
 
-    for (QGraphicsItem* item : items()) {
-        if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
-            display->updateValue();
-        }
+    for (const auto& display : m_displays) {
+        if (display) {display->updateValue();}   // QPointer is null if the display was deleted
     }
 }
 
@@ -485,7 +490,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
             item = addGate(std::get<GType>(node.type),2,node.position);
         }
         else if( std::holds_alternative<RType>(node.type)){
-            item = addRegister(std::get<RType>(node.type),false,node.position);
+            item = addRegister(std::get<RType>(node.type),true,node.position);
         }
         else if( std::holds_alternative<MType>(node.type)){
             item = addMux(std::get<MType>(node.type),2,node.position);
