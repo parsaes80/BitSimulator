@@ -471,3 +471,7 @@ FodyWeavers.xsd
 *.msp
 
 .qtcreator
+
+# Local IDE presets (Visual Studio / Qt Creator)
+CMakeUserPresets.json
+CMakePresets.json

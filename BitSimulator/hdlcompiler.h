@@ -44,7 +44,14 @@ private:
     bool compile(const QString& hdlCode);
     bool parseDotFile(const QString& filePath);
     bool processJsonFile(const QString& filePath);
+#ifdef Q_OS_WIN
+    // script.bat loads oss-cad-suite\environment.bat, then runs yosys (its command must match the Linux one in compile())
+    QString yosysScript = "script.bat";
+    QString dotPath = ".\\dot\\bin\\dot.exe";   // bundled Graphviz
+#else
     QString yosysPath = "./yosys_bundle/bin/yosys";
+    QString dotPath = "dot";                    // system Graphviz package
+#endif
     QHash<QString,Node> m_componentsPos;
     QHash<QString,Node> m_components;
     QHash<int, QString> m_bitToNet;  // Maps bit numbers to net names

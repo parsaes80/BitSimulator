@@ -44,12 +44,15 @@ bool HDLCompiler::compile(const QString& hdlCode) {
     qDebug() << "HDL code written to file";
 
     // Run Yosys synthesis
-    QStringList arguments;
-    arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
-
     auto startTime = std::chrono::high_resolution_clock::now();
 
+#ifdef Q_OS_WIN
+    Process->start(yosysScript);   // same yosys command, kept in script.bat
+#else
+    QStringList arguments;
+    arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
     Process->start(yosysPath, arguments);
+#endif
 
     if (!Process->waitForFinished(100000)) {
         qDebug() << "Process timeout or failed to start";
@@ -80,7 +83,7 @@ bool HDLCompiler::compile(const QString& hdlCode) {
         << "code_graph_positioned.dot";
 
     startTime = std::chrono::high_resolution_clock::now();
-    Process->start("dot", dotArgs);
+    Process->start(dotPath, dotArgs);
 
 
     if (!Process->waitForFinished(100000)) {
