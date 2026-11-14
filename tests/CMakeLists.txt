@@ -47,7 +47,7 @@ function(bitsim_add_test name)
     add_executable(${name} ${name}.cpp TestSupport.h)
     set_target_properties(${name} PROPERTIES AUTOUIC OFF)
     target_link_libraries(${name} PRIVATE bitsim_under_test Qt6::Test)
-    add_dependencies(${name} copy_yosys_bundle)
+    add_dependencies(${name} copy_yosys_bundle copy_graphviz_dot)
 
     add_test(NAME ${name} COMMAND ${name} WORKING_DIRECTORY ${BITSIM_TEST_WORKING_DIR})
     set_tests_properties(${name} PROPERTIES TIMEOUT 600)

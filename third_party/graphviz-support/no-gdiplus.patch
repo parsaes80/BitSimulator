@@ -1,0 +1,34 @@
+diff -ru a/cmd/dot/CMakeLists.txt b/cmd/dot/CMakeLists.txt
+--- a/cmd/dot/CMakeLists.txt
++++ b/cmd/dot/CMakeLists.txt
+@@ -146,9 +146,6 @@
+     target_link_libraries(dot PRIVATE gvplugin_kitty)
+   endif()
+ 
+-  if(WIN32)
+-    target_link_libraries(dot PRIVATE gvplugin_gdiplus)
+-  endif()
+ 
+   if(APPLE)
+     set_target_properties(dot PROPERTIES LINK_FLAGS -Wl,-stack_size,0x2000000)
+diff -ru a/cmd/dot/dot_builtins.cpp b/cmd/dot/dot_builtins.cpp
+--- a/cmd/dot/dot_builtins.cpp
++++ b/cmd/dot/dot_builtins.cpp
+@@ -37,7 +37,7 @@
+ #endif
+ IMPORT extern gvplugin_library_t gvplugin_core_LTX_library;
+ IMPORT extern gvplugin_library_t gvplugin_vt_LTX_library;
+-#if defined(_WIN32) && !defined(__MINGW32__)
++#if 0 // BitSimulator: no GDI+ text measurement, so text sizes match the other platforms
+ IMPORT extern gvplugin_library_t gvplugin_gdiplus_LTX_library;
+ #endif
+ 
+@@ -60,7 +60,7 @@
+ #endif
+ 	{ "gvplugin_core_LTX_library", &gvplugin_core_LTX_library },
+ 	{ "gvplugin_vt_LTX_library", &gvplugin_vt_LTX_library },
+-#if defined(_WIN32) && !defined(__MINGW32__)
++#if 0 // BitSimulator: no GDI+ text measurement, so text sizes match the other platforms
+ 	{ "gvplugin_gdiplus_LTX_library", &gvplugin_gdiplus_LTX_library },
+ #endif
+ 	{ 0, 0 }

@@ -1,0 +1,5 @@
+[submodule "third_party/graphviz"]
+	path = third_party/graphviz
+	url = https://gitlab.com/graphviz/graphviz.git
+	shallow = true
+	ignore = dirty

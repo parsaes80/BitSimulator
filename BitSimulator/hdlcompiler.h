@@ -48,10 +48,10 @@ private:
 #ifdef Q_OS_WIN
     // script.bat loads oss-cad-suite\environment.bat, then runs yosys (its command must match the Linux one in compile())
     QString yosysScript = "script.bat";
-    QString dotPath = ".\\dot\\bin\\dot.exe";   // bundled Graphviz
+    QString dotPath = ".\\dot.exe";           // Graphviz, built from third_party/graphviz next to the app
 #else
     QString yosysPath = "./yosys_bundle/bin/yosys";
-    QString dotPath = "dot";                    // system Graphviz package
+    QString dotPath = "./dot";                  // Graphviz, built from third_party/graphviz next to the app
 #endif
     QHash<QString,Node> m_componentsPos;
     QHash<QString,Node> m_components;

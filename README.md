@@ -10,7 +10,7 @@ This application is using **C++** and the **Qt framework** for the GUI layer. It
 
 # Running Bit Simulator
 
-Download the appropriate zip file for your OS. Unzip the zip file, and run the executable called **BitSimulator**. On linux make sure you have the **graphviz** package installed.
+Download the appropriate zip file for your OS. Unzip the zip file, and run the executable called **BitSimulator**. Graphviz comes with it; nothing else needs to be installed.
 
 # Using Bit Simulator
 
@@ -60,6 +60,18 @@ endmodule
 
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
+
+Everything the app runs besides itself is in `third_party/`: `yosys_bundle` (yosys for Linux), `oss-cad-suite` (yosys for Windows) and `graphviz`; the build copies or builds them next to the executable.
+
+Graphviz is a git submodule in `third_party/graphviz`. Clone with `git clone --recursive`, or run `git submodule update --init --depth 1` after cloning; if you forget, the first CMake run fetches it.
+
+The first build also builds Graphviz's `dot` (a few minutes) and puts it next to the executable; later builds reuse it. What is built and why is described in `third_party/graphviz-support/Graphviz.cmake`:
+
+- Graphviz 16.1.1 with one change (`ns-compact-arrays.patch`): the slowest part of dot's layout runs on a compact copy of its data. It makes exactly the same choices, so the layouts are the same, about twice as fast on large circuits.
+- Only `dot`, linked statically, built with link-time optimization, and with GCC also profile-guided optimization (option `BITSIM_DOT_PGO`).
+- Without Pango or Cairo: dot uses Graphviz's built-in font metrics, needs no font libraries, and lays out a circuit the same way on every OS.
+
+Building Graphviz needs `bison` and `flex`. On Linux install them from your package manager (Arch: `pacman -S bison flex`, Debian/Ubuntu: `apt install bison flex`). On Windows nothing is needed: CMake fetches Graphviz's own copies (the small `graphviz-build-utilities` submodule inside `third_party/graphviz`).
 
 # Light and Dark Mode
 
@@ -113,8 +125,9 @@ This project includes binaries from:
   Copyright (C) 2012-2025 Claire Xenia Wolf.
   License in ./Licenses/Yosys-ISC.txt
 
-- Graphviz – Licensed under the Common Public License 1.0.
-  License in ./Licenses/Graphviz-CPL.txt
+- Graphviz – Licensed under the Eclipse Public License 2.0. Built from source (third_party/graphviz);
+  BitSimulator's change to it is third_party/graphviz-support/ns-compact-arrays.patch.
+  License in ./Licenses/Graphviz-EPL-2.0.txt
 
 This project uses Qt under the terms of LGPLv3. No Qt code or binaries
 are distributed; only dynamically linked. License in ./licenses/Qt-LGPL3.txt

@@ -1,0 +1,795 @@
+--- a/lib/common/ns.c
++++ b/lib/common/ns.c
+@@ -34,7 +34,6 @@
+ 
+ static void dfs_cutval(node_t *v, edge_t *par);
+ static int dfs_range_init(node_t *v);
+-static int dfs_range(node_t *v, edge_t *par, int low);
+ static int x_val(edge_t *e, node_t *v, int dir);
+ #ifdef DEBUG
+ static void check_cycles(graph_t *g);
+@@ -82,66 +81,6 @@
+   return 0;
+ }
+ 
+-/**
+- * Invalidate DFS attributes by walking up the tree from to_node till lca
+- * (inclusively). Called when updating tree to improve pruning in dfs_range().
+- * Assigns ND_low(n) = -1 for the affected nodes.
+- */
+-static void invalidate_path(node_t *lca, node_t *to_node) {
+-  while (true) {
+-    if (ND_low(to_node) == -1)
+-      break;
+-
+-    ND_low(to_node) = -1;
+-
+-    edge_t *e = ND_par(to_node);
+-    if (e == NULL)
+-      break;
+-
+-    if (ND_lim(to_node) >= ND_lim(lca)) {
+-      if (to_node != lca)
+-        agerrorf("invalidate_path: skipped over LCA\n");
+-      break;
+-    }
+-
+-    if (ND_lim(agtail(e)) > ND_lim(aghead(e)))
+-      to_node = agtail(e);
+-    else
+-      to_node = aghead(e);
+-  }
+-}
+-
+-static void exchange_tree_edges(network_simplex_ctx_t *ctx, edge_t *e,
+-                                edge_t *f) {
+-  ED_tree_index(f) = ED_tree_index(e);
+-  assert(ED_tree_index(e) >= 0);
+-  LIST_SET(&ctx->Tree_edge, (size_t)ED_tree_index(e), f);
+-  ED_tree_index(e) = -1;
+-
+-  node_t *n = agtail(e);
+-  size_t i = --ND_tree_out(n).size;
+-  size_t j;
+-  for (j = 0; j <= i; j++)
+-    if (ND_tree_out(n).list[j] == e)
+-      break;
+-  ND_tree_out(n).list[j] = ND_tree_out(n).list[i];
+-  ND_tree_out(n).list[i] = NULL;
+-  n = aghead(e);
+-  i = --ND_tree_in(n).size;
+-  for (j = 0; j <= i; j++)
+-    if (ND_tree_in(n).list[j] == e)
+-      break;
+-  ND_tree_in(n).list[j] = ND_tree_in(n).list[i];
+-  ND_tree_in(n).list[i] = NULL;
+-
+-  n = agtail(f);
+-  ND_tree_out(n).list[ND_tree_out(n).size++] = f;
+-  ND_tree_out(n).list[ND_tree_out(n).size] = NULL;
+-  n = aghead(f);
+-  ND_tree_in(n).list[ND_tree_in(n).size++] = f;
+-  ND_tree_in(n).list[ND_tree_in(n).size] = NULL;
+-}
+-
+ static void init_rank(network_simplex_ctx_t *ctx) {
+   edge_t *e;
+ 
+@@ -174,41 +113,6 @@
+   LIST_FREE(&Q);
+ }
+ 
+-static edge_t *leave_edge(network_simplex_ctx_t *ctx) {
+-  edge_t *f, *rv = NULL;
+-  int cnt = 0;
+-
+-  size_t j = ctx->S_i;
+-  while (ctx->S_i < LIST_SIZE(&ctx->Tree_edge)) {
+-    if (ED_cutvalue(f = LIST_GET(&ctx->Tree_edge, ctx->S_i)) < 0) {
+-      if (rv) {
+-        if (ED_cutvalue(rv) > ED_cutvalue(f))
+-          rv = f;
+-      } else
+-        rv = LIST_GET(&ctx->Tree_edge, ctx->S_i);
+-      if (++cnt >= ctx->Search_size)
+-        return rv;
+-    }
+-    ctx->S_i++;
+-  }
+-  if (j > 0) {
+-    ctx->S_i = 0;
+-    while (ctx->S_i < j) {
+-      if (ED_cutvalue(f = LIST_GET(&ctx->Tree_edge, ctx->S_i)) < 0) {
+-        if (rv) {
+-          if (ED_cutvalue(rv) > ED_cutvalue(f))
+-            rv = f;
+-        } else
+-          rv = LIST_GET(&ctx->Tree_edge, ctx->S_i);
+-        if (++cnt >= ctx->Search_size)
+-          return rv;
+-      }
+-      ctx->S_i++;
+-    }
+-  }
+-  return rv;
+-}
+-
+ static edge_t *dfs_enter_outedge(node_t *v, int Low, int Lim) {
+   edge_t *e;
+   edge_t *Enter = NULL;
+@@ -710,23 +614,6 @@
+   return 0;
+ }
+ 
+-/* walk up from v to LCA(v,w), setting new cutvalues. */
+-static Agnode_t *treeupdate(Agnode_t *v, Agnode_t *w, int cutvalue, bool dir) {
+-  while (!SEQ(ND_low(v), ND_lim(w), ND_lim(v))) {
+-    edge_t *const e = ND_par(v);
+-    const bool d = v == agtail(e) ? dir : !dir;
+-    if (d)
+-      ED_cutvalue(e) += cutvalue;
+-    else
+-      ED_cutvalue(e) -= cutvalue;
+-    if (ND_lim(agtail(e)) > ND_lim(aghead(e)))
+-      v = agtail(e);
+-    else
+-      v = aghead(e);
+-  }
+-  return v;
+-}
+-
+ static void rerank(Agnode_t *v, int delta) {
+   typedef struct {
+     Agnode_t *v;
+@@ -777,48 +664,6 @@
+   LIST_FREE(&todo);
+ }
+ 
+-/* e is the tree edge that is leaving and f is the nontree edge that
+- * is entering.  compute new cut values, ranks, and exchange e and f.
+- */
+-static int update(network_simplex_ctx_t *ctx, edge_t *e, edge_t *f) {
+-  const int delta = SLACK(f);
+-  /* "for (v = in nodes in tail side of e) do ND_rank(v) -= delta;" */
+-  if (delta > 0) {
+-    size_t s = ND_tree_in(agtail(e)).size + ND_tree_out(agtail(e)).size;
+-    if (s == 1)
+-      rerank(agtail(e), delta);
+-    else {
+-      s = ND_tree_in(aghead(e)).size + ND_tree_out(aghead(e)).size;
+-      if (s == 1)
+-        rerank(aghead(e), -delta);
+-      else {
+-        if (ND_lim(agtail(e)) < ND_lim(aghead(e)))
+-          rerank(agtail(e), delta);
+-        else
+-          rerank(aghead(e), -delta);
+-      }
+-    }
+-  }
+-
+-  const int cutvalue = ED_cutvalue(e);
+-  Agnode_t *const lca = treeupdate(agtail(f), aghead(f), cutvalue, true);
+-  if (treeupdate(aghead(f), agtail(f), cutvalue, false) != lca) {
+-    agerrorf("update: mismatched lca in treeupdates\n");
+-    return 2;
+-  }
+-
+-  // invalidate paths from LCA till affected nodes:
+-  int lca_low = ND_low(lca);
+-  invalidate_path(lca, aghead(f));
+-  invalidate_path(lca, agtail(f));
+-
+-  ED_cutvalue(f) = -cutvalue;
+-  ED_cutvalue(e) = 0;
+-  exchange_tree_edges(ctx, e, f);
+-  dfs_range(lca, ND_par(lca), lca_low);
+-  return 0;
+-}
+-
+ static int scan_and_normalize(network_simplex_ctx_t *ctx) {
+   int Minrank = INT_MAX;
+   int Maxrank = INT_MIN;
+@@ -1021,10 +866,489 @@
+  * Returns 0 if successful; returns 1 if the graph was not connected;
+  * returns 2 if something seriously wrong;
+  */
++
++/*
++ * The pivot loop of rank2(), run on a compact copy of the data it touches.
++ *
++ * This is the same algorithm as leave_edge(), enter_edge() and update() above, step for step:
++ * the same edges are examined in the same order and the same choices are made, so the result is
++ * identical. Only the data layout differs. The functions above follow pointers from node to
++ * edge to node through Graphviz's large node and edge records, so most of their time is spent
++ * waiting for memory; here nodes and edges are small integer indices into flat arrays.
++ *
++ * ns_load() copies the state in after the feasible tree and cut values are set up, the loop runs,
++ * and ns_store() writes every field the loop changed back, so the balancing code that follows
++ * finds exactly what the original loop would have left.
++ */
++/// What the loop needs of a node, together, so visiting a node touches one cache line
++typedef struct {
++  int rank, low, lim;
++  int par;                 ///< tree edge to the parent, -1 for none
++  int out_start, in_start; ///< its edges: out edges out_start .. next node's out_start,
++                           ///< in edges in_edges[in_start .. next node's in_start)
++  int tree_out_n, tree_in_n; ///< its tree edges: tree_out[out_start ..], tree_in[in_start ..]
++} ns_node_t;
++
++/// What the loop needs of an edge
++typedef struct {
++  int tail, head, minlen, cutvalue, tree_index;
++} ns_edge_t;
++
++typedef struct {
++  // nodes, in GD_nlist order, plus one past the end for its out_start / in_start
++  int n;
++  node_t **node;
++  ns_node_t *nd;
++  // edges, numbered in ND_out order, so a node's out edges are the indices out_start .. next out_start
++  int m;
++  edge_t **edge;
++  ns_edge_t *ed;
++  int *in_edges; ///< in edges by node, in ND_in order
++  // tree edges at a node, in ND_tree_out / ND_tree_in order, stored in the same slots as its
++  // out / in edges (a node has no more tree edges than edges)
++  int *tree_out, *tree_in;
++  // the tree edge list and leave_edge()'s search position
++  int *tree;
++  int tree_n;
++  size_t S_i;
++  int search_size;
++  // scratch for the tree walks
++  int *stack, *stack_out_i, *stack_in_i;
++} ns_arrays_t;
++
++#define A_SLACK(a, e) ((a)->nd[(a)->ed[e].head].rank - (a)->nd[(a)->ed[e].tail].rank - (a)->ed[e].minlen)
++
++static void ns_load(ns_arrays_t *a, network_simplex_ctx_t *ctx) {
++  graph_t *const g = ctx->G;
++  int n = 0, m = 0;
++  for (node_t *v = GD_nlist(g); v; v = ND_next(v)) {
++    n++;
++    for (size_t i = 0; ND_out(v).list[i]; i++)
++      m++;
++  }
++  a->n = n;
++  a->m = m;
++  a->node = gv_calloc((size_t)n, sizeof(node_t *));
++  a->nd = gv_calloc((size_t)n + 1, sizeof(ns_node_t));
++  a->edge = gv_calloc((size_t)m, sizeof(edge_t *));
++  a->ed = gv_calloc((size_t)m + 1, sizeof(ns_edge_t));
++  a->in_edges = gv_calloc((size_t)m + 1, sizeof(int));
++  a->tree_out = gv_calloc((size_t)m + 1, sizeof(int));
++  a->tree_in = gv_calloc((size_t)m + 1, sizeof(int));
++  a->stack = gv_calloc((size_t)n + 1, sizeof(int));
++  a->stack_out_i = gv_calloc((size_t)n + 1, sizeof(int));
++  a->stack_in_i = gv_calloc((size_t)n + 1, sizeof(int));
++
++  // Nodes. Their index is parked in ND_low (copied first) until ns_store().
++  int v_i = 0;
++  for (node_t *v = GD_nlist(g); v; v = ND_next(v), v_i++) {
++    a->node[v_i] = v;
++    a->nd[v_i].rank = ND_rank(v);
++    a->nd[v_i].low = ND_low(v);
++    a->nd[v_i].lim = ND_lim(v);
++    ND_low(v) = v_i;
++  }
++  // Edges, numbered in ND_out order. Their index is parked in ED_cutvalue (copied first).
++  int e_i = 0;
++  v_i = 0;
++  for (node_t *v = GD_nlist(g); v; v = ND_next(v), v_i++) {
++    a->nd[v_i].out_start = e_i;
++    edge_t *e;
++    for (size_t i = 0; (e = ND_out(v).list[i]); i++, e_i++) {
++      a->edge[e_i] = e;
++      a->ed[e_i].tail = ND_low(agtail(e));
++      a->ed[e_i].head = ND_low(aghead(e));
++      a->ed[e_i].minlen = ED_minlen(e);
++      a->ed[e_i].cutvalue = ED_cutvalue(e);
++      a->ed[e_i].tree_index = ED_tree_index(e);
++      ED_cutvalue(e) = e_i;
++    }
++  }
++  a->nd[n].out_start = e_i;
++  int in_i = 0;
++  v_i = 0;
++  for (node_t *v = GD_nlist(g); v; v = ND_next(v), v_i++) {
++    a->nd[v_i].in_start = in_i;
++    edge_t *e;
++    for (size_t i = 0; (e = ND_in(v).list[i]); i++)
++      a->in_edges[in_i++] = ED_cutvalue(e);
++  }
++  a->nd[n].in_start = in_i;
++  assert(in_i == m);
++
++  // Tree structure
++  v_i = 0;
++  for (node_t *v = GD_nlist(g); v; v = ND_next(v), v_i++) {
++    a->nd[v_i].par = ND_par(v) ? ED_cutvalue(ND_par(v)) : -1;
++    edge_t *e;
++    int k = 0;
++    for (size_t i = 0; (e = ND_tree_out(v).list[i]); i++)
++      a->tree_out[a->nd[v_i].out_start + k++] = ED_cutvalue(e);
++    a->nd[v_i].tree_out_n = k;
++    k = 0;
++    for (size_t i = 0; (e = ND_tree_in(v).list[i]); i++)
++      a->tree_in[a->nd[v_i].in_start + k++] = ED_cutvalue(e);
++    a->nd[v_i].tree_in_n = k;
++  }
++  a->tree_n = (int)LIST_SIZE(&ctx->Tree_edge);
++  a->tree = gv_calloc((size_t)a->tree_n + 1, sizeof(int));
++  for (int i = 0; i < a->tree_n; i++)
++    a->tree[i] = ED_cutvalue(LIST_GET(&ctx->Tree_edge, (size_t)i));
++  a->S_i = ctx->S_i;
++  a->search_size = ctx->Search_size;
++}
++
++static void ns_store(ns_arrays_t *a, network_simplex_ctx_t *ctx) {
++  for (int e = 0; e < a->m; e++) {
++    ED_cutvalue(a->edge[e]) = a->ed[e].cutvalue;
++    ED_tree_index(a->edge[e]) = a->ed[e].tree_index;
++  }
++  for (int v = 0; v < a->n; v++) {
++    node_t *const n = a->node[v];
++    ND_rank(n) = a->nd[v].rank;
++    ND_low(n) = a->nd[v].low;
++    ND_lim(n) = a->nd[v].lim;
++    ND_par(n) = a->nd[v].par >= 0 ? a->edge[a->nd[v].par] : NULL;
++    for (int i = 0; i < a->nd[v].tree_out_n; i++)
++      ND_tree_out(n).list[i] = a->edge[a->tree_out[a->nd[v].out_start + i]];
++    ND_tree_out(n).list[a->nd[v].tree_out_n] = NULL;
++    ND_tree_out(n).size = (size_t)a->nd[v].tree_out_n;
++    for (int i = 0; i < a->nd[v].tree_in_n; i++)
++      ND_tree_in(n).list[i] = a->edge[a->tree_in[a->nd[v].in_start + i]];
++    ND_tree_in(n).list[a->nd[v].tree_in_n] = NULL;
++    ND_tree_in(n).size = (size_t)a->nd[v].tree_in_n;
++  }
++  for (int i = 0; i < a->tree_n; i++)
++    LIST_SET(&ctx->Tree_edge, (size_t)i, a->edge[a->tree[i]]);
++  ctx->S_i = a->S_i;
++
++  free(a->node);
++  free(a->nd);
++  free(a->edge);
++  free(a->ed);
++  free(a->in_edges);
++  free(a->tree_out);
++  free(a->tree_in);
++  free(a->tree);
++  free(a->stack); free(a->stack_out_i); free(a->stack_in_i);
++}
++
++/// leave_edge()
++static int a_leave_edge(ns_arrays_t *a) {
++  int rv = -1;
++  int cnt = 0;
++  const size_t j = a->S_i;
++  while (a->S_i < (size_t)a->tree_n) {
++    const int f = a->tree[a->S_i];
++    if (a->ed[f].cutvalue < 0) {
++      if (rv >= 0) {
++        if (a->ed[rv].cutvalue > a->ed[f].cutvalue)
++          rv = f;
++      } else
++        rv = f;
++      if (++cnt >= a->search_size)
++        return rv;
++    }
++    a->S_i++;
++  }
++  if (j > 0) {
++    a->S_i = 0;
++    while (a->S_i < j) {
++      const int f = a->tree[a->S_i];
++      if (a->ed[f].cutvalue < 0) {
++        if (rv >= 0) {
++          if (a->ed[rv].cutvalue > a->ed[f].cutvalue)
++            rv = f;
++        } else
++          rv = f;
++        if (++cnt >= a->search_size)
++          return rv;
++      }
++      a->S_i++;
++    }
++  }
++  return rv;
++}
++
++/// dfs_enter_outedge()
++static int a_dfs_enter_outedge(ns_arrays_t *a, int v, int Low, int Lim) {
++  int Enter = -1;
++  int Slack = INT_MAX;
++  int top = 0;
++  a->stack[top++] = v;
++  while (top > 0) {
++    v = a->stack[--top];
++    for (int e = a->nd[v].out_start; e < a->nd[v + 1].out_start; e++) {
++      const int h = a->ed[e].head;
++      if (a->ed[e].tree_index < 0) {
++        if (!SEQ(Low, a->nd[h].lim, Lim)) {
++          const int slack = A_SLACK(a, e);
++          if (slack < Slack || Enter < 0) {
++            Enter = e;
++            Slack = slack;
++          }
++        }
++      } else if (a->nd[h].lim < a->nd[v].lim)
++        a->stack[top++] = h;
++    }
++    const int *const tin = a->tree_in + a->nd[v].in_start;
++    for (int i = 0; i < a->nd[v].tree_in_n && Slack > 0; i++) {
++      const int t = a->ed[tin[i]].tail;
++      if (a->nd[t].lim < a->nd[v].lim)
++        a->stack[top++] = t;
++    }
++  }
++  return Enter;
++}
++
++/// dfs_enter_inedge()
++static int a_dfs_enter_inedge(ns_arrays_t *a, int v, int Low, int Lim) {
++  int Enter = -1;
++  int Slack = INT_MAX;
++  int top = 0;
++  a->stack[top++] = v;
++  while (top > 0) {
++    v = a->stack[--top];
++    for (int i = a->nd[v].in_start; i < a->nd[v + 1].in_start; i++) {
++      const int e = a->in_edges[i];
++      const int t = a->ed[e].tail;
++      if (a->ed[e].tree_index < 0) {
++        if (!SEQ(Low, a->nd[t].lim, Lim)) {
++          const int slack = A_SLACK(a, e);
++          if (slack < Slack || Enter < 0) {
++            Enter = e;
++            Slack = slack;
++          }
++        }
++      } else if (a->nd[t].lim < a->nd[v].lim)
++        a->stack[top++] = t;
++    }
++    const int *const tout = a->tree_out + a->nd[v].out_start;
++    for (int i = 0; i < a->nd[v].tree_out_n && Slack > 0; i++) {
++      const int h = a->ed[tout[i]].head;
++      if (a->nd[h].lim < a->nd[v].lim)
++        a->stack[top++] = h;
++    }
++  }
++  return Enter;
++}
++
++/// enter_edge()
++static int a_enter_edge(ns_arrays_t *a, int e) {
++  if (a->nd[a->ed[e].tail].lim < a->nd[a->ed[e].head].lim) {
++    const int v = a->ed[e].tail;
++    return a_dfs_enter_inedge(a, v, a->nd[v].low, a->nd[v].lim);
++  }
++  const int v = a->ed[e].head;
++  return a_dfs_enter_outedge(a, v, a->nd[v].low, a->nd[v].lim);
++}
++
++/// rerank(): walks the tree from v, never through a node's own parent edge
++static void a_rerank(ns_arrays_t *a, int v, int delta) {
++  int top = 0;
++  a->stack[top] = v;
++  a->stack_out_i[top] = 0;
++  a->stack_in_i[top] = 0;
++  top++;
++  while (top > 0) {
++    const int s = top - 1;
++    const int u = a->stack[s];
++    if (a->stack_out_i[s] == 0 && a->stack_in_i[s] == 0)
++      a->nd[u].rank -= delta;
++
++    int next = -1;
++    while (a->stack_out_i[s] < a->nd[u].tree_out_n) {
++      const int e = a->tree_out[a->nd[u].out_start + a->stack_out_i[s]++];
++      if (e != a->nd[u].par) {
++        next = a->ed[e].head;
++        break;
++      }
++    }
++    if (next < 0) {
++      while (a->stack_in_i[s] < a->nd[u].tree_in_n) {
++        const int e = a->tree_in[a->nd[u].in_start + a->stack_in_i[s]++];
++        if (e != a->nd[u].par) {
++          next = a->ed[e].tail;
++          break;
++        }
++      }
++    }
++    if (next >= 0) {
++      a->stack[top] = next;
++      a->stack_out_i[top] = 0;
++      a->stack_in_i[top] = 0;
++      top++;
++      continue;
++    }
++    top--;
++  }
++}
++
++/// treeupdate()
++static int a_treeupdate(ns_arrays_t *a, int v, int w, int cutvalue, bool dir) {
++  while (!SEQ(a->nd[v].low, a->nd[w].lim, a->nd[v].lim)) {
++    const int e = a->nd[v].par;
++    const bool d = v == a->ed[e].tail ? dir : !dir;
++    if (d)
++      a->ed[e].cutvalue += cutvalue;
++    else
++      a->ed[e].cutvalue -= cutvalue;
++    if (a->nd[a->ed[e].tail].lim > a->nd[a->ed[e].head].lim)
++      v = a->ed[e].tail;
++    else
++      v = a->ed[e].head;
++  }
++  return v;
++}
++
++/// invalidate_path()
++static void a_invalidate_path(ns_arrays_t *a, int lca, int to_node) {
++  while (true) {
++    if (a->nd[to_node].low == -1)
++      break;
++    a->nd[to_node].low = -1;
++    const int e = a->nd[to_node].par;
++    if (e < 0)
++      break;
++    if (a->nd[to_node].lim >= a->nd[lca].lim) {
++      if (to_node != lca)
++        agerrorf("invalidate_path: skipped over LCA\n");
++      break;
++    }
++    if (a->nd[a->ed[e].tail].lim > a->nd[a->ed[e].head].lim)
++      to_node = a->ed[e].tail;
++    else
++      to_node = a->ed[e].head;
++  }
++}
++
++/// exchange_tree_edges()
++static void a_exchange_tree_edges(ns_arrays_t *a, int e, int f) {
++  a->ed[f].tree_index = a->ed[e].tree_index;
++  a->tree[a->ed[e].tree_index] = f;
++  a->ed[e].tree_index = -1;
++
++  int n = a->ed[e].tail;
++  int *list = a->tree_out + a->nd[n].out_start;
++  int i = --a->nd[n].tree_out_n;
++  int j;
++  for (j = 0; j <= i; j++)
++    if (list[j] == e)
++      break;
++  list[j] = list[i];
++
++  n = a->ed[e].head;
++  list = a->tree_in + a->nd[n].in_start;
++  i = --a->nd[n].tree_in_n;
++  for (j = 0; j <= i; j++)
++    if (list[j] == e)
++      break;
++  list[j] = list[i];
++
++  n = a->ed[f].tail;
++  a->tree_out[a->nd[n].out_start + a->nd[n].tree_out_n++] = f;
++  n = a->ed[f].head;
++  a->tree_in[a->nd[n].in_start + a->nd[n].tree_in_n++] = f;
++}
++
++/// dfs_range(), including its pruning of subtrees whose labels are still right
++static void a_dfs_range(ns_arrays_t *a, int v, int par, int low) {
++  if (a->nd[v].par == par && a->nd[v].low == low)
++    return;
++  // per node on the walk: its parent edge, the running label, and how far its tree lists are done
++  typedef struct {
++    int v, par, lim, out_i, in_i;
++  } st_t;
++  LIST(st_t) todo = {0};
++  a->nd[v].par = par;
++  a->nd[v].low = low;
++  const st_t root = {.v = v, .par = par, .lim = low};
++  LIST_PUSH_BACK(&todo, root);
++  while (!LIST_IS_EMPTY(&todo)) {
++    st_t *const s = LIST_BACK(&todo);
++    const int u = s->v;
++    bool processed_child = false;
++    while (s->out_i < a->nd[u].tree_out_n) {
++      const int e = a->tree_out[a->nd[u].out_start + s->out_i++];
++      if (e != s->par) {
++        const int n = a->ed[e].head;
++        if (a->nd[n].par == e && a->nd[n].low == s->lim) {
++          s->lim = a->nd[n].lim + 1;
++        } else {
++          a->nd[n].par = e;
++          a->nd[n].low = s->lim;
++          const st_t next = {.v = n, .par = e, .lim = s->lim};
++          LIST_PUSH_BACK(&todo, next);
++        }
++        processed_child = true;
++        break;
++      }
++    }
++    if (processed_child)
++      continue;
++    while (s->in_i < a->nd[u].tree_in_n) {
++      const int e = a->tree_in[a->nd[u].in_start + s->in_i++];
++      if (e != s->par) {
++        const int n = a->ed[e].tail;
++        if (a->nd[n].par == e && a->nd[n].low == s->lim) {
++          s->lim = a->nd[n].lim + 1;
++        } else {
++          a->nd[n].par = e;
++          a->nd[n].low = s->lim;
++          const st_t next = {.v = n, .par = e, .lim = s->lim};
++          LIST_PUSH_BACK(&todo, next);
++        }
++        processed_child = true;
++        break;
++      }
++    }
++    if (processed_child)
++      continue;
++    a->nd[u].lim = s->lim;
++    const int lim = s->lim;
++    LIST_DROP_BACK(&todo);
++    if (!LIST_IS_EMPTY(&todo))
++      LIST_BACK(&todo)->lim = lim + 1;
++  }
++  LIST_FREE(&todo);
++}
++
++/// update()
++static int a_update(ns_arrays_t *a, int e, int f) {
++  const int delta = A_SLACK(a, f);
++  if (delta > 0) {
++    const int t = a->ed[e].tail, h = a->ed[e].head;
++    if (a->nd[t].tree_in_n + a->nd[t].tree_out_n == 1)
++      a_rerank(a, t, delta);
++    else if (a->nd[h].tree_in_n + a->nd[h].tree_out_n == 1)
++      a_rerank(a, h, -delta);
++    else if (a->nd[t].lim < a->nd[h].lim)
++      a_rerank(a, t, delta);
++    else
++      a_rerank(a, h, -delta);
++  }
++
++  const int cutvalue = a->ed[e].cutvalue;
++  const int lca = a_treeupdate(a, a->ed[f].tail, a->ed[f].head, cutvalue, true);
++  if (a_treeupdate(a, a->ed[f].head, a->ed[f].tail, cutvalue, false) != lca) {
++    agerrorf("update: mismatched lca in treeupdates\n");
++    return 2;
++  }
++
++  const int lca_low = a->nd[lca].low;
++  a_invalidate_path(a, lca, a->ed[f].head);
++  a_invalidate_path(a, lca, a->ed[f].tail);
++
++  a->ed[f].cutvalue = -cutvalue;
++  a->ed[e].cutvalue = 0;
++  a_exchange_tree_edges(a, e, f);
++  a_dfs_range(a, lca, a->nd[lca].par, lca_low);
++  return 0;
++}
++
+ int rank2(graph_t *g, int balance, int maxiter, int search_size) {
+   int iter = 0;
+   char ns[] = "network simplex: ";
+-  edge_t *e;
+   network_simplex_ctx_t ctx = {0};
+ 
+ #ifdef DEBUG
+@@ -1060,10 +1384,15 @@
+     return 0;
+   }
+ 
+-  while ((e = leave_edge(&ctx))) {
+-    edge_t *const f = enter_edge(e);
+-    const int err = update(&ctx, e, f);
++  // The pivot loop runs on a compact copy of the tree (see ns_arrays_t)
++  ns_arrays_t arrays = {0};
++  ns_load(&arrays, &ctx);
++  int e;
++  while ((e = a_leave_edge(&arrays)) >= 0) {
++    const int f = a_enter_edge(&arrays, e);
++    const int err = a_update(&arrays, e, f);
+     if (err != 0) {
++      ns_store(&arrays, &ctx);
+       freeTreeList(&ctx, g);
+       return err;
+     }
+@@ -1078,6 +1407,7 @@
+     if (iter >= maxiter)
+       break;
+   }
++  ns_store(&arrays, &ctx);
+   switch (balance) {
+   case 1:
+     TB_balance(&ctx);
+@@ -1292,84 +1622,6 @@
+       continue;
+     }
+ 
+-    ND_lim(s->v) = s->lim;
+-
+-    lim = s->lim;
+-    LIST_DROP_BACK(&todo);
+-
+-    if (!LIST_IS_EMPTY(&todo)) {
+-      LIST_BACK(&todo)->lim = lim + 1;
+-    }
+-  }
+-
+-  LIST_FREE(&todo);
+-
+-  return lim + 1;
+-}
+-
+-/*
+- * Incrementally updates DFS range attributes
+- */
+-static int dfs_range(node_t *v, edge_t *par, int low) {
+-  int lim = 0;
+-
+-  if (ND_par(v) == par && ND_low(v) == low) {
+-    return ND_lim(v) + 1;
+-  }
+-
+-  LIST(dfs_state_t) todo = {0};
+-
+-  ND_par(v) = par;
+-  ND_low(v) = low;
+-  const dfs_state_t root = {.v = v, .par = par, .lim = low};
+-  LIST_PUSH_BACK(&todo, root);
+-
+-  while (!LIST_IS_EMPTY(&todo)) {
+-    bool processed_child = false;
+-    dfs_state_t *const s = LIST_BACK(&todo);
+-
+-    while (ND_tree_out(s->v).list[s->tree_out_i]) {
+-      edge_t *const e = ND_tree_out(s->v).list[s->tree_out_i];
+-      ++s->tree_out_i;
+-      if (e != s->par) {
+-        node_t *const n = aghead(e);
+-        if (ND_par(n) == e && ND_low(n) == s->lim) {
+-          s->lim = ND_lim(n) + 1;
+-        } else {
+-          ND_par(n) = e;
+-          ND_low(n) = s->lim;
+-          const dfs_state_t next = {.v = n, .par = e, .lim = s->lim};
+-          LIST_PUSH_BACK(&todo, next);
+-        }
+-        processed_child = true;
+-        break;
+-      }
+-    }
+-    if (processed_child) {
+-      continue;
+-    }
+-
+-    while (ND_tree_in(s->v).list[s->tree_in_i]) {
+-      edge_t *const e = ND_tree_in(s->v).list[s->tree_in_i];
+-      ++s->tree_in_i;
+-      if (e != s->par) {
+-        node_t *const n = agtail(e);
+-        if (ND_par(n) == e && ND_low(n) == s->lim) {
+-          s->lim = ND_lim(n) + 1;
+-        } else {
+-          ND_par(n) = e;
+-          ND_low(n) = s->lim;
+-          const dfs_state_t next = {.v = n, .par = e, .lim = s->lim};
+-          LIST_PUSH_BACK(&todo, next);
+-        }
+-        processed_child = true;
+-        break;
+-      }
+-    }
+-    if (processed_child) {
+-      continue;
+-    }
+-
+     ND_lim(s->v) = s->lim;
+ 
+     lim = s->lim;

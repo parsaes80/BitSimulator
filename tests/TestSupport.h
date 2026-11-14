@@ -12,7 +12,6 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
-#include <QStandardPaths>
 #include <QToolButton>
 
 #include "CircuitCanvas.h"
@@ -97,9 +96,9 @@ inline void choose(QComboBox* combo, const QString& text)
 inline bool hdlToolsAvailable()
 {
 #ifdef Q_OS_WIN
-    return QFile::exists(QStringLiteral("script.bat")) && QFile::exists(QStringLiteral("dot/bin/dot.exe"));
+    return QFile::exists(QStringLiteral("script.bat")) && QFile::exists(QStringLiteral("dot.exe"));
 #else
-    return QFile::exists(QStringLiteral("yosys_bundle/bin/yosys")) && !QStandardPaths::findExecutable(QStringLiteral("dot")).isEmpty();
+    return QFile::exists(QStringLiteral("yosys_bundle/bin/yosys")) && QFile::exists(QStringLiteral("dot"));
 #endif
 }
 #define REQUIRE_HDL_TOOLS() \

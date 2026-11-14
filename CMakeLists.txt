@@ -4,27 +4,31 @@ project("BitSimulator")
 
 add_subdirectory("BitSimulator")
 
-# Copy the external tools next to the executable (paths are resolved relative to it at runtime)
+# Copy the external tools next to the executable (paths are resolved relative to it at runtime).
+# Their sources are all in third_party/; next to the executable they keep their folder names.
 set(APP_DIR ${CMAKE_BINARY_DIR}/BitSimulator)
+set(THIRD_PARTY_DIR ${CMAKE_SOURCE_DIR}/third_party)
 
 if(WIN32)
-    # Windows: yosys from the bundled OSS CAD Suite (launched via script.bat) and bundled Graphviz dot
+    # Windows: yosys from the bundled OSS CAD Suite (launched via script.bat)
     add_custom_target(copy_yosys_bundle ALL
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/oss-cad-suite ${APP_DIR}/dot
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/oss-cad-suite ${APP_DIR}/oss-cad-suite
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/dot ${APP_DIR}/dot
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${THIRD_PARTY_DIR}/oss-cad-suite ${APP_DIR}/oss-cad-suite
         COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/script.bat ${APP_DIR}/script.bat
     )
 else()
-    # Linux: bundled yosys; Graphviz dot comes from the system package
+    # Linux: bundled yosys
     add_custom_target(copy_yosys_bundle ALL
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/yosys_bundle
-        COMMAND cp -r ${CMAKE_SOURCE_DIR}/yosys_bundle ${APP_DIR}
+        COMMAND cp -r ${THIRD_PARTY_DIR}/yosys_bundle ${APP_DIR}
     )
 endif()
 
-# Make the app depend on the bundle so building just the BitSimulator target still copies it
-add_dependencies(BitSimulator copy_yosys_bundle)
+# Graphviz dot, built from the third_party/graphviz submodule (the first build takes a few minutes)
+include(${THIRD_PARTY_DIR}/graphviz-support/Graphviz.cmake)
+
+# Make the app depend on the tools so building just the BitSimulator target still puts them in place
+add_dependencies(BitSimulator copy_yosys_bundle copy_graphviz_dot)
 
 # Automated tests are optional: configure with -DBITSIM_BUILD_TESTS=ON, then build the "check" target
 option(BITSIM_BUILD_TESTS "Build the automated tests (needs the Qt Test module)" OFF)
