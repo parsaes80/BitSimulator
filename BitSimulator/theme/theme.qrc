@@ -1,0 +1,21 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- Images the style sheet in BitSimulator.ui uses, as url(:/theme/...).
+         The @2x files are picked automatically on high-DPI screens. -->
+    <qresource prefix="/theme">
+        <file>arrow-down.png</file>
+        <file>arrow-down@2x.png</file>
+        <file>arrow-up.png</file>
+        <file>arrow-up@2x.png</file>
+        <file>arrow-down-disabled.png</file>
+        <file>arrow-down-disabled@2x.png</file>
+        <file>arrow-up-disabled.png</file>
+        <file>arrow-up-disabled@2x.png</file>
+        <file>check.png</file>
+        <file>check@2x.png</file>
+        <file>sun.png</file>
+        <file>sun@2x.png</file>
+        <file>moon.png</file>
+        <file>moon@2x.png</file>
+    </qresource>
+</RCC>

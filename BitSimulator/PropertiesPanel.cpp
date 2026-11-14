@@ -84,9 +84,7 @@ QLabel* mutedLabel(const QString& text = {})
 {
     auto* label = new QLabel(text);
     label->setWordWrap(true);
-    QPalette palette = label->palette();
-    palette.setColor(QPalette::WindowText, palette.color(QPalette::PlaceholderText));
-    label->setPalette(palette);
+    label->setProperty("muted", true);     // colored by the QLabel[muted="true"] rule in BitSimulator.ui
     return label;
 }
 
@@ -95,6 +93,8 @@ QSpinBox* makeSpin(int minimum, int maximum)
     auto* spin = new QSpinBox;
     spin->setRange(minimum, maximum);
     spin->setKeyboardTracking(false);     // typing "12" should not apply "1" first
+    // Qt ignores a spin box's style sheet padding when it places the text, so indent it here
+    if (auto* edit = spin->findChild<QLineEdit*>()) edit->setTextMargins(6, 0, 0, 0);
     return spin;
 }
 
@@ -200,12 +200,15 @@ void WaveformEditor::paintEvent(QPaintEvent*)
     QPainter painter(this);
     if (!isEnabled()) painter.setOpacity(0.45);
 
-    const QColor accent = palette().color(QPalette::Highlight);
-    const QColor grid = palette().color(QPalette::Mid);
+    // The same colors as a wire on the canvas: a 1 is drawn like a wire carrying one
+    const CanvasTheme& theme = canvasTheme();
+    const QColor accent = theme.wireHigh;
+    const QColor grid = theme.wireLow;
     QColor fill = accent;
-    fill.setAlpha(55);
+    fill.setAlpha(45);
 
-    painter.fillRect(rect(), palette().color(QPalette::Base));
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillRect(rect(), theme.background);
 
     for (int i = 0; i < m_values.size(); i++) {
         const int column = i % WaveColumns;
@@ -224,7 +227,7 @@ void WaveformEditor::paintEvent(QPaintEvent*)
         painter.drawLine(x, levelY, x + WaveCellWidth, levelY);
         if (column > 0 && m_values[i - 1] != value) painter.drawLine(x, highY, x, lowY);   // rising or falling edge
 
-        painter.setPen(palette().color(value ? QPalette::Text : QPalette::PlaceholderText));
+        painter.setPen(value ? theme.componentText : theme.pin);
         painter.drawText(QRect(x, lowY + 2, WaveCellWidth, WaveRowHeight - 25), Qt::AlignCenter, value ? QStringLiteral("1") : QStringLiteral("0"));
     }
 }
@@ -250,21 +253,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
 {
     setObjectName(QStringLiteral("propertiesPanel"));
     setMinimumWidth(160);
-    setStyleSheet(QStringLiteral(R"(
-        #segmented QToolButton {
-            padding: 5px 6px;
-            border: 1px solid palette(mid);
-            border-left-width: 0px;
-            background: palette(button);
-            color: palette(button-text);
-        }
-        #segmented QToolButton[segment="first"] { border-left-width: 1px; border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
-        #segmented QToolButton[segment="last"]  { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
-        #segmented QToolButton:checked { background: palette(highlight); color: palette(highlighted-text); border-color: palette(highlight); }
-        #segmented QToolButton:disabled { color: palette(placeholder-text); }
-        #propertiesMessage { color: #ff9e80; }
-        #propertiesLock { background: palette(base); border: 1px solid palette(mid); border-radius: 5px; padding: 8px; }
-    )"));
+    setAttribute(Qt::WA_StyledBackground);   // so the style sheet in BitSimulator.ui can paint the background
 
     m_title = new QLabel;
     m_title->setObjectName(QStringLiteral("propertiesTitle"));
@@ -294,8 +283,9 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     m_placeHint = mutedLabel(tr("Middle-click an empty spot on the canvas to place it."));
 
     auto* separator = new QFrame;
+    separator->setObjectName(QStringLiteral("propertiesSeparator"));
     separator->setFrameShape(QFrame::HLine);
-    separator->setFrameShadow(QFrame::Sunken);
+    separator->setFrameShadow(QFrame::Plain);
 
     // One page per alternative of ItemProps, added in the same order, so a page index equals props.index()
     m_pages = new QStackedWidget;

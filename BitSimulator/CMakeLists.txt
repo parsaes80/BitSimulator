@@ -25,12 +25,16 @@ set(PROJECT_SOURCES
     PropertiesPanel.cpp
     PropertiesPanel.h
     ItemProps.h
+    CanvasTheme.h
+    Theme.cpp
+    Theme.h
     simulator.cpp
     simulator.h
     hdlcompiler.cpp
     hdlcompiler.h
     general.h
     BitSimulator.ui
+    theme/theme.qrc
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

@@ -1,4 +1,5 @@
 #include "Items.h"
+#include "CanvasTheme.h"
 #include <QMouseEvent>
 #include <qscrollbar.h>
 #include <algorithm>
@@ -13,38 +14,26 @@ PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
 {
     setFlag(QGraphicsItem::ItemIsSelectable, false);
     setFlag(QGraphicsItem::ItemIsMovable, false);
-    setPen(QPen(Qt::black, 2));
-    setBrush(Qt::black);
 }
 
 void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-        if (!sim_values_visible) {
-            if (m_highlighted) {
-                setPen(QPen(Qt::yellow, 1));
-                setBrush(Qt::yellow);
-            }
-            else if (!m_connections.isEmpty()) {
-                setPen(QPen(Qt::green, 1));
-                setBrush(Qt::green);
-            }
-            else {
-                setPen(QPen(Qt::black, 1));
-                setBrush(Qt::black);
-            }
-        }
-        else {
-            if (m_value) {
-                setPen(QPen(Qt::red, 1));
-                setBrush(Qt::red);
-            }
-            else {
-                setPen(QPen(Qt::black, 1));
-                setBrush(Qt::black);
-            }
-        }
+    // Colors are chosen here instead of with setPen()/setBrush(), which would schedule another repaint
+    const CanvasTheme& theme = canvasTheme();
+    const bool wired = !m_connections.isEmpty();
+    QColor ring = theme.pin;
+    QColor fill = theme.background;              // hollow: nothing connected
+    if (m_highlighted) {
+        ring = fill = theme.snap;
+    }
+    else if (wired) {
+        ring = fill = !sim_values_visible ? theme.pinWired : (m_value ? theme.wireHigh : theme.wireLow);
+    }
 
-    QGraphicsEllipseItem::paint(painter, option, widget);
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(QPen(ring, 1.5));
+    painter->setBrush(fill);
+    painter->drawEllipse(rect().adjusted(0.75, 0.75, -0.75, -0.75));
 }
 
 bool PortItem::canConnectTo(PortItem* otherPort) const
@@ -87,9 +76,10 @@ bool ComponentItem::hasConnections() const
 void ComponentItem::drawSelection(QPainter* painter, const QStyleOptionGraphicsItem* option) const
 {
     if (option->state & QStyle::State_Selected) {
-        painter->setPen(QPen(Qt::blue, 3));
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(QPen(canvasTheme().selection, 1.5, Qt::DashLine));
         painter->setBrush(Qt::NoBrush);
-        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
+        painter->drawRoundedRect(m_rect.adjusted(-SelectionMargin, -SelectionMargin, SelectionMargin, SelectionMargin), 5, 5);
     }
 }
 
@@ -174,7 +164,10 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     drawSelection(painter, option);
 
+    // Every gate shape below draws with this pen and brush: a dark body, outlined in the gate's color
     painter->setRenderHint(QPainter::Antialiasing, true);
+    painter->setPen(QPen(canvasTheme().gateColor(m_props.type), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter->setBrush(canvasTheme().componentFill);
     drawGateShape(painter);
 }
 
@@ -210,8 +203,6 @@ void GateItem::drawGateShape(QPainter* painter)
 
 void GateItem::drawAndGate(QPainter* painter)
 {
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(255, 215, 150));
     QPainterPath path;
 
     double width = m_rect.width();
@@ -231,8 +222,6 @@ void GateItem::drawAndGate(QPainter* painter)
 
 void GateItem::drawOrGate(QPainter* painter)
 {
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(0, 255, 140));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -251,8 +240,6 @@ void GateItem::drawOrGate(QPainter* painter)
 
 void GateItem::drawXorGate(QPainter* painter)
 {
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(142, 43, 255));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -278,8 +265,6 @@ void GateItem::drawXorGate(QPainter* painter)
 
 void GateItem::drawNotGate(QPainter* painter)
 {
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(255, 0, 0));
     QPainterPath path;
     double width = m_rect.width();
     double height = m_rect.height();
@@ -297,15 +282,12 @@ void GateItem::drawNotGate(QPainter* painter)
 
 void GateItem::drawNotBubble(QPainter* painter)
 {
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(255, 0, 0));
     double width = m_rect.width();
     double halfWidth = width / 2;
     double bubbleSize = 10;
     
     // Draw centered at y=0 by offsetting y by -bubbleSize/2
     painter->drawEllipse(halfWidth, -bubbleSize/2, bubbleSize, bubbleSize);
-    painter->setBrush(QColor(255, 215, 150)); 
 }
 
 void GateItem::layoutPorts()
@@ -343,7 +325,7 @@ void GateItem::layoutPorts()
 //===================== Wire Item   ========================
 
 WireItem::WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent)
-    : localStartPos(startpos), localEndPos(endpos), QGraphicsObject(parent), m_pen(QPen(Qt::black, 2))
+    : localStartPos(startpos), localEndPos(endpos), QGraphicsObject(parent), m_pen(QPen(canvasTheme().wire, 2))
 {
     setFlags(ItemIsSelectable);
 }
@@ -398,37 +380,42 @@ void WireItem::setEndPort(PortItem* port)
 
 void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    // Use the stored pen, but modify color based on selection
-    QPen currentPen = m_pen;
+    // Horizontal, vertical, horizontal: the vertical part sits halfway between the two ends
+    const qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
+    QPainterPath path(localStartPos);
+    path.lineTo(midX, localStartPos.y());
+    path.lineTo(midX, localEndPos.y());
+    path.lineTo(localEndPos);
 
-    // Color based on simulation state
-    if (!sim_values_visible) {
-        currentPen.setColor(Qt::black);
+    painter->setRenderHint(QPainter::Antialiasing);
+
+    // A wire still being dragged keeps the pen the scene gave it
+    if (!m_startPort || !m_endPort) {
+        painter->strokePath(path, m_pen);
+        return;
     }
-    else {
-        // During simulation, color based on wire value
-        if (m_value) {
-            currentPen.setColor(Qt::red);   // High signal
-        }
-        else {
-            currentPen.setColor(Qt::black); // Low signal
-        }
-    }
+
+    const CanvasTheme& theme = canvasTheme();
+    QPen pen = m_pen;
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setColor(!sim_values_visible ? theme.wire : (m_value ? theme.wireHigh : theme.wireLow));
 
     if (isSelected()) {
-        currentPen.setColor(Qt::blue);
-        currentPen.setWidth(3);
+        pen.setColor(theme.selection);
+        pen.setWidthF(3);
+    }
+    else if (sim_values_visible && m_value) {
+        // A soft halo under a wire that carries a 1
+        QPen glow = pen;
+        QColor haze = pen.color();
+        haze.setAlpha(60);
+        glow.setColor(haze);
+        glow.setWidthF(pen.widthF() + 5);
+        painter->strokePath(path, glow);
     }
 
-    painter->setPen(currentPen);
-
-    // Calculate the middle point horizontally between start and end
-    qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
-
-    // Draw orthogonal path: horizontal -> vertical -> horizontal
-    painter->drawLine(localStartPos.x(), localStartPos.y(), midX, localStartPos.y()); 
-    painter->drawLine(midX, localStartPos.y(), midX, localEndPos.y());                
-    painter->drawLine(midX, localEndPos.y(), localEndPos.x(), localEndPos.y());       
+    painter->strokePath(path, pen);
 }
 QPainterPath WireItem::shape() const
 {
@@ -495,34 +482,30 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 {
     drawSelection(painter, option);
 
-    painter->setPen(QPen(Qt::black, 2));
+    const CanvasTheme& theme = canvasTheme();
+    painter->setRenderHint(QPainter::Antialiasing);
+    QFont font = painter->font();
+    font.setBold(true);
+    painter->setFont(font);
+
+    // The step index comes from the simulator; fall back to step 0 if the list was edited since
+    QString text;
+    bool lit = false;          // a waveform source showing a 1 while the simulation runs
     if (const auto* boolValues = std::get_if<QList<bool>>(&m_props.values)) {
-        // The step index comes from the simulator; fall back to step 0 if the list was edited since
         const bool high = boolValues->value(m_currIdx, boolValues->value(0));
-        if (high) {
-            painter->setBrush(QColor(255, 150, 150));
-            painter->drawRect(m_rect);
-
-            // Draw "1" or "0" in the center to indicate state
-            painter->setPen(QPen(Qt::white, 2));
-            painter->drawText(m_rect, Qt::AlignCenter, "1");
-        }
-        else {
-            painter->setBrush(QColor(255, 255, 255));
-            painter->drawRect(m_rect);
-
-            painter->setPen(QPen(Qt::black, 2));
-            painter->drawText(m_rect, Qt::AlignCenter, "0");
-        }
+        text = high ? QStringLiteral("1") : QStringLiteral("0");
+        lit = high && sim_values_visible;
     }
-    else { // QList<int> - show the number at the current index
+    else {
         const auto& intValues = std::get<QList<int>>(m_props.values);
-        painter->setBrush(QColor(200, 200, 255));
-        painter->drawRect(m_rect);
-
-        painter->setPen(QPen(Qt::black, 2));
-        painter->drawText(m_rect, Qt::AlignCenter, QString::number(intValues.value(m_currIdx, intValues.value(0))));
+        text = QString::number(intValues.value(m_currIdx, intValues.value(0)));
     }
+
+    painter->setPen(QPen(lit ? theme.wireHigh : theme.source, 2));
+    painter->setBrush(lit ? theme.wireHigh : theme.componentFill);
+    painter->drawRoundedRect(m_rect, 3, 3);
+    painter->setPen(lit ? theme.background : theme.componentText);
+    painter->drawText(m_rect, Qt::AlignCenter, text);
 }
 
 void SourceItem::layoutPorts()
@@ -604,21 +587,13 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 
     drawSelection(painter, option);
 
-    painter->setPen(QPen(Qt::black, 4));
-    painter->drawRect(m_rect);
-
-    if(m_value)
-    {
-        painter->setBrush(QColor(100, 150, 255)); // Blue color (like in RegisterButton)
-        painter->setPen(QPen(Qt::white, 2));
-    }
-    else
-    {
-        painter->setBrush(QColor(255, 255, 255));
-        painter->setPen(QPen(Qt::black, 2));
-    }
-
-    painter->fillRect(m_rect, painter->brush());
+    // A register that holds a 1 lights up like a wire carrying one
+    const CanvasTheme& theme = canvasTheme();
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(QPen(m_value ? theme.wireHigh : theme.reg, 2));
+    painter->setBrush(m_value ? theme.wireHigh : theme.componentFill);
+    painter->drawRoundedRect(m_rect, 3, 3);
+    painter->setPen(m_value ? theme.background : theme.componentText);
 
     // Label the register with its type so an edit in the properties panel is visible on the canvas
     const QString label = registerTypeName(m_props.type);
@@ -702,10 +677,10 @@ void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     path.lineTo(halfWidth,qurtHeight);
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
-    painter->setBrush(QColor(255, 164, 0));
-    painter->setPen(QPen(Qt::black, 4));
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter->setBrush(canvasTheme().componentFill);
     painter->drawPath(path);
-    painter->fillPath(path, painter->brush());
 }
 
 //===================== DisplayItem ========================
@@ -738,19 +713,22 @@ ComponentItem::EditResult DisplayItem::setProps(const ItemProps& props)
 void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) {
     drawSelection(painter, option);
 
-    // Draw outer border and background
-    painter->setPen(QPen(Qt::black, 2));
-    painter->setBrush(QColor(40, 40, 40)); // Dark gray background
-    painter->drawRect(m_rect);
+    const CanvasTheme& theme = canvasTheme();
+    painter->setRenderHint(QPainter::Antialiasing);
 
-    // Draw inner display area (LED-style display)
+    // Casing, outlined in the display's color
+    painter->setPen(QPen(theme.display, 2));
+    painter->setBrush(theme.componentFill);
+    painter->drawRoundedRect(m_rect, 4, 4);
+
+    // The screen: as dark as the canvas
     QRectF displayArea = m_rect.adjusted(5, 5, -5, -5);
-    painter->setPen(QPen(QColor(20, 20, 20), 1));
-    painter->setBrush(QColor(20, 60, 20)); // Dark green background
-    painter->drawRect(displayArea);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(theme.background);
+    painter->drawRoundedRect(displayArea, 2, 2);
 
-    // Draw the value
-    painter->setPen(QPen(QColor(0, 255, 0), 2)); // Bright green LED color
+    // The value
+    painter->setPen(QPen(theme.display, 2));
     QFont font = painter->font();
     font.setBold(true);
     font.setFamily("Courier");
@@ -765,7 +743,7 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     labelFont.setBold(false);
     labelFont.setPointSize(6);
     painter->setFont(labelFont);
-    painter->setPen(QPen(QColor(180, 180, 180), 1));
+    painter->setPen(QPen(theme.pin, 1));
     QRectF labelRect(m_rect.left(), m_rect.bottom() - 10, m_rect.width(), 8);
     painter->drawText(labelRect, Qt::AlignCenter, "DISPLAY");
 }

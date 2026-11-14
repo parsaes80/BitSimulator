@@ -3,6 +3,8 @@
 #include <QDockWidget>
 #include <QMessageBox>
 #include <QStatusBar>
+#include <QStyle>
+#include <QStyleHints>
 #include "CircuitCanvas.h"
 #include "PropertiesPanel.h"
 #include "Toolbar.h"
@@ -71,6 +73,7 @@ void MainWindow::setup()
     ui.slider->setValue(3350);
 
     setupPropertiesPanel();
+    setupColorScheme();
 
     // Toolbar: each button makes its component the active tool
     ui.andButton->setGateType(GType::AND);
@@ -136,6 +139,43 @@ void MainWindow::setupPropertiesPanel()
     canvasHost->resizeDocks({dock}, {270}, Qt::Horizontal);
 }
 
+void MainWindow::setupColorScheme()
+{
+    // The style sheet setupUi() just applied is the dark one; light mode is derived from it
+    m_themeSheets = ThemeSheets(styleSheet());
+    if (!m_themeSheets.unpairedColors().isEmpty()) {
+        qWarning() << "BitSimulator.ui: these style sheet colors have no light-mode color in the table at its top:"
+                   << m_themeSheets.unpairedColors();
+    }
+
+    connect(ui.themeButton, &QPushButton::clicked, this, &MainWindow::toggleColorScheme);
+    // Follow the system setting, also when it changes while the app runs, until the user picks a mode
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this] {
+        if (m_followSystemScheme) setColorScheme(systemColorScheme());
+    });
+    setColorScheme(systemColorScheme());
+}
+
+void MainWindow::setColorScheme(ColorScheme scheme)
+{
+    m_colorScheme = scheme;
+    const bool dark = (scheme == ColorScheme::Dark);
+
+    // The button shows the mode it switches to; BitSimulator.ui picks its icon by this property
+    ui.themeButton->setProperty("scheme", dark ? "dark" : "light");
+    ui.themeButton->setToolTip(dark ? tr("Switch to light mode") : tr("Switch to dark mode"));
+
+    applyPalette(*qApp, m_themeSheets, scheme);
+    // Setting the style sheet re-styles every widget, and through its qproperty-* rule hands the canvas its colors
+    setStyleSheet(m_themeSheets.sheet(scheme));
+}
+
+void MainWindow::toggleColorScheme()
+{
+    m_followSystemScheme = false;
+    setColorScheme(m_colorScheme == ColorScheme::Dark ? ColorScheme::Light : ColorScheme::Dark);
+}
+
 void MainWindow::updateTimerPeriod(int value) {
     double minInput = 1.0;      // Slider minimum
     double maxInput = 10000.0;  // Slider maximum
@@ -170,16 +210,12 @@ void MainWindow::toggleSimulation()
 
 void MainWindow::showSimState(SimState state)
 {
-    // One button: "Pause" (amber) while running, "Start" (green) otherwise
+    // One button: "Start" or "Pause". BitSimulator.ui colors it through the #startButton[running="true"] rule.
     const bool running = (state == SimState::Running);
-    static const QString style = QStringLiteral(
-        "QPushButton { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background-color: %4; }"
-        "QPushButton:pressed { background-color: %3; }");
-
     ui.startButton->setText(running ? tr("Pause") : tr("Start"));
-    ui.startButton->setStyleSheet(running ? style.arg("#e0a526", "#1b1c1f", "#b98510", "#edb740")
-                                          : style.arg("#2e9e5b", "#ffffff", "#23824a", "#38b56a"));
+    ui.startButton->setProperty("running", running);
+    ui.startButton->style()->unpolish(ui.startButton);   // a style sheet only re-reads a property on a re-polish
+    ui.startButton->style()->polish(ui.startButton);
     ui.startButton->setToolTip(running ? tr("Freeze the simulation")
                                        : state == SimState::Paused ? tr("Continue the simulation")
                                                                    : tr("Run the circuit from the first tick"));

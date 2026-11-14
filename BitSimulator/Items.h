@@ -56,7 +56,9 @@ public:
     // Empty on success; otherwise the reason the edit was refused (nothing is changed in that case).
     using EditResult = std::expected<void, QString>;
 
-    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); }
+    // The painted area leaves room for the selection outline; clicks only count on the body itself
+    QRectF boundingRect() const override { return m_rect.adjusted(-PaintMargin, -PaintMargin, PaintMargin, PaintMargin); }
+    QPainterPath shape() const override { QPainterPath body; body.addRect(m_rect.adjusted(-2, -2, 2, 2)); return body; }
 
     virtual ItemProps props() const = 0;
     // An edit that would remove a pin which still has a wire on it is refused.
@@ -68,7 +70,10 @@ public:
 protected:
     explicit ComponentItem(QGraphicsItem* parent = nullptr);
 
+    // A dashed outline SelectionMargin outside the body while the item is selected
     void drawSelection(QPainter* painter, const QStyleOptionGraphicsItem* option) const;
+    static constexpr qreal SelectionMargin = 5;
+    static constexpr qreal PaintMargin = SelectionMargin + 1;
 
     // Refuses if any of ports[newCount..] is wired; `what` names the pin group, e.g. "Input".
     static EditResult checkRemovable(const QList<PortItem*>& ports, int newCount, const QString& what);

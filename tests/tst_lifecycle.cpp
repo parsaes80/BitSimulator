@@ -66,18 +66,17 @@ private slots:
         QVERIFY(app.window.findChild<QPushButton*>(QStringLiteral("pauseButton")) == nullptr);
         QCOMPARE(app.start->text(), QStringLiteral("Start"));
         QCOMPARE(app.scene->simState(), SimState::Stopped);
-        const QString startLook = app.start->styleSheet();
-        QVERIFY(!startLook.isEmpty());
+        QCOMPARE(app.start->property("running").toBool(), false);         // the .ui style sheet colors it by this
 
         app.start->click();
         QCOMPARE(app.scene->simState(), SimState::Running);
         QCOMPARE(app.start->text(), QStringLiteral("Pause"));
-        QVERIFY(app.start->styleSheet() != startLook);                   // another colour
+        QCOMPARE(app.start->property("running").toBool(), true);          // another colour
 
         app.start->click();
         QCOMPARE(app.scene->simState(), SimState::Paused);
         QCOMPARE(app.start->text(), QStringLiteral("Start"));
-        QCOMPARE(app.start->styleSheet(), startLook);
+        QCOMPARE(app.start->property("running").toBool(), false);
         QVERIFY(app.start->toolTip().contains(QStringLiteral("Continue")));
 
         app.clear->click();
@@ -344,10 +343,12 @@ private slots:
         QCOMPARE(app.scene->simState(), SimState::Stopped);              // at once, not when the compiler is done
         QVERIFY(!app.compile->isEnabled());
         QVERIFY(app.scene->items().contains(circuit.inv));               // the old circuit stays for now
+        // A raw pointer cannot tell "deleted" from "a new item allocated at the same address"
+        const QPointer<GateItem> oldGate = circuit.inv;
 
         QVERIFY(waitForCompile(app));
         QCoreApplication::processEvents();
-        QVERIFY(!app.scene->items().contains(circuit.inv));              // this is where the app used to crash
+        QVERIFY(oldGate.isNull());                                       // this is where the app used to crash
         QCOMPARE(itemsOfType<RegisterItem>(app.scene).size(), 2);
         QVERIFY(!itemsOfType<WireItem>(app.scene).isEmpty());
         for (WireItem* wire : itemsOfType<WireItem>(app.scene)) QVERIFY(wire->isConnected());

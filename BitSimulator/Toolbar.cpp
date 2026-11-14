@@ -1,5 +1,6 @@
 #include "Toolbar.h"
 #include "Items.h"
+#include "CanvasTheme.h"
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -49,9 +50,9 @@ void GateButton::paintEvent(QPaintEvent* event)
 
 void GateButton::drawGateSymbol(QPainter* painter, double width, double height)
 {
-    // Set common styling for all gates
-    painter->setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
-    painter->setBrush(QColor(255, 215, 150));
+    // A dark body outlined in the gate's color, as on the canvas. The draw functions below keep this pen and brush.
+    painter->setPen(QPen(canvasTheme().gateColor(m_gateType), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter->setBrush(canvasTheme().componentFill);
     
     switch (m_gateType) {
     case GType::AND:
@@ -94,14 +95,12 @@ void GateButton::drawANDGate(QPainter* painter, double width, double height)
     path.lineTo(-halfWidth, halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
 
-    painter->setBrush(QColor(255, 215, 150));
-
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
     // Draw "AND" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -126,14 +125,12 @@ void GateButton::drawNANDGate(QPainter* painter, double width, double height)
     path.lineTo(-halfWidth, halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
 
-    painter->setBrush(QColor(255, 215, 150));
-
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
     // Draw "AND" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -146,7 +143,6 @@ void GateButton::drawNANDGate(QPainter* painter, double width, double height)
 }
 void GateButton::drawORGate(QPainter* painter, double width, double height)
 {
-    painter->setBrush(QColor(0, 255, 140));
 
     QPainterPath path;
     
@@ -159,14 +155,12 @@ void GateButton::drawORGate(QPainter* painter, double width, double height)
     path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
 
-    painter->setBrush(QColor(0, 255, 140));
-
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
     // Draw "OR" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -180,7 +174,6 @@ void GateButton::drawORGate(QPainter* painter, double width, double height)
 
 void GateButton::drawNORGate(QPainter* painter, double width, double height)
 {
-    painter->setBrush(QColor(0, 255, 140));
 
     QPainterPath path;
 
@@ -193,14 +186,12 @@ void GateButton::drawNORGate(QPainter* painter, double width, double height)
     path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
     path.lineTo(-halfWidth, -halfHeight);
 
-    painter->setBrush(QColor(0, 255, 140));
-
     painter->fillPath(path, painter->brush());
     painter->drawPath(path);
 
     // Draw "OR" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -213,7 +204,6 @@ void GateButton::drawNORGate(QPainter* painter, double width, double height)
 }
 void GateButton::drawXORGate(QPainter* painter, double width, double height)
 {
-    painter->setBrush(QColor(142, 43, 255));
 
     double halfWidth = width / 2;
     double halfHeight = height / 2;
@@ -238,7 +228,7 @@ void GateButton::drawXORGate(QPainter* painter, double width, double height)
 
     // Draw "XOR" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -251,7 +241,6 @@ void GateButton::drawXORGate(QPainter* painter, double width, double height)
 }
 void GateButton::drawXNORGate(QPainter* painter, double width, double height)
 {
-    painter->setBrush(QColor(142, 43, 255));
 
     double halfWidth = width / 2;
     double halfHeight = height / 2;
@@ -276,7 +265,7 @@ void GateButton::drawXNORGate(QPainter* painter, double width, double height)
 
     // Draw "XNOR" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -289,7 +278,6 @@ void GateButton::drawXNORGate(QPainter* painter, double width, double height)
 }
 void GateButton::drawNOTGate(QPainter* painter, double width, double height)
 {
-    painter->setBrush(QColor(255, 0, 0));
     QPainterPath path;
 
     double halfWidth = width / 2;
@@ -304,7 +292,7 @@ void GateButton::drawNOTGate(QPainter* painter, double width, double height)
 
     // Draw "NOT" text on top
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(QPen(Qt::black, 1));
+    painter->setPen(canvasTheme().componentText);
     QFont font = painter->font();
     font.setBold(false);
     font.setItalic(false);
@@ -318,7 +306,8 @@ void GateButton::drawNOTGate(QPainter* painter, double width, double height)
 
 void GateButton::drawNOTBubble(QPainter* painter, double width, double height)
 {
-    painter->setBrush(Qt::red);
+    painter->setPen(QPen(canvasTheme().gateColor(m_gateType), 2));
+    painter->setBrush(canvasTheme().componentFill);
     double bubbleRadius = width * 0.08;  // Bubble size relative to width
     double QuarterWidth = width / 4;
     
@@ -352,17 +341,14 @@ void SourceButton::paintEvent(QPaintEvent* event)
     double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
     painter.scale(scale, scale);
 
-    // Set styling for source
-    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
-    painter.setBrush(QColor(255, 100, 100)); // Red color
-    
-    // Draw red square
+    const CanvasTheme& theme = canvasTheme();
+    painter.setPen(QPen(theme.source, 2));
+    painter.setBrush(theme.componentFill);
     QRectF sourceRect(-12, -10, 24, 20);
-    painter.fillRect(sourceRect, painter.brush());
-    painter.drawRect(sourceRect);
-    
-    // Draw "1" in the center to indicate it's a logic source
-    painter.setPen(QPen(isChecked() ? Qt::white : Qt::white, 2));
+    painter.drawRoundedRect(sourceRect, 3, 3);
+
+    // "1": it is a logic source
+    painter.setPen(theme.componentText);
     QFont font = painter.font();
     font.setBold(true);
     font.setPointSize(12);
@@ -397,17 +383,14 @@ void RegisterButton::paintEvent(QPaintEvent* event)
     double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
     painter.scale(scale, scale);
 
-    // Set styling for register
-    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
-    painter.setBrush(QColor(100, 150, 255)); // Blue color (different from source)
-    
-    // Draw rectangle that's taller than wide (register shape)
-    QRectF registerRect(-10, -14, 20, 28); 
-    painter.fillRect(registerRect, painter.brush());
-    painter.drawRect(registerRect);
-    
-    // Draw "R" in the center to indicate it's a register
-    painter.setPen(QPen(Qt::white, 2));
+    const CanvasTheme& theme = canvasTheme();
+    painter.setPen(QPen(theme.reg, 2));
+    painter.setBrush(theme.componentFill);
+    QRectF registerRect(-10, -14, 20, 28);   // taller than wide
+    painter.drawRoundedRect(registerRect, 3, 3);
+
+    // "R" for register
+    painter.setPen(theme.componentText);
     QFont font = painter.font();
     font.setBold(true);
     font.setPointSize(12);
@@ -415,8 +398,8 @@ void RegisterButton::paintEvent(QPaintEvent* event)
     painter.drawText(registerRect, Qt::AlignCenter, "R");
     
     // Optional: Draw a small clock symbol (triangle) at bottom
-    painter.setPen(QPen(Qt::white, 1.5));
-    painter.setBrush(Qt::white);
+    painter.setPen(QPen(theme.reg, 1.5));
+    painter.setBrush(theme.reg);
     QPainterPath clockTriangle;
     clockTriangle.moveTo(-3, 10);   // Left point
     clockTriangle.lineTo(3, 10);    // Right point  
@@ -457,14 +440,13 @@ void MuxButton::paintEvent(QPaintEvent* event)
     path.lineTo(halfWidth,qurtHeight);
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
-    painter.setBrush(QColor(255, 164, 0));
-    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 4));
+    painter.setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(canvasTheme().componentFill);
     painter.drawPath(path);
-    painter.fillPath(path, painter.brush());
 
     // Draw "MUX" text on top
     painter.setRenderHint(QPainter::TextAntialiasing, true);
-    painter.setPen(QPen(Qt::black, 1));
+    painter.setPen(canvasTheme().componentText);
     QFont font = painter.font();
     font.setBold(false);
     font.setItalic(false);
@@ -502,20 +484,19 @@ void DisplayButton::paintEvent(QPaintEvent* event)
     double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 60.0);
     painter.scale(scale, scale);
 
-    // Draw outer border (dark gray casing)
+    // Casing outlined in the display's color, a screen as dark as the canvas, and a sample digit
+    const CanvasTheme& theme = canvasTheme();
     QRectF outerRect(-20, -30, 40, 60);
-    painter.setPen(QPen(isChecked() ? Qt::white : Qt::black, 2));
-    painter.setBrush(QColor(40, 40, 40));
-    painter.drawRect(outerRect);
+    painter.setPen(QPen(theme.display, 2));
+    painter.setBrush(theme.componentFill);
+    painter.drawRoundedRect(outerRect, 4, 4);
 
-    // Draw inner display area (LED-style display)
     QRectF displayArea = outerRect.adjusted(5, 5, -5, -5);
-    painter.setPen(QPen(QColor(20, 20, 20), 1));
-    painter.setBrush(QColor(20, 60, 20)); // Dark green background
-    painter.drawRect(displayArea);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(theme.background);
+    painter.drawRoundedRect(displayArea, 2, 2);
 
-    // Draw a sample number (8) in LED green color
-    painter.setPen(QPen(QColor(0, 255, 0), 2));
+    painter.setPen(QPen(theme.display, 2));
     QFont font = painter.font();
     font.setBold(true);
     font.setFamily("Courier");

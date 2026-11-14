@@ -61,6 +61,19 @@ endmodule
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
 
+# Light and Dark Mode
+
+BitSimulator starts in your system's light or dark setting and follows it while it runs. The round button at the right end of the toolbar switches between the two modes; once you have used it, the app keeps your choice until it is closed.
+
+# Changing the Colors
+
+All colors are in one style sheet in `BitSimulator/BitSimulator.ui`, written in dark-mode colors. In Qt Designer, select `BitSimulatorClass` and edit its `styleSheet` property; in a text editor, search for `BitSimulator theme`.
+
+- The table at the top pairs every dark color with its light-mode color. Light mode is the same style sheet with each color swapped for its partner, so a color is defined once per mode.
+- To change a color, replace it in the rules (each color is always written the same way, so find and replace works) and in its table row. A color without a row looks the same in both modes, and the app prints a warning naming it.
+- The canvas, the components and the toolbar icons are drawn in code. They read their colors from the `CircuitCanvas { qproperty-... }` rule at the bottom, e.g. `qproperty-wireHighColor` for a wire carrying 1 and `qproperty-dotColor` for the dot grid.
+- The arrow, check-mark, sun and moon images are in `BitSimulator/theme`.
+
 # Running the Tests
 
 The project has automated tests in the `tests` folder. They are optional: a normal build does not build them.

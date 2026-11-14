@@ -1,4 +1,5 @@
 #include "CircuitCanvas.h"
+#include <cmath>
 #include <QHash>
 #include <QMouseEvent>
 #include <QQueue>
@@ -27,6 +28,34 @@ CircuitScene::CircuitScene(QObject* parent)
 
     // Force update when selection changes
     connect(this, &QGraphicsScene::selectionChanged, this, [this]() { update(); });
+}
+
+void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
+{
+    const CanvasTheme& theme = canvasTheme();
+    painter->fillRect(rect, theme.background);
+
+    constexpr qreal DotSpacing = 20;     // scene units between two dots
+    constexpr qreal MinDotGap = 12;      // screen pixels; zoomed out further, only every 2nd, 4th, ... dot is drawn
+    constexpr qreal DotSize = 2;         // screen pixels, at every zoom level
+
+    qreal spacing = DotSpacing;
+    const qreal pixelsPerUnit = painter->worldTransform().m11();
+    if (pixelsPerUnit <= 0) return;
+    while (spacing * pixelsPerUnit < MinDotGap) spacing *= 2;
+
+    QList<QPointF> dots;
+    const qreal firstX = std::ceil(rect.left() / spacing) * spacing;
+    const qreal firstY = std::ceil(rect.top() / spacing) * spacing;
+    dots.reserve(qsizetype((rect.width() / spacing + 1) * (rect.height() / spacing + 1)));
+    for (qreal y = firstY; y <= rect.bottom(); y += spacing) {
+        for (qreal x = firstX; x <= rect.right(); x += spacing) dots.append(QPointF(x, y));
+    }
+
+    QPen pen(theme.dot, DotSize, Qt::SolidLine, Qt::RoundCap);
+    pen.setCosmetic(true);               // the same size on screen however far the view is zoomed
+    painter->setPen(pen);
+    painter->drawPoints(dots.constData(), int(dots.size()));
 }
 
 CircuitScene::~CircuitScene()
@@ -256,7 +285,7 @@ void CircuitScene::startWireConnection(QPointF startPoint)
     }
 
     m_currWire = new WireItem(m_wireStartPoint, m_wireStartPoint);
-    m_currWire->setPen(QPen(Qt::red, 2, Qt::DashLine));
+    m_currWire->setPen(QPen(canvasTheme().drag, 2, Qt::DashLine));
     addItem(m_currWire);
 }
 
@@ -281,10 +310,10 @@ void CircuitScene::updateWireConnection(QPointF currentPoint)
             // Snap to port and highlight it
             endPoint = nearPort->mapToScene(QPointF(0, 0));
             nearPort->setHighlighted(true);
-            m_currWire->setPen(QPen(Qt::green, 3, Qt::DashLine)); // Green when near valid port
+            m_currWire->setPen(QPen(canvasTheme().snap, 2.5, Qt::DashLine)); // over a pin it can connect to
         }
         else {
-            m_currWire->setPen(QPen(Qt::red, 2, Qt::DashLine)); // Red otherwise
+            m_currWire->setPen(QPen(canvasTheme().drag, 2, Qt::DashLine));
         }
 
         m_currWire->setStartPos(m_wireStartPoint);
@@ -327,7 +356,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
                 connect(endGate,&QGraphicsObject::yChanged,m_currWire,&WireItem::updateWirePosition);
             }
             // Set final wire appearance
-            m_currWire->setPen(QPen(Qt::black, 2));
+            m_currWire->setPen(QPen(canvasTheme().wire, 2));
             m_currWire->updateWirePosition();
             circuitEdited();
         } else {
@@ -920,6 +949,12 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     setRenderHint(QPainter::Antialiasing);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+}
+
+void CircuitCanvas::setThemeColor(QColor CanvasTheme::* field, const QColor& color)
+{
+    canvasTheme().*field = color;
+    m_scene->update();
 }
 
 void CircuitCanvas::keyPressEvent(QKeyEvent* event)
