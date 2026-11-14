@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include "SourceProps.h"
 
 class WireItem;
 class GateItem;
@@ -50,13 +51,12 @@ struct Gate {
     Gate(GType t, std::vector<u32> inIds, u32 outId) : gateType(t), inIDs(inIds), outID(outId) {}
 };
 
+// A source component: at every tick it computes sourceValueAt(props, tick) and drives bit i onto outIDs[i]
 struct Source {
-	
-	u32 outID;
-	std::vector<bool> cycleValues;
-	u8 currentIndex = -1;
-	Source() = default;
-	Source(u32 outID,std::vector<bool> cycleValues) :outID(outID), cycleValues(cycleValues){}
+    std::vector<u32> outIDs;   // the net of each pin, lowest bit first; 0 = pin not connected
+    SourceProps props;
+    Source() = default;
+    Source(std::vector<u32> outIDs, SourceProps props) : outIDs(std::move(outIDs)), props(std::move(props)) {}
 };
 
 struct Mux{
@@ -91,7 +91,7 @@ struct SimResult
 {
     u32 runId = 0;     // which run produced this result; the canvas ignores results of older runs
     std::vector<u8> netValues;
-	std::vector<u8> sourcesCurrIdx;
+    u64 sourceTick = 0;   // the tick whose values the sources drove; the canvas shows each source's value at it
 	std::vector<bool> registerValues;
 };
 
@@ -102,9 +102,6 @@ struct GlobalMap {
 	std::unordered_map <GateItem*, u32> gate2Idx;
 	std::unordered_map <u32, GateItem*> Idx2gate;
 
-	std::unordered_map <SourceItem*, u32> source2Idx; 
-	std::unordered_map <u32, SourceItem*> Idx2source;
-
 	std::unordered_map <RegisterItem*, u32> reg2Idx;
 	std::unordered_map <u32, RegisterItem*> Idx2reg;
 	
@@ -113,8 +110,6 @@ struct GlobalMap {
 		wire2net.clear();
 		gate2Idx.clear();
 		Idx2gate.clear();
-		source2Idx.clear();
-		Idx2source.clear();
 		reg2Idx.clear();
 		Idx2reg.clear();
     }

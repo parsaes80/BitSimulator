@@ -126,16 +126,18 @@ public:
     QList<PortItem*> ports() const override { return m_outputPorts; }
 
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; };
-    int getIdx() const { return m_currIdx;};
-    void setIdx(u8 value) { m_currIdx = value; };
-    int getNumOutputPorts() const { return m_props.bits; };
-    SourceValues getValues() const { return m_props.values; };
+    const SourceProps& sourceProps() const { return m_props; }
+
+    // The tick whose value the source shows (the simulator reports it; 0 when not running)
+    u64 tick() const { return m_tick; }
+    void setTick(u64 tick);
+    u64 value() const { return sourceValueAt(m_props, m_tick); }
 
 private:
     void layoutPorts();
 
     SourceProps m_props;
-    int m_currIdx = 0;
+    u64 m_tick = 0;
     QList<PortItem*> m_outputPorts;
 };
 

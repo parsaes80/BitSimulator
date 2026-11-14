@@ -30,6 +30,20 @@ Controls in the Schematic Editor:
 
 The **Properties** panel on the right of the Schematic Editor shows the settings of the selected component (number of inputs, register type, source values, and so on) and lets you change them after the component has been placed. With nothing selected, it says so and shows the settings for the next component you place. A change that would remove a pin with a wire on it is refused until you remove the wire.
 
+A **source** drives its output pins (one per bit, lowest bit on top) with a new value every N simulation ticks ("Every"). Its **Mode** decides the values:
+
+| Mode | What it outputs |
+|---|---|
+| Counter | Start, Start + Step, Start + 2·Step, ... (or counting down). Wraps around at the number of bits: with 8 bits, 255 is followed by 0. |
+| Gray code | A counter in Gray code: exactly one pin changes per step. |
+| Walking one | A single 1 moving one pin per step: 1, 2, 4, 8, ... |
+| Random | A random number over all bits every step; the same seed gives the same numbers on every run. |
+| List | The numbers you enter (up to 65,536), then the list repeats. Decimal, `0x` hex and `0b` binary all work. |
+| Waveform | A pattern of 0s and 1s for each pin, each repeating on its own. Type a pattern or click its steps. |
+| Constant | Always the same number. |
+
+Sources can be up to 64 bits wide. The panel shows the first few values, so you can see what a setting does. When Verilog is compiled, a 1-bit input becomes a waveform toggling every tick, and a wider input a counter that holds each value for 2 ticks.
+
 Running the simulation:
 
 - **Start** runs the circuit. The button then turns into **Pause**.

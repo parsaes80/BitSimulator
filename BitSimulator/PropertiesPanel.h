@@ -12,11 +12,15 @@ class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QFormLayout;
 class QLineEdit;
+class QPlainTextEdit;
+class QScrollArea;
 class QSpinBox;
 class QStackedWidget;
 
 // A row of steps drawn as a digital waveform; clicking a step flips it between 0 and 1.
+// Long patterns show their first MaxShownSteps steps; the rest are edited as text.
 class WaveformEditor : public QWidget {
     Q_OBJECT
 public:
@@ -27,6 +31,9 @@ public:
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override { return sizeHint(); }
+
+    static constexpr int MaxShownSteps = 64;
+    int shownSteps() const;
 
 signals:
     void valuesEdited(const QList<bool>& values);   // only emitted for clicks, not for setValues()
@@ -76,6 +83,8 @@ private:
     void loadRegister(const RegisterProps& props);
     void loadMux(const MuxProps& props);
     void loadSource(const SourceProps& props);
+    void setWavePinCount(int count);        // one pattern row per source pin
+    void selectWavePin(int pin);            // the pin whose pattern the click editor shows
     void loadDisplay(const DisplayProps& props);
 
     CircuitScene* m_scene;
@@ -83,10 +92,6 @@ private:
     ItemProps m_shown;                      // what the editors currently display
     bool m_loading = false;                 // true while load() fills the editors, so they do not commit
     bool m_locked = false;
-
-    // Remembered so that switching a source between waveform and values keeps what was typed
-    QList<bool> m_lastWaveform{false, true};
-    QList<int> m_lastNumbers{0, 1, 2};
 
     QLabel* m_title = nullptr;
     QLabel* m_subtitle = nullptr;
@@ -111,12 +116,30 @@ private:
     QSpinBox* m_muxInputs = nullptr;
     QLabel* m_muxInfo = nullptr;
 
-    QButtonGroup* m_sourceKind = nullptr;
-    QStackedWidget* m_sourcePages = nullptr;
-    QLineEdit* m_wavePattern = nullptr;
-    WaveformEditor* m_waveEditor = nullptr;
-    QLineEdit* m_numbers = nullptr;
+    // Source: the settings every mode has, then one page of settings per kind of mode
+    QComboBox* m_sourceMode = nullptr;
+    QFormLayout* m_sourceForm = nullptr;
     QSpinBox* m_sourceBits = nullptr;
+    QSpinBox* m_sourceEvery = nullptr;      // a new value every N ticks
+    QList<QWidget*> m_sourcePages;          // in SourcePage order; only the current one is shown, so
+                                            // the panel is exactly as tall as the settings in view
+    QFormLayout* m_sequenceForm = nullptr;  // counter, Gray code and walking one share a page
+    QButtonGroup* m_sourceDirection = nullptr;
+    QLineEdit* m_sourceStart = nullptr;
+    QLineEdit* m_sourceStep = nullptr;
+    QSpinBox* m_sourceSeed = nullptr;
+    QPlainTextEdit* m_sourceList = nullptr;
+    QLabel* m_sourceListCount = nullptr;
+    QWidget* m_wavePins = nullptr;          // a row per pin: pin button + pattern
+    QScrollArea* m_wavePinsScroll = nullptr;
+    QList<QLineEdit*> m_wavePatterns;
+    QButtonGroup* m_wavePinGroup = nullptr;
+    int m_wavePin = 0;
+    QLabel* m_waveEditorLabel = nullptr;
+    WaveformEditor* m_waveEditor = nullptr;
+    QLineEdit* m_sourceConstant = nullptr;
+    QLabel* m_sourcePreview = nullptr;      // the first few values, so the effect of a setting is visible
+    QLabel* m_sourceInfo = nullptr;
 
     QSpinBox* m_displayInputs = nullptr;
     QSpinBox* m_displayOutputs = nullptr;

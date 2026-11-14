@@ -33,7 +33,7 @@ struct ClockCircuit {
     explicit ClockCircuit(App& app)
     {
         for (int i = 0; i < 16; i++) pattern << (i % 2 == 1);
-        clock = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps{pattern, 1}, app.centre + QPointF(-150, 0)));
+        clock = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::waveform(pattern), app.centre + QPointF(-150, 0)));
         inv = dynamic_cast<GateItem*>(app.scene->addComponent(GateProps{GType::NOT, 1}, app.centre));
         out = dynamic_cast<DisplayItem*>(app.scene->addComponent(DisplayProps{1, 0}, app.centre + QPointF(150, 0)));
         inWire = connectPorts(app.scene, clock->getOutputPorts()[0], inv->getInputPort(0));
@@ -43,7 +43,7 @@ struct ClockCircuit {
 
     bool in() const { return inv->getInputPort(0)->getValue(); }
     bool notOut() const { return inv->getOutputPort()->getValue(); }
-    int step() const { return clock->getIdx(); }
+    int step() const { return int(clock->tick() % u64(pattern.size())); }   // position in the pattern
 };
 
 bool waitForCompile(App& app)
@@ -441,7 +441,7 @@ private slots:
                 app.clear->click();
                 break;
             case 5: case 6:
-                app.scene->addComponent(i % 2 ? ItemProps{GateProps{GType::NOT, 1}} : ItemProps{SourceProps{pattern, 1}},
+                app.scene->addComponent(i % 2 ? ItemProps{GateProps{GType::NOT, 1}} : ItemProps{SourceProps::waveform(pattern)},
                                         app.centre + QPointF(random.bounded(400) - 200, random.bounded(300) - 150));
                 break;
             case 7: {   // wire a source to a free gate input

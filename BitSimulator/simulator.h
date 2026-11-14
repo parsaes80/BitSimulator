@@ -45,6 +45,7 @@ private:
     std::vector<u32> m_sourceOutputs;
 
     bool firstTick = true;
+    u64 m_tick = 0;                 // ticks done in this run; sources compute their value from it
     bool m_running = false;
     u32 m_runId = 0;
 

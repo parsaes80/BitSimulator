@@ -7,13 +7,12 @@
 #include <bit>
 #include <variant>
 #include "general.h"
+#include "SourceProps.h"
 
 // The editable properties of each kind of component.
 //
 // The same types describe a component that is already on the canvas and the
 // defaults of the tool that places new ones, so one editor serves both.
-
-using SourceValues = std::variant<QList<bool>, QList<int>>;   // waveform (1 bit) or a list of numbers
 
 struct GateProps {
     GType type = GType::AND;
@@ -34,11 +33,7 @@ struct MuxProps {
     bool operator==(const MuxProps&) const = default;
 };
 
-struct SourceProps {
-    SourceValues values = QList<int>{2, 5};
-    int bits = 3;                      // output pins; always 1 for a waveform
-    bool operator==(const SourceProps&) const = default;
-};
+// SourceProps is in SourceProps.h: the simulator needs it too
 
 struct DisplayProps {
     int numInputs = 2;
@@ -69,15 +64,6 @@ inline constexpr int minGateInputs = 2, maxGateInputs = 8;
 inline constexpr int minMuxInputs = 2, maxMuxInputs = 8;
 inline constexpr int minDisplayInputs = 1, maxDisplayInputs = 8;
 inline constexpr int minDisplayOutputs = 0, maxDisplayOutputs = 8;
-inline constexpr int maxSourceBits = 16;
-inline constexpr int maxSourceSteps = 255;     // the simulator indexes steps with a u8
-}
-
-// Smallest number of output pins that can show every value in the list.
-inline int bitsNeeded(const QList<int>& values)
-{
-    const int maxValue = values.isEmpty() ? 0 : *std::ranges::max_element(values);
-    return std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned>(std::max(maxValue, 0)))));
 }
 
 // Select lines a multiplexer needs to address `numInputs` data inputs.
@@ -95,18 +81,6 @@ inline GateProps normalized(GateProps p)
 inline MuxProps normalized(MuxProps p)
 {
     p.numInputs = std::max(p.numInputs, ItemLimits::minMuxInputs);
-    return p;
-}
-inline SourceProps normalized(SourceProps p)
-{
-    if (auto* wave = std::get_if<QList<bool>>(&p.values)) {
-        if (wave->isEmpty()) wave->append(false);
-        p.bits = 1;
-    } else {
-        auto& numbers = std::get<QList<int>>(p.values);
-        if (numbers.isEmpty()) numbers.append(0);
-        p.bits = std::max(p.bits, bitsNeeded(numbers));
-    }
     return p;
 }
 inline DisplayProps normalized(DisplayProps p)
@@ -142,6 +116,20 @@ inline QString registerTypeName(RType type)
     return {};
 }
 
+inline QString sourceModeName(SourceMode mode)
+{
+    switch (mode) {
+    case SourceMode::Counter:    return QCoreApplication::translate("ItemProps", "Counter");
+    case SourceMode::GrayCode:   return QCoreApplication::translate("ItemProps", "Gray code");
+    case SourceMode::WalkingOne: return QCoreApplication::translate("ItemProps", "Walking one");
+    case SourceMode::Random:     return QCoreApplication::translate("ItemProps", "Random");
+    case SourceMode::List:       return QCoreApplication::translate("ItemProps", "List");
+    case SourceMode::Waveforms:  return QCoreApplication::translate("ItemProps", "Waveform");
+    case SourceMode::Constant:   return QCoreApplication::translate("ItemProps", "Constant");
+    }
+    return {};
+}
+
 // Human-readable name of a component, e.g. "NAND gate" or "D flip-flop".
 inline QString itemTitle(const ItemProps& props)
 {
@@ -153,8 +141,7 @@ inline QString itemTitle(const ItemProps& props)
         }
         QString operator()(const MuxProps&) const { return QCoreApplication::translate("ItemProps", "Multiplexer"); }
         QString operator()(const SourceProps& p) const {
-            return std::holds_alternative<QList<bool>>(p.values) ? QCoreApplication::translate("ItemProps", "Waveform source")
-                                                                 : QCoreApplication::translate("ItemProps", "Value source");
+            return QCoreApplication::translate("ItemProps", "%1 source").arg(sourceModeName(p.mode));
         }
         QString operator()(const DisplayProps&) const { return QCoreApplication::translate("ItemProps", "Display"); }
     };

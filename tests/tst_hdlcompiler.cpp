@@ -117,6 +117,35 @@ private slots:
         QCOMPARE(positions.size(), run.graph.size());                    // the layout step placed each one somewhere else
     }
 
+    void inputsBecomeSourcesCoveringTheirWidth()
+    {
+        // A 1-bit input toggles every tick; a wider one counts 0, 1, 2, ... holding each value for
+        // 2 ticks. Wide inputs used to get a list too long to play (15 bits) or almost no values (32 bits).
+        const CompileRun run = compile(QStringLiteral(
+            "module top(input wire clk, input wire [14:0] a, input wire [31:0] b, output wire [31:0] y);\n"
+            "assign y = b ^ {17'b0, a} ^ {31'b0, clk};\nendmodule\n"));
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+
+        CircuitScene scene;
+        scene.receiveGraph(run.graph);
+        QMap<int, SourceProps> byWidth;
+        for (SourceItem* source : TestSupport::itemsOfType<SourceItem>(&scene)) byWidth[source->sourceProps().bits] = source->sourceProps();
+        QCOMPARE(byWidth.keys(), (QList<int>{1, 15, 32}));
+
+        QCOMPARE(byWidth[1].mode, SourceMode::Waveforms);
+        QCOMPARE(sourceValueAt(byWidth[1], 0), u64(0));
+        QCOMPARE(sourceValueAt(byWidth[1], 1), u64(1));
+        for (const int width : {15, 32}) {
+            const SourceProps& counter = byWidth[width];
+            QCOMPARE(counter.mode, SourceMode::Counter);
+            QCOMPARE(counter.ticksPerStep, 2);
+            const u64 largest = (u64(1) << width) - 1;
+            QCOMPARE(sourceValueAt(counter, 3), u64(1));
+            QCOMPARE(sourceValueAt(counter, 2 * largest), largest);          // reaches the top of its range
+            QCOMPARE(sourceValueAt(counter, 2 * (largest + 1)), u64(0));     // then wraps
+        }
+    }
+
     void aSyntaxErrorIsReported()
     {
         const CompileRun run = compile(QStringLiteral("module top(input wire a, output wire y);\nassign y = a &&& ;\nendmodule\n"));

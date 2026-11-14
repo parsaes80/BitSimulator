@@ -129,6 +129,7 @@ void CircuitScene::resetCircuit()
     clear();
     map.clear();
     m_displays.clear();
+    m_sources.clear();
     m_lastNetValues.clear();
 }
 
@@ -177,6 +178,7 @@ void CircuitScene::stopSim()
     emit stopSimSIG();
     map.clear();
     m_displays.clear();
+    m_sources.clear();
     m_lastNetValues.clear();
     resetValues();
     setSimState(SimState::Stopped);
@@ -207,7 +209,7 @@ void CircuitScene::resetValues()
         if (auto* port = dynamic_cast<PortItem*>(item)) port->setValue(false);
         else if (auto* wire = dynamic_cast<WireItem*>(item)) wire->setValue(false);
         else if (auto* reg = dynamic_cast<RegisterItem*>(item)) reg->setValue(false);
-        else if (auto* source = dynamic_cast<SourceItem*>(item)) source->setIdx(0);
+        else if (auto* source = dynamic_cast<SourceItem*>(item)) source->setTick(0);
         else if (auto* display = dynamic_cast<DisplayItem*>(item)) displays.append(display);
     }
     for (DisplayItem* display : std::as_const(displays)) display->updateValue();   // after their pins were cleared
@@ -410,6 +412,8 @@ ExportGraph CircuitScene::buildGraph()
 
     m_displays.clear();
     for (DisplayItem* display : displayItems) {m_displays.push_back(display);}
+    m_sources.clear();
+    for (SourceItem* source : sourceItems) {m_sources.push_back(source);}
     m_lastNetValues.clear();   // net ids are reassigned below, so force a full repaint on the next result
 
     // wire,net mapping
@@ -511,54 +515,15 @@ ExportGraph CircuitScene::buildGraph()
         gateInputs.clear();
     }
 
-    //Wire, Source Mapping
+    //Wire, Source Mapping: each source drives one net per pin; the simulator computes its values itself
     u32 outNet, inNet2, inNet, readEnbNet, clkNet;
-    for (int sourceItemIdx = 0; sourceItemIdx < sourceItems.size(); sourceItemIdx++)
-    {
-        auto* sourceItem = sourceItems[sourceItemIdx];
-
-        // Store the starting sim source index for this SourceItem
-        int startingSimIndex = sources.size();
-        map.source2Idx[sourceItem] = startingSimIndex;
-        map.Idx2source[startingSimIndex] = sourceItem;
-
-        if(std::holds_alternative<QList<bool>>(sourceItem->getValues())){
-            // Single output port, cycling through bool values
-            outNet = 0;
-            if (!sourceItem->getOutputPorts().at(0)->getConnections().isEmpty()) {
-                WireItem* outwire = sourceItem->getOutputPorts().at(0)->getConnections().at(0);
-                outNet = map.wire2net[outwire];
-            }
-
-            std::vector<bool> cycleValues;
-            for (auto value : std::get<QList<bool>>(sourceItem->getValues())) {
-                cycleValues.push_back(value);
-            }
-            sources.push_back(Source(outNet, cycleValues));
+    for (SourceItem* sourceItem : sourceItems) {
+        std::vector<u32> pinNets;
+        for (PortItem* pin : sourceItem->getOutputPorts()) {
+            const auto& wires = pin->getConnections();
+            pinNets.push_back(wires.isEmpty() ? 0 : map.wire2net[wires.first()]);
         }
-        else if(std::holds_alternative<QList<int>>(sourceItem->getValues())){
-            // Multiple output ports (one per bit), cycling through int values
-            const auto intValues = std::get<QList<int>>(sourceItem->getValues());
-
-            // For each bit position (output port)
-            for (int bitIndex = 0; bitIndex < sourceItem->getNumOutputPorts(); bitIndex++)
-            {
-                outNet = 0;
-                if (!sourceItem->getOutputPorts().at(bitIndex)->getConnections().isEmpty()) {
-                    WireItem* outwire = sourceItem->getOutputPorts().at(bitIndex)->getConnections().at(0);
-                    outNet = map.wire2net[outwire];
-                }
-
-                // Extract this bit from each int value in the cycle
-                std::vector<bool> cycleValues;
-                for (int value : intValues) {
-                    bool bitValue = (value >> bitIndex) & 1;
-                    cycleValues.push_back(bitValue);
-                }
-
-                sources.push_back(Source(outNet, cycleValues));
-            }
-        }
+        sources.push_back(Source(std::move(pinNets), sourceItem->sourceProps()));
     }
     //Wire, Mux Mapping
     std::vector<Mux> muxes;
@@ -633,8 +598,8 @@ void CircuitScene::receiveResult(const SimResult& result)
     }
     m_lastNetValues = nets;
 
-    for (auto [source,Idx]: map.source2Idx) {
-        if (Idx < result.sourcesCurrIdx.size()) {source->setIdx(result.sourcesCurrIdx[Idx]);}
+    for (const auto& source : m_sources) {
+        if (source) {source->setTick(result.sourceTick);}   // QPointer is null if the source was deleted
     }
     for (size_t i = 0; i < result.registerValues.size(); i++) {
         auto it = map.Idx2reg.find(static_cast<u32>(i));
@@ -671,15 +636,14 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
         else if( std::holds_alternative<IOType>(node.type)){
             auto IoType = std::get<IOType>(node.type);
             if (IoType == IOType::IN){
+                // A 1-bit input toggles every tick (a clock for registers). A wider one counts
+                // 0, 1, 2, ... holding each value for 2 ticks, so a register clocked by such a
+                // 1-bit input sees every value; the counter wraps at the input's width.
                 int bitWidth = node.ports[node.id].connections.size();
                 if (bitWidth==1)
-                    item = addComponent(SourceProps{QList<bool>{false,true}, bitWidth}, node.position);
-                else{
-                    QList<int> values;
-                    int maxValue = 1 << bitWidth;
-                    for (int i = 0; i < maxValue; i++) {values.append(i); values.append(i);}
-                    item = addComponent(SourceProps{values, bitWidth}, node.position);
-                }
+                    item = addComponent(SourceProps::waveform({false, true}), node.position);
+                else
+                    item = addComponent(SourceProps::counter(bitWidth, 2), node.position);
             }
             else{
                 int bitWidth = node.ports[node.id].connections.size();

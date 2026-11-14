@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QTextCursor>
 #include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>

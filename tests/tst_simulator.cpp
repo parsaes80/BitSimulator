@@ -38,16 +38,17 @@ QList<SimResult> run(const ExportGraph& graph, int ticks)
 // every combination of 0s and 1s, one combination per tick.
 Source counterBit(u32 net, int bit, int width)
 {
-    std::vector<bool> cycle(std::size_t(1) << width);
-    for (std::size_t step = 0; step < cycle.size(); step++) cycle[step] = (step >> bit) & 1;
-    return Source(net, cycle);
+    QList<bool> cycle(qsizetype(1) << width);
+    for (qsizetype step = 0; step < cycle.size(); step++) cycle[step] = (step >> bit) & 1;
+    return Source({net}, SourceProps::waveform(cycle));
 }
 
+// A 1-pin source repeating `bits`
 Source pattern(u32 net, std::initializer_list<int> bits)
 {
-    std::vector<bool> cycle;
-    for (const int bit : bits) cycle.push_back(bit != 0);
-    return Source(net, cycle);
+    QList<bool> cycle;
+    for (const int bit : bits) cycle.append(bit != 0);
+    return Source({net}, SourceProps::waveform(cycle));
 }
 
 bool gateOutput(GType type, const QList<bool>& inputs)
@@ -334,10 +335,31 @@ private slots:
         QCOMPARE(results.size(), 9);
         const bool first[] = {1, 0, 0}, second[] = {0, 1};
         for (int tick = 0; tick < 9; tick++) {
-            QCOMPARE(int(results[tick].sourcesCurrIdx[0]), tick % 3);
-            QCOMPARE(int(results[tick].sourcesCurrIdx[1]), tick % 2);
+            QCOMPARE(results[tick].sourceTick, u64(tick));
             QCOMPARE(bool(results[tick].netValues[1]), first[tick % 3]);
             QCOMPARE(bool(results[tick].netValues[2]), second[tick % 2]);
+        }
+    }
+
+    void aSourceDrivesEachOfItsPins()
+    {
+        // A 3-pin counter on nets 1..3 (pin 1 not connected), and a 40-bit counter whose top pin is net 4
+        ExportGraph graph;
+        graph.sources.push_back(Source({1, 0, 3}, SourceProps::counter(3)));
+        SourceProps wide = SourceProps::counter(40);
+        wide.start = (u64(1) << 39) - 2;                           // the top bit turns on after 2 steps
+        std::vector<u32> widePins(40, 0);
+        widePins[39] = 4;
+        graph.sources.push_back(Source(widePins, wide));
+        graph.numNets = 4;
+
+        const auto results = run(graph, 10);
+        for (int tick = 0; tick < 10; tick++) {
+            const int value = tick % 8;
+            QCOMPARE(bool(results[tick].netValues[1]), bool(value & 1));
+            QCOMPARE(bool(results[tick].netValues[2]), false);   // nothing drives net 2
+            QCOMPARE(bool(results[tick].netValues[3]), bool(value & 4));
+            QCOMPARE(bool(results[tick].netValues[4]), tick >= 2);
         }
     }
 
@@ -346,7 +368,7 @@ private slots:
         const auto results = run(ExportGraph{}, 3);
         QCOMPARE(results.size(), 3);
         QCOMPARE(results[0].netValues.size(), std::size_t(1));      // just net 0
-        QVERIFY(results[0].sourcesCurrIdx.empty() && results[0].registerValues.empty());
+        QVERIFY(results[0].registerValues.empty());
     }
 
     //===================== Start, pause, stop ========================
@@ -387,7 +409,7 @@ private slots:
         sim.receiveCircuit(graph);                                  // loading again starts from the first step
         QCOMPARE(results.size(), 1);
         QCOMPARE(results[0].runId, u32(8));
-        QCOMPARE(int(results[0].sourcesCurrIdx[0]), 0);
+        QCOMPARE(results[0].sourceTick, u64(0));
     }
 
     void pauseKeepsEverythingAndContinueCarriesOn()
@@ -417,7 +439,7 @@ private slots:
         sim.setRunning(true);
         QTRY_VERIFY(results.size() > paused);
         const SimResult next = results[paused];
-        QCOMPARE(int(next.sourcesCurrIdx[2]), (int(last.sourcesCurrIdx[2]) + 1) % 11);    // the next step, not step 0
+        QCOMPARE(next.sourceTick, last.sourceTick + 1);                                   // the next tick, not tick 0
         QCOMPARE(bool(next.netValues[4]), bool(last.registerValues[0]));                  // the register kept its value
     }
 

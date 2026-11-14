@@ -58,9 +58,13 @@ private slots:
         auto* latch = add<RegisterItem>(scene, RegisterProps{RType::D, false, true});
         QVERIFY(!latch->getClkPort() && latch->getReadEnablePort());
 
-        auto* wave = add<SourceItem>(scene, SourceProps{QList<bool>{true, false}, 5});
-        QCOMPARE(wave->getOutputPorts().size(), 1);
-        auto* numbers = add<SourceItem>(scene, SourceProps{QList<int>{9}, 1});
+        SourceProps fivePins = SourceProps::waveform({true, false});
+        fivePins.bits = 5;
+        auto* wave = add<SourceItem>(scene, fivePins);
+        QCOMPARE(wave->getOutputPorts().size(), 5);                      // a waveform per pin
+        auto* counter = add<SourceItem>(scene, SourceProps::counter(32));
+        QCOMPARE(counter->getOutputPorts().size(), 32);
+        auto* numbers = add<SourceItem>(scene, SourceProps::list({9}, 1));
         QCOMPARE(numbers->getOutputPorts().size(), 4);                   // 9 needs 4 bits
 
         auto* display = add<DisplayItem>(scene, DisplayProps{3, 1});
@@ -107,7 +111,7 @@ private slots:
     void aWiredPinCannotBeRemoved()
     {
         CircuitScene scene;
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{false, true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({false, true}), {-200, 0});
         auto* gate = add<GateItem>(scene, GateProps{GType::AND, 4});
         WireItem* wire = connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(3));
         QVERIFY(wire);
@@ -131,7 +135,7 @@ private slots:
     void wiresFollowPinsThatMove()
     {
         CircuitScene scene;
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{false, true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({false, true}), {-200, 0});
         auto* gate = add<GateItem>(scene, GateProps{GType::AND, 2});
         WireItem* wire = connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(1));
         QVERIFY(wire);
@@ -168,7 +172,7 @@ private slots:
     void registerPinsComeAndGo()
     {
         CircuitScene scene;
-        auto* source = add<SourceItem>(scene, SourceProps{QList<int>{3}, 2}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::list({3}, 2), {-200, 0});
         auto* reg = add<RegisterItem>(scene, RegisterProps{RType::D, true, true});
         QVERIFY(connectPorts(&scene, source->getOutputPorts()[0], reg->getClkPort()));
         QVERIFY(connectPorts(&scene, source->getOutputPorts()[1], reg->getReadEnablePort()));
@@ -196,19 +200,19 @@ private slots:
     void sourceKindAndWidth()
     {
         CircuitScene scene;
-        auto* source = add<SourceItem>(scene, SourceProps{QList<int>{1, 2}, 2}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::list({1, 2}, 2), {-200, 0});
         auto* display = add<DisplayItem>(scene, DisplayProps{4, 0});
         QVERIFY(connectPorts(&scene, source->getOutputPorts()[1], display->getInputPorts()[1]));
 
-        QVERIFY(scene.editComponent(source, SourceProps{QList<int>{1, 2, 12}, 2}).has_value());
+        QVERIFY(scene.editComponent(source, SourceProps::list({1, 2, 12}, 2)).has_value());
         QCOMPARE(source->getOutputPorts().size(), 4);                    // widened to fit 12
 
         // Becoming a waveform would leave one pin, but the second pin is wired
-        const auto refused = scene.editComponent(source, SourceProps{QList<bool>{true}, 1});
+        const auto refused = scene.editComponent(source, SourceProps::waveform({true}));
         QVERIFY(!refused.has_value() && refused.error().contains(QStringLiteral("Output 2")));
-        QVERIFY(std::holds_alternative<QList<int>>(source->getValues()));
+        QCOMPARE(source->sourceProps().mode, SourceMode::List);
 
-        QVERIFY(scene.editComponent(source, SourceProps{QList<int>{0}, 2}).has_value());   // down to the wired pin is fine
+        QVERIFY(scene.editComponent(source, SourceProps::list({0}, 2)).has_value());   // down to the wired pin is fine
         QCOMPARE(source->getOutputPorts().size(), 2);
     }
 
@@ -220,7 +224,7 @@ private slots:
         QCOMPARE(display->getInputPorts().size(), 6);
         QVERIFY(display->getOutputPorts().isEmpty());
 
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         auto* mux = add<MuxItem>(scene, MuxProps{MType::MUX, 8});
         QVERIFY(connectPorts(&scene, source->getOutputPorts()[0], mux->getAddressPorts()[2]));
         const auto refused = scene.editComponent(mux, MuxProps{MType::MUX, 4});      // 4 inputs need only 2 select lines
@@ -243,8 +247,8 @@ private slots:
     void wiringRules()
     {
         CircuitScene scene;
-        auto* a = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, -60});
-        auto* b = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 60});
+        auto* a = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, -60});
+        auto* b = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 60});
         auto* gate = add<GateItem>(scene, GateProps{GType::AND, 2});
         auto* other = add<GateItem>(scene, GateProps{GType::OR, 2}, {0, 150});
 
@@ -267,7 +271,7 @@ private slots:
     void deletingFollowsTheRules()
     {
         CircuitScene scene;
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         auto* gate = add<GateItem>(scene, GateProps{GType::NOT, 1});
         auto* loose = add<GateItem>(scene, GateProps{}, {0, 150});
         WireItem* wire = connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(0));
@@ -377,7 +381,7 @@ private slots:
     void theCircuitIsReadOnlyWhileRunning()
     {
         CircuitScene scene;
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         auto* gate = add<GateItem>(scene, GateProps{GType::AND, 2});
         auto* loose = add<GateItem>(scene, GateProps{}, {0, 150});
         WireItem* wire = connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(0));
@@ -417,7 +421,7 @@ private slots:
 
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<int>{3}, 2}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::list({3}, 2), {-200, 0});
         auto* gate = add<GateItem>(scene, GateProps{GType::AND, 2});
         WireItem* wire = connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(1));
         scene.startOrResumeSim();
@@ -442,7 +446,7 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         auto* gate = add<GateItem>(scene, GateProps{GType::NOT, 1});
         connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(0));
         scene.startOrResumeSim();
@@ -464,8 +468,8 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* a = add<SourceItem>(scene, SourceProps{QList<bool>{false, true}, 1}, {-200, -60});
-        auto* b = add<SourceItem>(scene, SourceProps{QList<bool>{false, false, true}, 1}, {-200, 60});
+        auto* a = add<SourceItem>(scene, SourceProps::waveform({false, true}), {-200, -60});
+        auto* b = add<SourceItem>(scene, SourceProps::waveform({false, false, true}), {-200, 60});
         auto* gate = add<GateItem>(scene, GateProps{GType::NAND, 3});
         auto* display = add<DisplayItem>(scene, DisplayProps{1, 0}, {200, 0});
         QVERIFY(connectPorts(&scene, a->getOutputPorts()[0], gate->getInputPort(0)));
@@ -494,8 +498,9 @@ private slots:
         QCOMPARE(g.outID, netOf(gate->getOutputPort()));
         const u32 netA = netOf(a->getOutputPorts()[0]), netB = netOf(b->getOutputPorts()[0]);
         for (const Source& source : graph.sources) {
-            QVERIFY(source.outID == netA || source.outID == netB);
-            QCOMPARE(source.cycleValues.size(), std::size_t(source.outID == netA ? 2 : 3));
+            QCOMPARE(source.outIDs.size(), std::size_t(1));
+            QVERIFY(source.outIDs[0] == netA || source.outIDs[0] == netB);
+            QCOMPARE(source.props.waves[0].size(), source.outIDs[0] == netA ? 2 : 3);
         }
     }
 
@@ -503,7 +508,7 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         auto* g1 = add<GateItem>(scene, GateProps{GType::NOT, 1}, {0, -80});
         auto* g2 = add<GateItem>(scene, GateProps{GType::AND, 2}, {0, 80});
         connectPorts(&scene, source->getOutputPorts()[0], g1->getInputPort(0));
@@ -513,7 +518,7 @@ private slots:
         scene.startOrResumeSim();
         const ExportGraph& graph = link.started.first();
         QCOMPARE(graph.numNets, u32(1));
-        QCOMPARE(graph.sources.front().outID, u32(1));
+        QCOMPARE(graph.sources.front().outIDs, std::vector<u32>{1});
         for (const Gate& gate : graph.gates) {
             for (const u32 net : gate.inIDs) QCOMPARE(net, u32(1));
             QCOMPARE(gate.outID, u32(0));                                // outputs not wired
@@ -521,30 +526,29 @@ private slots:
         QCOMPARE(map.net2wire.at(1).size(), std::size_t(3));             // all three wires colour together
     }
 
-    void valueSourceBecomesOneSourcePerBit()
+    void aSourceDrivesOneNetPerPin()
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<int>{5, 2, 7}, 3}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::list({5, 2, 7}, 3), {-200, 0});
         auto* display = add<DisplayItem>(scene, DisplayProps{3, 0});
         for (int bit = 0; bit < 3; bit++) connectPorts(&scene, source->getOutputPorts()[bit], display->getInputPorts()[bit]);
 
         scene.startOrResumeSim();
         const ExportGraph& graph = link.started.first();
-        QCOMPARE(graph.sources.size(), std::size_t(3));
-        const int values[] = {5, 2, 7};
-        for (int bit = 0; bit < 3; bit++) {
-            const Source& s = graph.sources[bit];
-            QCOMPARE(s.outID, netOf(source->getOutputPorts()[bit]));
-            for (int step = 0; step < 3; step++) QCOMPARE(bool(s.cycleValues[step]), bool((values[step] >> bit) & 1));
-        }
+        QCOMPARE(graph.sources.size(), std::size_t(1));
+        const Source& s = graph.sources.front();
+        QCOMPARE(s.outIDs.size(), std::size_t(3));
+        for (int bit = 0; bit < 3; bit++) QCOMPARE(s.outIDs[bit], netOf(source->getOutputPorts()[bit]));
+        QCOMPARE(s.props, source->sourceProps());                        // the simulator computes the values from these
+        QCOMPARE(sourceValueAt(s.props, 1), u64(2));
     }
 
     void registerAndMuxPinsLandOnTheRightNets()
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<int>{0}, 7}, {-300, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::list({0}, 7), {-300, 0});
         auto* reg = add<RegisterItem>(scene, RegisterProps{RType::JK, true, true}, {0, -100});
         auto* mux = add<MuxItem>(scene, MuxProps{MType::MUX, 3}, {0, 100});
         const QList<PortItem*> out = source->getOutputPorts();
@@ -592,7 +596,7 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         auto* display = add<DisplayItem>(scene, DisplayProps{2, 2});
         auto* gate = add<GateItem>(scene, GateProps{GType::NOT, 1}, {200, 0});
         auto* gate2 = add<GateItem>(scene, GateProps{GType::NOT, 1}, {200, 80});
@@ -611,7 +615,7 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-200, 0});
         scene.startWireConnection(source->getOutputPorts()[0]->mapToScene(QPointF(0, 0)));
         scene.updateWireConnection(QPointF(50, 50));
         QCOMPARE(itemsOfType<WireItem>(&scene).size(), 1);
@@ -627,7 +631,7 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<int>{1, 2, 3}, 2}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::list({1, 2, 3}, 2), {-200, 0});
         auto* reg = add<RegisterItem>(scene, RegisterProps{RType::D, true, false}, {0, -100});
         auto* display = add<DisplayItem>(scene, DisplayProps{2, 0}, {200, 0});
         WireItem* w0 = connectPorts(&scene, source->getOutputPorts()[0], display->getInputPorts()[0]);
@@ -639,13 +643,14 @@ private slots:
         result.runId = graph.runId;
         result.netValues.assign(graph.numNets + 1, 0);
         result.netValues[map.wire2net.at(w1)] = 1;                       // bit 1 high, bit 0 low: the display should read 2
-        result.sourcesCurrIdx = {1, 1};
+        result.sourceTick = 1;
         result.registerValues = {true};
         scene.receiveResult(result);
 
         QVERIFY(!w0->getEndPort()->getValue() && w1->getEndPort()->getValue() && w1->getStartPort()->getValue());
         QCOMPARE(display->getValue(), 2);
-        QCOMPARE(source->getIdx(), 1);
+        QCOMPARE(source->tick(), u64(1));
+        QCOMPARE(source->value(), u64(2));                               // the list 1, 2, 3 at tick 1
         QVERIFY(reg->getValue());
 
         // The same result again changes nothing; a changed one updates only what differs
@@ -658,14 +663,14 @@ private slots:
     {
         CircuitScene scene;
         SimLink link(scene);
-        auto* source = add<SourceItem>(scene, SourceProps{QList<bool>{false, true}, 1}, {-200, 0});
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({false, true}), {-200, 0});
         auto* display = add<DisplayItem>(scene, DisplayProps{1, 0});
         connectPorts(&scene, source->getOutputPorts()[0], display->getInputPorts()[0]);
         scene.startOrResumeSim();
 
         SimResult result;
         result.netValues = {0, 1};
-        result.sourcesCurrIdx = {1};
+        result.sourceTick = 1;
         result.runId = link.started.first().runId + 5;                   // not this run
         scene.receiveResult(result);
         QCOMPARE(display->getValue(), 0);
@@ -677,7 +682,7 @@ private slots:
 
         scene.stopSim();
         QCOMPARE(display->getValue(), 0);                                // stopping clears what the run left behind
-        QCOMPARE(source->getIdx(), 0);
+        QCOMPARE(source->tick(), u64(0));
         scene.receiveResult(result);                                     // and anything still arriving is dropped
         QCOMPARE(display->getValue(), 0);
 
@@ -686,7 +691,7 @@ private slots:
         SimResult wrongSize;
         wrongSize.runId = link.started.last().runId;
         wrongSize.netValues.assign(50, 1);
-        wrongSize.sourcesCurrIdx.assign(9, 3);
+        wrongSize.sourceTick = 3;
         wrongSize.registerValues.assign(9, true);
         scene.receiveResult(wrongSize);
         QCOMPARE(display->getValue(), 1);

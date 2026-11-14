@@ -7,6 +7,18 @@ using namespace TestSupport;
 namespace {
 
 // Like the spin box arrows: sets the value and lets the panel react.
+// Replaces the text of a multi-line field the way a user does
+void typeText(QPlainTextEdit* edit, const QString& text)
+{
+    edit->setFocus();
+    edit->selectAll();
+    const QStringList lines = text.split(u'\n');
+    for (qsizetype i = 0; i < lines.size(); i++) {
+        if (i > 0) QTest::keyClick(edit, Qt::Key_Return);              // keyClicks cannot type a new line
+        if (!lines[i].isEmpty()) QTest::keyClicks(edit, lines[i]);
+    }
+}
+
 void setSpin(QSpinBox* spin, int value)
 {
     spin->setFocus();
@@ -54,7 +66,7 @@ private slots:
         QTest::newRow("MUX") << "muxButton" << "Multiplexer";
         QTest::newRow("register") << "regButton" << "D flip-flop";
         QTest::newRow("display") << "displayButton" << "Display";
-        QTest::newRow("source") << "srcButton" << "Value source";
+        QTest::newRow("source") << "srcButton" << "Counter source";
     }
     void toolbarButtonsChooseTheNextComponent()
     {
@@ -151,7 +163,7 @@ private slots:
     void gateEditing()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{2, 5}, 3}, {-200, 0});
+        auto* source = add<SourceItem>(app, SourceProps::list({2, 5}, 3), {-200, 0});
         auto* gate = add<GateItem>(app, GateProps{GType::AND, 4});
         WireItem* wire = connectPorts(app.scene, source->getOutputPorts()[0], gate->getInputPort(3));
         QVERIFY(wire);
@@ -182,7 +194,7 @@ private slots:
     void registerEditing()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{2, 5}, 3}, {-200, 0});
+        auto* source = add<SourceItem>(app, SourceProps::list({2, 5}, 3), {-200, 0});
         auto* reg = add<RegisterItem>(app, RegisterProps{RType::D, true, true});
         QVERIFY(connectPorts(app.scene, source->getOutputPorts()[1], reg->getClkPort()));
         app.select(reg);
@@ -206,101 +218,187 @@ private slots:
         QVERIFY(labelWith(app.panel, QStringLiteral("S, R, clock")));
     }
 
-    void valueSourceEditing()
+    void listSourceEditing()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{1, 2}, 2});
+        auto* source = add<SourceItem>(app, SourceProps::list({1, 2}, 2));
         app.select(source);
-        auto* values = app.editor_<QLineEdit>("sourceValues");
+        QCOMPARE(app.title(), QStringLiteral("List source"));
+        auto* values = app.editor_<QPlainTextEdit>("sourceValues");
         auto* bits = app.editor_<QSpinBox>("sourceBits");
-        QCOMPARE(values->text(), QStringLiteral("1, 2"));
+        QCOMPARE(values->toPlainText(), QStringLiteral("1, 2"));
         QCOMPARE(bits->value(), 2);
 
-        typeInto(values, QStringLiteral("7, 300"));
-        QCOMPARE(std::get<QList<int>>(source->getValues()), (QList<int>{7, 300}));
+        typeText(values, QStringLiteral("7, 300"));
+        QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{7, 300}));
         QCOMPARE(source->getOutputPorts().size(), 9);                    // 300 needs 9 bits
         QCOMPARE(bits->value(), 9);
         QCOMPARE(bits->minimum(), 9);                                    // cannot go below what the values need
-        QCOMPARE(values->text(), QStringLiteral("7, 300"));              // the text being typed is not rewritten
+        QCOMPARE(values->toPlainText(), QStringLiteral("7, 300"));       // the text being typed is not rewritten
 
         QTest::keyClicks(values, QStringLiteral(", x"));
         QVERIFY2(app.message().contains(QStringLiteral("not a whole number")), qPrintable(app.message()));
-        QCOMPARE(std::get<QList<int>>(source->getValues()), (QList<int>{7, 300}));     // last valid values kept
+        QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{7, 300}));   // last valid values kept
         for (int i = 0; i < 3; i++) QTest::keyClick(values, Qt::Key_Backspace);
         QVERIFY(app.message().isEmpty());
 
-        typeInto(values, QStringLiteral("5 6,7"));                       // spaces separate values as well as commas
-        QCOMPARE(std::get<QList<int>>(source->getValues()), (QList<int>{5, 6, 7}));
+        // Commas, spaces and new lines separate values; 0x is hex and 0b binary
+        typeText(values, QStringLiteral("5 6\n0x1F;0b101"));
+        QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{5, 6, 31, 5}));
+        QVERIFY(labelWith(app.panel, QStringLiteral("4 values")));
 
         setSpin(bits, 12);                                               // more pins than needed is allowed
         QCOMPARE(source->getOutputPorts().size(), 12);
 
-        typeInto(values, QStringLiteral("-3"));                          // negative numbers are not values
+        typeText(values, QStringLiteral("-3"));                          // negative numbers are not values
         QVERIFY(!app.message().isEmpty());
-        QCOMPARE(std::get<QList<int>>(source->getValues()), (QList<int>{5, 6, 7}));
+        QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{5, 6, 31, 5}));
 
-        typeInto(values, QStringLiteral("70000"));                       // needs more than 16 bits
-        QVERIFY2(app.message().contains(QStringLiteral("not supported")), qPrintable(app.message()));
-        QCOMPARE(std::get<QList<int>>(source->getValues()), QList<int>{7000});         // what was valid on the way there
+        typeText(values, QStringLiteral("18446744073709551615"));        // the largest 64-bit number
+        QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{~std::uint64_t{0}});
+        QCOMPARE(source->getOutputPorts().size(), 64);
+        QTest::keyClick(values, Qt::Key_6);                              // one digit more does not fit in 64 bits
+        QVERIFY2(app.message().contains(QStringLiteral("64 bits")), qPrintable(app.message()));
+        QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{~std::uint64_t{0}});
 
         values->selectAll();
         QTest::keyClick(values, Qt::Key_Delete);                         // an empty field
         QVERIFY2(app.message().contains(QStringLiteral("at least one")), qPrintable(app.message()));
-        QCOMPARE(std::get<QList<int>>(source->getValues()), QList<int>{7000});
+        QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{~std::uint64_t{0}});
     }
 
-    void waveformEditing()
+    void counterSettingsAndPreview()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{7, 300}, 9});
+        auto* source = add<SourceItem>(app, SourceProps::counter(8));
         app.select(source);
+        QCOMPARE(app.title(), QStringLiteral("Counter source"));
+        auto* start = app.editor_<QLineEdit>("sourceStart");
+        auto* step = app.editor_<QLineEdit>("sourceStep");
+        auto* every = app.editor_<QSpinBox>("sourceEvery");
+        auto* preview = app.editor_<QLabel>("sourcePreview");
+        QCOMPARE(preview->text(), QStringLiteral("Steps: 0, 1, 2, 3, 4, 5, 6, 7, ..."));
 
-        segment(app.panel, QStringLiteral("Waveform"))->click();
-        QVERIFY(std::holds_alternative<QList<bool>>(source->getValues()));
-        QCOMPARE(source->getOutputPorts().size(), 1);
-        QCOMPARE(app.title(), QStringLiteral("Waveform source"));
+        typeInto(start, QStringLiteral("250"));
+        typeInto(step, QStringLiteral("0x3"));
+        setSpin(every, 2);
+        QCOMPARE(source->sourceProps().start, std::uint64_t(250));
+        QCOMPARE(source->sourceProps().step, std::uint64_t(3));
+        QCOMPARE(source->sourceProps().ticksPerStep, 2);
+        QCOMPARE(step->text(), QStringLiteral("0x3"));                   // what was typed stays
+        QCOMPARE(preview->text(), QStringLiteral("Steps: 250, 253, 0, 3, 6, 9, 12, 15, ..."));   // wraps at 8 bits
 
-        auto* pattern = app.editor_<QLineEdit>("sourcePattern");
-        auto* waveform = app.editor_<WaveformEditor>("sourceWaveform");
-        typeInto(pattern, QStringLiteral("1100 1010 11"));
-        QCOMPARE(std::get<QList<bool>>(source->getValues()), (QList<bool>{1, 1, 0, 0, 1, 0, 1, 0, 1, 1}));
-        QCOMPARE(pattern->text(), QStringLiteral("1100 1010 11"));       // spaces the user typed are kept
-        QCOMPARE(waveform->values().size(), 10);
+        segment(app.panel, QStringLiteral("Down"))->click();
+        QVERIFY(source->sourceProps().countDown);
+        QCOMPARE(preview->text(), QStringLiteral("Steps: 250, 247, 244, 241, 238, 235, 232, 229, ..."));
 
-        QTest::mouseClick(waveform, Qt::LeftButton, {}, QPoint(24 * 2 + 5, 10));        // third step, first row
-        QVERIFY(std::get<QList<bool>>(source->getValues())[2]);
-        QCOMPARE(pattern->text(), QStringLiteral("1110101011"));
-        QTest::mouseClick(waveform, Qt::LeftButton, {}, QPoint(24 * 1 + 5, 40 + 10));   // tenth step, second row
-        QVERIFY(!std::get<QList<bool>>(source->getValues())[9]);
-        QTest::mouseClick(waveform, Qt::LeftButton, {}, QPoint(24 * 5 + 5, 40 + 10));   // past the last step: nothing
-        QCOMPARE(std::get<QList<bool>>(source->getValues()).size(), 10);
-
-        pattern->setFocus();
-        pattern->end(false);
-        QTest::keyClick(pattern, Qt::Key_2);                             // not a bit
-        QVERIFY2(app.message().contains(QStringLiteral("only contain 0 and 1")), qPrintable(app.message()));
-        QCOMPARE(std::get<QList<bool>>(source->getValues()).size(), 10);
-        QTest::keyClick(pattern, Qt::Key_Backspace);
-        QVERIFY(app.message().isEmpty());
-
-        segment(app.panel, QStringLiteral("Values"))->click();           // the earlier numbers come back
-        QCOMPARE(std::get<QList<int>>(source->getValues()), (QList<int>{7, 300}));
-        segment(app.panel, QStringLiteral("Waveform"))->click();         // and so does the waveform
-        QCOMPARE(std::get<QList<bool>>(source->getValues()).size(), 10);
+        typeInto(start, QStringLiteral("12x"));
+        QVERIFY2(app.message().contains(QStringLiteral("not a whole number")), qPrintable(app.message()));
+        QCOMPARE(source->sourceProps().start, std::uint64_t(12));        // what was valid on the way there
     }
 
-    void sourceKindChangeIsRefusedWhenPinsAreWired()
+    void eachModeShowsItsSettings()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{1, 2}, 2}, {-200, 0});
+        auto* source = add<SourceItem>(app, SourceProps::counter(4));
+        app.select(source);
+        auto* mode = app.editor_<QComboBox>("sourceMode");
+        auto* start = app.editor_<QLineEdit>("sourceStart");
+        auto* step = app.editor_<QLineEdit>("sourceStep");
+        auto* every = app.editor_<QSpinBox>("sourceEvery");
+        auto* preview = app.editor_<QLabel>("sourcePreview");
+        const auto shown = [&app](QWidget* w) { return w->isVisibleTo(app.panel); };
+        QVERIFY(shown(start) && shown(step) && shown(every));
+
+        choose(mode, QStringLiteral("Gray code"));
+        QCOMPARE(source->sourceProps().mode, SourceMode::GrayCode);
+        QCOMPARE(app.title(), QStringLiteral("Gray code source"));
+        QVERIFY(shown(start) && !shown(step));                           // Gray code always steps by one
+        QCOMPARE(preview->text(), QStringLiteral("Steps: 0, 1, 3, 2, 6, 7, 5, 4, ..."));
+
+        choose(mode, QStringLiteral("Walking one"));
+        QVERIFY(!shown(start) && !shown(step));
+        QCOMPARE(preview->text(), QStringLiteral("Steps: 1, 2, 4, 8, 1, 2, 4, 8, ..."));
+
+        choose(mode, QStringLiteral("Random"));
+        auto* seed = app.editor_<QSpinBox>("sourceSeed");
+        QVERIFY(shown(seed));
+        const QString firstNumbers = preview->text();
+        setSpin(seed, 99);
+        QCOMPARE(source->sourceProps().seed, std::uint32_t(99));
+        QVERIFY(preview->text() != firstNumbers);
+
+        choose(mode, QStringLiteral("Constant"));
+        auto* constant = app.editor_<QLineEdit>("sourceConstant");
+        QVERIFY(shown(constant) && !shown(every));                       // a constant has no steps
+        typeInto(constant, QStringLiteral("0b1010_1010_1"));
+        QCOMPARE(source->sourceProps().constant, std::uint64_t(0x155));
+        QCOMPARE(source->getOutputPorts().size(), 9);                    // widened to fit
+        QCOMPARE(preview->text(), QStringLiteral("Outputs 341"));
+
+        // Every mode's settings are kept while another mode is shown
+        choose(mode, QStringLiteral("Random"));
+        QCOMPARE(seed->value(), 99);
+        choose(mode, QStringLiteral("Constant"));
+        QCOMPARE(source->sourceProps().constant, std::uint64_t(0x155));
+    }
+
+    void waveformPerPin()
+    {
+        App app;
+        SourceProps props = SourceProps::waveform({false, true});
+        props.bits = 3;
+        auto* source = add<SourceItem>(app, props);
+        app.select(source);
+        QCOMPARE(app.title(), QStringLiteral("Waveform source"));
+        auto* waveform = app.editor_<WaveformEditor>("sourceWaveform");
+        auto* pin1 = app.editor_<QLineEdit>("sourcePattern1");
+        QCOMPARE(app.editor_<QLineEdit>("sourcePattern0")->text(), QStringLiteral("01"));
+        QCOMPARE(pin1->text(), QStringLiteral("0"));                     // a new pin starts as a single 0
+        QVERIFY(app.panel->findChild<QLineEdit*>(QStringLiteral("sourcePattern3")) == nullptr);
+
+        typeInto(pin1, QStringLiteral("0011 0"));
+        QCOMPARE(source->sourceProps().waves[1], (QList<bool>{0, 0, 1, 1, 0}));
+        QCOMPARE(pin1->text(), QStringLiteral("0011 0"));                // spaces the user typed are kept
+        QCOMPARE(waveform->values(), (QList<bool>{0, 0, 1, 1, 0}));       // the click editor shows the pin being typed in
+        QVERIFY(app.editor_<QToolButton>("sourcePin1")->isChecked());
+
+        QTest::mouseClick(waveform, Qt::LeftButton, {}, QPoint(24 * 4 + 5, 10));   // fifth step
+        QCOMPARE(source->sourceProps().waves[1], (QList<bool>{0, 0, 1, 1, 1}));
+        QCOMPARE(pin1->text(), QStringLiteral("00111"));
+
+        app.editor_<QToolButton>("sourcePin0")->click();                 // the editor switches pins
+        QCOMPARE(waveform->values(), (QList<bool>{0, 1}));
+        QCOMPARE(sourceValueAt(source->sourceProps(), 4), std::uint64_t(0b010));   // pin 0 low, pin 1 high
+
+        QTest::keyClick(pin1, Qt::Key_2);                                // not a bit
+        QVERIFY2(app.message().contains(QStringLiteral("only contain 0 and 1")), qPrintable(app.message()));
+        QCOMPARE(source->sourceProps().waves[1].size(), 5);
+
+        // Fewer pins removes rows; the patterns come back with the pins
+        setSpin(app.editor_<QSpinBox>("sourceBits"), 1);
+        QVERIFY(app.panel->findChild<QLineEdit*>(QStringLiteral("sourcePattern1")) == nullptr);
+        setSpin(app.editor_<QSpinBox>("sourceBits"), 2);
+        QCOMPARE(app.editor_<QLineEdit>("sourcePattern1")->text(), QStringLiteral("00111"));
+    }
+
+    void sourcePinsWithWiresCannotBeRemoved()
+    {
+        App app;
+        auto* source = add<SourceItem>(app, SourceProps::counter(2), {-200, 0});
         auto* display = add<DisplayItem>(app, DisplayProps{2, 0});
         QVERIFY(connectPorts(app.scene, source->getOutputPorts()[1], display->getInputPorts()[1]));
         app.select(source);
 
-        segment(app.panel, QStringLiteral("Waveform"))->click();
-        QVERIFY(std::holds_alternative<QList<int>>(source->getValues()));
+        auto* bits = app.editor_<QSpinBox>("sourceBits");
+        setSpin(bits, 1);
         QVERIFY2(app.message().contains(QStringLiteral("Output 2 is wired")), qPrintable(app.message()));
-        QVERIFY(segment(app.panel, QStringLiteral("Values"))->isChecked());
+        QCOMPARE(source->getOutputPorts().size(), 2);
+        QCOMPARE(bits->value(), 2);
+
+        choose(app.editor_<QComboBox>("sourceMode"), QStringLiteral("Waveform"));   // switching modes keeps the pins
+        QCOMPARE(source->getOutputPorts().size(), 2);
+        QVERIFY(app.message().isEmpty());
     }
 
     void displayAndMuxEditing()
@@ -339,12 +437,12 @@ private slots:
     void mouseSelectsAndDeselects()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{2, 5}, 3}, {-150, 0});
+        auto* source = add<SourceItem>(app, SourceProps::list({2, 5}, 3), {-150, 0});
         auto* gate = add<GateItem>(app, GateProps{}, {150, 0});
 
         QTest::mouseClick(app.canvas->viewport(), Qt::LeftButton, {}, app.viewPos(source));
         QVERIFY(source->isSelected());                                   // a source used to open the overlay instead
-        QCOMPARE(app.title(), QStringLiteral("Value source"));
+        QCOMPARE(app.title(), QStringLiteral("List source"));
 
         QTest::mouseClick(app.canvas->viewport(), Qt::LeftButton, {}, app.viewPos(gate));
         QVERIFY(gate->isSelected() && !source->isSelected());
@@ -380,7 +478,7 @@ private slots:
     void severalItemsOrAWire()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<bool>{true}, 1}, {-150, 0});
+        auto* source = add<SourceItem>(app, SourceProps::waveform({true}), {-150, 0});
         auto* gate = add<GateItem>(app, GateProps{GType::NOT, 1}, {150, 0});
         WireItem* wire = connectPorts(app.scene, source->getOutputPorts()[0], gate->getInputPort(0));
 
@@ -422,15 +520,15 @@ private slots:
     void backspaceInThePanelEditsTextNotTheCircuit()
     {
         App app;
-        auto* source = add<SourceItem>(app, SourceProps{QList<int>{12, 3}, 4});
+        auto* source = add<SourceItem>(app, SourceProps::list({12, 3}, 4));
         app.select(source);
-        auto* values = app.editor_<QLineEdit>("sourceValues");
+        auto* values = app.editor_<QPlainTextEdit>("sourceValues");
         values->setFocus();
-        values->end(false);
+        values->moveCursor(QTextCursor::End);
         QTest::keyClick(values, Qt::Key_Backspace);                      // deletes the "3", not the source
         QVERIFY(app.scene->items().contains(source));
-        QCOMPARE(values->text(), QStringLiteral("12, "));
-        QCOMPARE(std::get<QList<int>>(source->getValues()), QList<int>{12});
+        QCOMPARE(values->toPlainText(), QStringLiteral("12, "));
+        QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{12});
     }
 
     void clearingTheCanvasWhileSomethingIsSelected()

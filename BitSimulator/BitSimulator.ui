@@ -456,6 +456,38 @@ QDockWidget::title {
 	color: #4f5b62;
 }
 
+/* The pin buttons of a waveform source: the checked one is the pin the step editor shows */
+QToolButton[wavePin=&quot;true&quot;] {
+	padding: 3px 0px;
+	background-color: #1b2227;
+	color: #e4ebee;
+	border: 1px solid #263036;
+	border-radius: 5px;
+}
+
+QToolButton[wavePin=&quot;true&quot;]:hover {
+	background-color: #222b31;
+}
+
+QToolButton[wavePin=&quot;true&quot;]:checked {
+	background-color: #14b8a6;
+	border-color: #14b8a6;
+	color: #04211e;
+	font-weight: bold;
+}
+
+/* The numbers of a list source */
+#sourceValues {
+	background-color: #0c1013;
+	border: 1px solid #263036;
+	border-radius: 5px;
+	padding: 2px 4px;
+}
+
+#sourceValues:focus {
+	border-color: #14b8a6;
+}
+
 /* ---------- Canvas ----------
    The canvas, its components and the toolbar icons are painted in code, which reads these.
    canvasColor and dotColor are the background and its dot grid.

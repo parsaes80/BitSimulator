@@ -103,6 +103,7 @@ private:
 
     // Cached per simulation run (rebuilt in startSim) so receiveResult avoids scanning items()
     QList<QPointer<DisplayItem>> m_displays;
+    QList<QPointer<SourceItem>> m_sources;   // they show their value at the tick the simulator reports
     std::vector<u8> m_lastNetValues; // last applied net values; only changed nets are pushed to wires
 };
 

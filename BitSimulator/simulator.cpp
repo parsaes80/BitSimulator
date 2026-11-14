@@ -280,13 +280,18 @@ void Simulator::tick() {
         }
     }
 
-    for (auto& source : m_sources) {
-        source.currentIndex++;
-        if (source.currentIndex >= source.cycleValues.size()) {source.currentIndex = 0;}
-        bool oldValue = m_nets[source.outID];
-        if(source.outID!=0 && oldValue != source.cycleValues[source.currentIndex]){
-            m_nets[source.outID] = source.cycleValues[source.currentIndex];
-            enqueue(source.outID);
+    // Every source puts its value for this tick on its pins (bit i on pin i)
+    const u64 tick = m_tick++;
+    for (const auto& source : m_sources) {
+        const u64 value = sourceValueAt(source.props, tick);
+        for (size_t bit = 0; bit < source.outIDs.size(); bit++) {
+            const u32 net = source.outIDs[bit];
+            if (net == 0) {continue;}   // pin not connected
+            const u8 level = (value >> bit) & 1;
+            if (m_nets[net] != level) {
+                m_nets[net] = level;
+                enqueue(net);
+            }
         }
     }
 
@@ -312,8 +317,7 @@ void Simulator::tick() {
 
     SimResult result;
     result.runId = m_runId;
-    result.sourcesCurrIdx.reserve(m_sources.size());
-    for (const auto& source : m_sources) {result.sourcesCurrIdx.push_back(source.currentIndex);}
+    result.sourceTick = tick;
     result.registerValues.reserve(m_registers.size());
     for (const auto& reg : m_registers) {result.registerValues.push_back(reg.storedValue);}
 
@@ -331,6 +335,7 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_muxes = graph.muxes;
 
     firstTick = true;
+    m_tick = 0;
     m_runId = graph.runId;
     const size_t numNets = graph.numNets;   // sent with the circuit; the GUI's wire map is not ours to read
     m_nets.assign(numNets + 1, 0);

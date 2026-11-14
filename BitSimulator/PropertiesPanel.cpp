@@ -9,9 +9,11 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -19,13 +21,46 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <expected>
+#include <limits>
 
 namespace {
 
 template <typename... Ts>
 struct Overloaded : Ts... { using Ts::operator()...; };
 
-//===================== Source value text <-> lists ========================
+//===================== Source value text <-> numbers ========================
+
+// One number: decimal, 0x hex or 0b binary; "_" may group digits (0b1010_0101). Up to 64 bits.
+std::expected<std::uint64_t, QString> parseNumber(const QString& input)
+{
+    QString text = input.trimmed().toLower();
+    text.remove(u'_');
+    int base = 10;
+    if (text.startsWith(QStringLiteral("0x"))) { base = 16; text = text.mid(2); }
+    else if (text.startsWith(QStringLiteral("0b"))) { base = 2; text = text.mid(2); }
+
+    bool ok = false;
+    const std::uint64_t value = text.toULongLong(&ok, base);
+    if (!ok || text.isEmpty() || text.startsWith(u'+') || text.startsWith(u'-'))
+        return std::unexpected(PropertiesPanel::tr("\"%1\" is not a whole number of 0 or more (decimal, 0x hex or 0b binary, up to 64 bits).").arg(input.trimmed()));
+    return value;
+}
+
+// A list of numbers separated by commas, semicolons, spaces or new lines.
+std::expected<QList<std::uint64_t>, QString> parseNumbers(const QString& text)
+{
+    static const QRegularExpression separators(QStringLiteral("[,;\\s]+"));
+    QList<std::uint64_t> values;
+    for (const QString& part : text.split(separators, Qt::SkipEmptyParts)) {
+        const auto value = parseNumber(part);
+        if (!value) return std::unexpected(value.error());
+        values.append(*value);
+        if (values.size() > SourceLimits::maxSteps)
+            return std::unexpected(PropertiesPanel::tr("A list can have at most %1 values.").arg(SourceLimits::maxSteps));
+    }
+    if (values.isEmpty()) return std::unexpected(PropertiesPanel::tr("Enter at least one value."));
+    return values;
+}
 
 std::expected<QList<bool>, QString> parseWaveform(const QString& text)
 {
@@ -33,33 +68,12 @@ std::expected<QList<bool>, QString> parseWaveform(const QString& text)
     for (const QChar c : text) {
         if (c == u'0') values.append(false);
         else if (c == u'1') values.append(true);
-        else if (c.isSpace() || c == u',' || c == u'-') continue;      // separators are allowed
+        else if (c.isSpace() || c == u',' || c == u'-' || c == u'_') continue;      // separators are allowed
         else return std::unexpected(PropertiesPanel::tr("A waveform can only contain 0 and 1."));
     }
     if (values.isEmpty()) return std::unexpected(PropertiesPanel::tr("Enter at least one step."));
-    if (values.size() > ItemLimits::maxSourceSteps)
-        return std::unexpected(PropertiesPanel::tr("A source can have at most %1 steps.").arg(ItemLimits::maxSourceSteps));
-    return values;
-}
-
-std::expected<QList<int>, QString> parseNumbers(const QString& text)
-{
-    static const QRegularExpression separators(QStringLiteral("[,\\s]+"));
-    const int largest = (1 << ItemLimits::maxSourceBits) - 1;
-
-    QList<int> values;
-    for (const QString& part : text.split(separators, Qt::SkipEmptyParts)) {
-        bool ok = false;
-        const int value = part.toInt(&ok);
-        if (!ok || value < 0)
-            return std::unexpected(PropertiesPanel::tr("\"%1\" is not a whole number of 0 or more.").arg(part));
-        if (value > largest)
-            return std::unexpected(PropertiesPanel::tr("Values above %1 are not supported.").arg(largest));
-        values.append(value);
-    }
-    if (values.isEmpty()) return std::unexpected(PropertiesPanel::tr("Enter at least one value."));
-    if (values.size() > ItemLimits::maxSourceSteps)
-        return std::unexpected(PropertiesPanel::tr("A source can have at most %1 steps.").arg(ItemLimits::maxSourceSteps));
+    if (values.size() > SourceLimits::maxSteps)
+        return std::unexpected(PropertiesPanel::tr("A waveform can have at most %1 steps.").arg(SourceLimits::maxSteps));
     return values;
 }
 
@@ -71,11 +85,19 @@ QString formatWaveform(const QList<bool>& values)
     return text;
 }
 
-QString formatNumbers(const QList<int>& values)
+QString formatNumbers(const QList<std::uint64_t>& values)
 {
     QStringList parts;
-    for (const int value : values) parts << QString::number(value);
+    parts.reserve(values.size());
+    for (const std::uint64_t value : values) parts << QString::number(value);
     return parts.join(QStringLiteral(", "));
+}
+
+// Shows a number in a line edit unless the text there already means it (so typing "0x1F" is not rewritten)
+void showNumber(QLineEdit* edit, std::uint64_t value)
+{
+    const auto shown = parseNumber(edit->text());
+    if (!shown || *shown != value) edit->setText(QString::number(value));
 }
 
 //===================== Small widget helpers ========================
@@ -185,9 +207,14 @@ void WaveformEditor::setValues(const QList<bool>& values)
     update();
 }
 
+int WaveformEditor::shownSteps() const
+{
+    return std::min(static_cast<int>(m_values.size()), MaxShownSteps);
+}
+
 int WaveformEditor::rows() const
 {
-    return std::max(1, static_cast<int>((m_values.size() + WaveColumns - 1) / WaveColumns));
+    return std::max(1, (shownSteps() + WaveColumns - 1) / WaveColumns);
 }
 
 QSize WaveformEditor::sizeHint() const
@@ -210,7 +237,7 @@ void WaveformEditor::paintEvent(QPaintEvent*)
     painter.setRenderHint(QPainter::Antialiasing);
     painter.fillRect(rect(), theme.background);
 
-    for (int i = 0; i < m_values.size(); i++) {
+    for (int i = 0; i < shownSteps(); i++) {
         const int column = i % WaveColumns;
         const int x = column * WaveCellWidth;
         const int y = (i / WaveColumns) * WaveRowHeight;
@@ -239,7 +266,7 @@ void WaveformEditor::mousePressEvent(QMouseEvent* event)
     const QPoint pos = event->position().toPoint();
     const int column = pos.x() / WaveCellWidth;
     const int index = (pos.y() / WaveRowHeight) * WaveColumns + column;
-    if (column >= WaveColumns || index < 0 || index >= m_values.size()) return;
+    if (column >= WaveColumns || index < 0 || index >= shownSteps()) return;
 
     m_values[index] = !m_values[index];
     update();
@@ -567,6 +594,62 @@ void PropertiesPanel::loadMux(const MuxProps& props)
 
 //===================== Source ========================
 
+namespace {
+
+// Which page of settings a source mode uses (counter, Gray code and walking one share one)
+enum SourcePage { SequencePage, RandomPage, ListPage, WaveformsPage, ConstantPage };
+
+SourcePage sourcePage(SourceMode mode)
+{
+    switch (mode) {
+    case SourceMode::Counter:
+    case SourceMode::GrayCode:
+    case SourceMode::WalkingOne: return SequencePage;
+    case SourceMode::Random:     return RandomPage;
+    case SourceMode::List:       return ListPage;
+    case SourceMode::Waveforms:  return WaveformsPage;
+    case SourceMode::Constant:   return ConstantPage;
+    }
+    return SequencePage;
+}
+
+QString sourceModeInfo(SourceMode mode)
+{
+    switch (mode) {
+    case SourceMode::Counter:
+        return PropertiesPanel::tr("Counts from Start by Step, up or down. It wraps around at the number of bits: with 8 bits, 255 is followed by 0.");
+    case SourceMode::GrayCode:
+        return PropertiesPanel::tr("Counts from Start in Gray code: exactly one pin changes per step. It wraps around at the number of bits.");
+    case SourceMode::WalkingOne:
+        return PropertiesPanel::tr("A single 1 moves one pin per step. Up: 1, 2, 4, 8, ... (bit 0, the top pin, first). Down: the other way.");
+    case SourceMode::Random:
+        return PropertiesPanel::tr("A random number over all bits at every step. The same seed gives the same numbers on every run.");
+    case SourceMode::List:
+        return PropertiesPanel::tr("One value per step, then the list repeats. Separate values with commas, spaces or new lines; write 0x... for hex and 0b... for binary.");
+    case SourceMode::Waveforms:
+        return PropertiesPanel::tr("Each pin repeats its own pattern of 0s and 1s, one step at a time. The patterns can have different lengths.");
+    case SourceMode::Constant:
+        return PropertiesPanel::tr("Always outputs this value. Write 0x... for hex and 0b... for binary.");
+    }
+    return {};
+}
+
+// The first values the source outputs, so the effect of each setting can be seen right away
+QString sourcePreview(const SourceProps& props)
+{
+    if (props.mode == SourceMode::Constant)
+        return PropertiesPanel::tr("Outputs %1").arg(sourceValueAt(props, 0));
+
+    constexpr int shownSteps = 8;
+    QStringList values;
+    for (int step = 0; step < shownSteps; step++) {
+        values << QString::number(sourceValueAt(props, std::uint64_t(step) * std::uint64_t(props.ticksPerStep)));
+    }
+    return PropertiesPanel::tr("Steps: %1, ...").arg(values.join(QStringLiteral(", ")));
+}
+
+} // namespace
+
 QWidget* PropertiesPanel::buildSourcePage()
 {
     auto* page = new QWidget;
@@ -574,92 +657,256 @@ QWidget* PropertiesPanel::buildSourcePage()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(10);
 
-    const auto kind = makeSegmented({{0, tr("Waveform")}, {1, tr("Values")}});
-    m_sourceKind = kind.group;
-    kind.widget->setToolTip(tr("A waveform drives one wire with 0s and 1s. Values drive several wires with whole numbers."));
-    layout->addWidget(kind.widget);
+    // What every mode has: the mode itself, the number of output pins, and how long each value lasts
+    auto* common = new QWidget;
+    m_sourceForm = makeForm(common);
+    m_sourceMode = new QComboBox;
+    m_sourceMode->setObjectName(QStringLiteral("sourceMode"));
+    for (const SourceMode mode : allSourceModes) m_sourceMode->addItem(sourceModeName(mode), static_cast<int>(mode));
+    m_sourceBits = makeSpin(1, SourceLimits::maxBits);
+    m_sourceBits->setObjectName(QStringLiteral("sourceBits"));
+    m_sourceBits->setToolTip(tr("Output pins; each pin is one bit, lowest bit on top"));
+    m_sourceEvery = makeSpin(1, SourceLimits::maxTicksPerStep);
+    m_sourceEvery->setObjectName(QStringLiteral("sourceEvery"));
+    m_sourceEvery->setToolTip(tr("A new value every this many simulation ticks"));
+    m_sourceForm->addRow(tr("Mode"), m_sourceMode);
+    m_sourceForm->addRow(tr("Bits"), m_sourceBits);
+    m_sourceForm->addRow(tr("Every"), m_sourceEvery);
+    layout->addWidget(common);
 
-    // Waveform: one output pin stepping through a pattern of bits
+    // Counter, Gray code and walking one
+    auto* sequencePage = new QWidget;
+    m_sequenceForm = makeForm(sequencePage);
+    const auto direction = makeSegmented({{0, tr("Up")}, {1, tr("Down")}});
+    m_sourceDirection = direction.group;
+    m_sourceStart = new QLineEdit;
+    m_sourceStart->setObjectName(QStringLiteral("sourceStart"));
+    m_sourceStep = new QLineEdit;
+    m_sourceStep->setObjectName(QStringLiteral("sourceStep"));
+    m_sequenceForm->addRow(tr("Direction"), direction.widget);
+    m_sequenceForm->addRow(tr("Start"), m_sourceStart);
+    m_sequenceForm->addRow(tr("Step"), m_sourceStep);
+
+    // Random
+    auto* randomPage = new QWidget;
+    auto* randomForm = makeForm(randomPage);
+    m_sourceSeed = makeSpin(0, std::numeric_limits<int>::max());
+    m_sourceSeed->setObjectName(QStringLiteral("sourceSeed"));
+    randomForm->addRow(tr("Seed"), m_sourceSeed);
+
+    // List
+    auto* listPage = new QWidget;
+    auto* listLayout = new QVBoxLayout(listPage);
+    listLayout->setContentsMargins(0, 0, 0, 0);
+    listLayout->setSpacing(4);
+    m_sourceList = new QPlainTextEdit;
+    m_sourceList->setObjectName(QStringLiteral("sourceValues"));
+    m_sourceList->setPlaceholderText(QStringLiteral("2, 5"));
+    m_sourceList->setTabChangesFocus(true);
+    m_sourceList->setFixedHeight(96);
+    m_sourceListCount = mutedLabel();
+    listLayout->addWidget(m_sourceList);
+    listLayout->addWidget(m_sourceListCount);
+
+    // Waveforms: one pattern row per pin, and a click editor for the chosen pin
     auto* wavePage = new QWidget;
-    auto* waveForm = makeForm(wavePage);
-    m_wavePattern = new QLineEdit;
-    m_wavePattern->setPlaceholderText(QStringLiteral("0101"));
-    m_wavePattern->setObjectName(QStringLiteral("sourcePattern"));
+    auto* waveLayout = new QVBoxLayout(wavePage);
+    waveLayout->setContentsMargins(0, 0, 0, 0);
+    waveLayout->setSpacing(6);
+    m_wavePins = new QWidget;
+    auto* pinsLayout = new QVBoxLayout(m_wavePins);
+    pinsLayout->setContentsMargins(0, 0, 0, 0);
+    pinsLayout->setSpacing(4);
+    m_wavePinsScroll = new QScrollArea;
+    m_wavePinsScroll->setWidget(m_wavePins);
+    m_wavePinsScroll->setWidgetResizable(true);
+    m_wavePinsScroll->setFrameShape(QFrame::NoFrame);
+    m_wavePinsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_wavePinGroup = new QButtonGroup(this);
+    m_wavePinGroup->setExclusive(true);
+    m_waveEditorLabel = mutedLabel();
     m_waveEditor = new WaveformEditor;
     m_waveEditor->setObjectName(QStringLiteral("sourceWaveform"));
-    waveForm->addRow(tr("Pattern"), m_wavePattern);
-    waveForm->addRow(m_waveEditor);
-    waveForm->addRow(mutedLabel(tr("One step per simulation tick, then it repeats. Click a step to flip it.")));
+    waveLayout->addWidget(m_wavePinsScroll);
+    waveLayout->addWidget(m_waveEditorLabel);
+    waveLayout->addWidget(m_waveEditor);
 
-    // Values: several output pins stepping through numbers
-    auto* numbersPage = new QWidget;
-    auto* numbersForm = makeForm(numbersPage);
-    m_numbers = new QLineEdit;
-    m_numbers->setPlaceholderText(QStringLiteral("2, 5"));
-    m_numbers->setObjectName(QStringLiteral("sourceValues"));
-    m_sourceBits = makeSpin(1, ItemLimits::maxSourceBits);
-    m_sourceBits->setObjectName(QStringLiteral("sourceBits"));
-    numbersForm->addRow(tr("Values"), m_numbers);
-    numbersForm->addRow(tr("Bits"), m_sourceBits);
-    numbersForm->addRow(mutedLabel(tr("One value per simulation tick, then it repeats. Each bit is one output pin, lowest bit on top.")));
+    // Constant
+    auto* constantPage = new QWidget;
+    auto* constantForm = makeForm(constantPage);
+    m_sourceConstant = new QLineEdit;
+    m_sourceConstant->setObjectName(QStringLiteral("sourceConstant"));
+    constantForm->addRow(tr("Value"), m_sourceConstant);
 
-    m_sourcePages = new QStackedWidget;
-    m_sourcePages->addWidget(wavePage);
-    m_sourcePages->addWidget(numbersPage);
-    layout->addWidget(m_sourcePages);
+    m_sourcePages = {sequencePage, randomPage, listPage, wavePage, constantPage};   // in SourcePage order
+    for (QWidget* settings : std::as_const(m_sourcePages)) layout->addWidget(settings);
 
-    connect(m_sourceKind, &QButtonGroup::idClicked, this, [this](int id) {
-        edit<SourceProps>([this, id](SourceProps& p) {
-            if (id == 0) p.values = m_lastWaveform;
-            else p.values = m_lastNumbers;
-            p.bits = 1;                       // normalized() widens it to fit the values
+    m_sourcePreview = mutedLabel();
+    m_sourcePreview->setObjectName(QStringLiteral("sourcePreview"));
+    m_sourceInfo = mutedLabel();
+    layout->addWidget(m_sourcePreview);
+    layout->addWidget(m_sourceInfo);
+
+    // A number field: apply the number when it parses, otherwise explain and keep the last valid one
+    const auto connectNumber = [this](QLineEdit* field, std::uint64_t SourceProps::* member) {
+        connect(field, &QLineEdit::textEdited, this, [this, member](const QString& text) {
+            if (const auto value = parseNumber(text)) {
+                edit<SourceProps>([&](SourceProps& p) { p.*member = *value; });
+            } else {
+                showMessage(value.error());
+            }
         });
+    };
+    connectNumber(m_sourceStart, &SourceProps::start);
+    connectNumber(m_sourceStep, &SourceProps::step);
+    connectNumber(m_sourceConstant, &SourceProps::constant);
+
+    connect(m_sourceMode, &QComboBox::activated, this, [this](int index) {
+        const auto mode = static_cast<SourceMode>(m_sourceMode->itemData(index).toInt());
+        edit<SourceProps>([mode](SourceProps& p) { p.mode = mode; });
     });
-    connect(m_wavePattern, &QLineEdit::textEdited, this, [this](const QString& text) {
-        if (const auto values = parseWaveform(text)) {
-            edit<SourceProps>([&values](SourceProps& p) { p.values = *values; });
-        } else {
-            showMessage(values.error());      // keep the last valid pattern until the text is fixed
-        }
+    connect(m_sourceBits, &QSpinBox::valueChanged, this, [this](int value) {
+        edit<SourceProps>([value](SourceProps& p) { p.bits = value; });
     });
-    connect(m_waveEditor, &WaveformEditor::valuesEdited, this, [this](const QList<bool>& values) {
-        edit<SourceProps>([&values](SourceProps& p) { p.values = values; });
+    connect(m_sourceEvery, &QSpinBox::valueChanged, this, [this](int value) {
+        m_sourceEvery->setSuffix(value == 1 ? tr(" tick") : tr(" ticks"));
+        edit<SourceProps>([value](SourceProps& p) { p.ticksPerStep = value; });
     });
-    connect(m_numbers, &QLineEdit::textEdited, this, [this](const QString& text) {
-        if (const auto values = parseNumbers(text)) {
+    connect(m_sourceDirection, &QButtonGroup::idClicked, this, [this](int id) {
+        edit<SourceProps>([id](SourceProps& p) { p.countDown = (id == 1); });
+    });
+    connect(m_sourceSeed, &QSpinBox::valueChanged, this, [this](int value) {
+        edit<SourceProps>([value](SourceProps& p) { p.seed = static_cast<std::uint32_t>(value); });
+    });
+    connect(m_sourceList, &QPlainTextEdit::textChanged, this, [this] {
+        if (m_loading) return;
+        if (const auto values = parseNumbers(m_sourceList->toPlainText())) {
             edit<SourceProps>([&values](SourceProps& p) { p.values = *values; });
         } else {
             showMessage(values.error());
         }
     });
-    connect(m_sourceBits, &QSpinBox::valueChanged, this, [this](int value) {
-        edit<SourceProps>([value](SourceProps& p) { p.bits = value; });
+    connect(m_wavePinGroup, &QButtonGroup::idClicked, this, &PropertiesPanel::selectWavePin);
+    connect(m_waveEditor, &WaveformEditor::valuesEdited, this, [this](const QList<bool>& values) {
+        edit<SourceProps>([this, &values](SourceProps& p) {
+            if (m_wavePin < p.waves.size()) p.waves[m_wavePin] = values;
+        });
     });
     return page;
 }
 
+void PropertiesPanel::setWavePinCount(int count)
+{
+    auto* pinsLayout = static_cast<QVBoxLayout*>(m_wavePins->layout());
+    while (m_wavePatterns.size() < count) {
+        const int pin = static_cast<int>(m_wavePatterns.size());
+        auto* row = new QWidget;
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(6);
+
+        auto* pinButton = new QToolButton;
+        pinButton->setText(QString::number(pin));
+        pinButton->setCheckable(true);
+        pinButton->setFixedWidth(34);
+        pinButton->setObjectName(QStringLiteral("sourcePin%1").arg(pin));
+        pinButton->setProperty("wavePin", true);          // styled by the QToolButton[wavePin="true"] rule in BitSimulator.ui
+        pinButton->setToolTip(tr("Pin %1 (bit %1): edit its pattern with the steps below").arg(pin));
+        m_wavePinGroup->addButton(pinButton, pin);
+
+        auto* pattern = new QLineEdit;
+        pattern->setObjectName(QStringLiteral("sourcePattern%1").arg(pin));
+        pattern->setPlaceholderText(QStringLiteral("0101"));
+        connect(pattern, &QLineEdit::textEdited, this, [this, pin](const QString& text) {
+            selectWavePin(pin);
+            if (const auto wave = parseWaveform(text)) {
+                edit<SourceProps>([pin, &wave](SourceProps& p) {
+                    if (pin < p.waves.size()) p.waves[pin] = *wave;
+                });
+            } else {
+                showMessage(wave.error());       // keep the last valid pattern until the text is fixed
+            }
+        });
+
+        rowLayout->addWidget(pinButton);
+        rowLayout->addWidget(pattern, 1);
+        pinsLayout->addWidget(row);
+        m_wavePatterns.append(pattern);
+    }
+    while (m_wavePatterns.size() > count) {
+        delete m_wavePatterns.takeLast()->parentWidget();   // the row, with its pin button
+    }
+
+    // As tall as the rows, up to about six of them; more rows scroll
+    m_wavePins->adjustSize();
+    m_wavePinsScroll->setFixedHeight(std::min(m_wavePins->sizeHint().height(), 180));
+}
+
+void PropertiesPanel::selectWavePin(int pin)
+{
+    const auto* props = std::get_if<SourceProps>(&m_shown);
+    if (!props) return;
+    m_wavePin = std::clamp(pin, 0, std::max(props->bits - 1, 0));
+    if (QAbstractButton* button = m_wavePinGroup->button(m_wavePin)) button->setChecked(true);
+
+    const QList<bool> wave = props->waves.value(m_wavePin);
+    m_waveEditor->setValues(wave);
+    m_waveEditorLabel->setText(wave.size() > WaveformEditor::MaxShownSteps
+        ? tr("Pin %1: click a step to flip it. The first %2 of %3 steps are shown; type the rest in its pattern.")
+              .arg(m_wavePin).arg(WaveformEditor::MaxShownSteps).arg(wave.size())
+        : tr("Pin %1: click a step to flip it.").arg(m_wavePin));
+}
+
 void PropertiesPanel::loadSource(const SourceProps& props)
 {
-    if (const auto* wave = std::get_if<QList<bool>>(&props.values)) {
-        m_lastWaveform = *wave;
-        check(m_sourceKind, 0);
-        showPage(m_sourcePages, 0);
-        m_waveEditor->setValues(*wave);
-        // Leave the text alone while it already means the same thing, so typing "01 01" is not rewritten
-        if (parseWaveform(m_wavePattern->text()) != *wave) m_wavePattern->setText(formatWaveform(*wave));
-    } else {
-        const auto& numbers = std::get<QList<int>>(props.values);
-        m_lastNumbers = numbers;
-        check(m_sourceKind, 1);
-        showPage(m_sourcePages, 1);
-        if (parseNumbers(m_numbers->text()) != numbers) m_numbers->setText(formatNumbers(numbers));
-        {
-            // Fewer pins than the largest value needs is not possible
-            const QSignalBlocker blocker(m_sourceBits);
-            m_sourceBits->setRange(bitsNeeded(numbers), std::max(ItemLimits::maxSourceBits, props.bits));
-        }
-        showValue(m_sourceBits, props.bits);
+    {
+        const QSignalBlocker blocker(m_sourceMode);
+        m_sourceMode->setCurrentIndex(m_sourceMode->findData(static_cast<int>(props.mode)));
     }
+
+    // A list or constant needs enough pins for its largest value
+    int minBits = 1;
+    if (props.mode == SourceMode::List) minBits = bitsNeeded(props.values);
+    if (props.mode == SourceMode::Constant) minBits = bitsNeeded(props.constant);
+    {
+        const QSignalBlocker blocker(m_sourceBits);
+        m_sourceBits->setRange(minBits, SourceLimits::maxBits);
+    }
+    showValue(m_sourceBits, props.bits);
+    showValue(m_sourceEvery, props.ticksPerStep);
+    m_sourceEvery->setSuffix(props.ticksPerStep == 1 ? tr(" tick") : tr(" ticks"));
+    m_sourceForm->setRowVisible(m_sourceEvery, props.mode != SourceMode::Constant);
+
+    for (qsizetype page = 0; page < m_sourcePages.size(); page++) m_sourcePages[page]->setVisible(page == sourcePage(props.mode));
+
+    // Counter, Gray code, walking one
+    check(m_sourceDirection, props.countDown ? 1 : 0);
+    showNumber(m_sourceStart, props.start);
+    showNumber(m_sourceStep, props.step);
+    m_sequenceForm->setRowVisible(m_sourceStart, props.mode != SourceMode::WalkingOne);
+    m_sequenceForm->setRowVisible(m_sourceStep, props.mode == SourceMode::Counter);
+
+    showValue(m_sourceSeed, static_cast<int>(std::min<std::uint32_t>(props.seed, std::numeric_limits<int>::max())));
+
+    // List: leave the text alone while it already means the same list, so typing is not rewritten
+    if (parseNumbers(m_sourceList->toPlainText()) != props.values) {
+        const QSignalBlocker blocker(m_sourceList);
+        m_sourceList->setPlainText(formatNumbers(props.values));
+    }
+    m_sourceListCount->setText(props.values.size() == 1 ? tr("1 value") : tr("%1 values").arg(props.values.size()));
+
+    // Waveforms: a pattern row per pin
+    setWavePinCount(props.bits);
+    for (int pin = 0; pin < props.bits; pin++) {
+        const QList<bool> wave = props.waves.value(pin);
+        if (parseWaveform(m_wavePatterns[pin]->text()) != wave) m_wavePatterns[pin]->setText(formatWaveform(wave));
+    }
+    selectWavePin(m_wavePin);
+
+    showNumber(m_sourceConstant, props.constant);
+
+    m_sourcePreview->setText(sourcePreview(props));
+    m_sourceInfo->setText(sourceModeInfo(props.mode));
 }
 
 //===================== Display ========================

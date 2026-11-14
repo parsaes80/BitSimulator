@@ -1,5 +1,6 @@
 #include "Items.h"
 #include "CanvasTheme.h"
+#include <QFontMetricsF>
 #include <QMouseEvent>
 #include <qscrollbar.h>
 #include <algorithm>
@@ -472,7 +473,7 @@ ComponentItem::EditResult SourceItem::setProps(const ItemProps& props)
 
     prepareGeometryChange();
     m_props = next;
-    m_currIdx = 0;
+    m_tick = 0;
     resizePorts(m_outputPorts, m_props.bits, PortType::OUT);
     layoutPorts();
     return {};
@@ -488,24 +489,40 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     font.setBold(true);
     painter->setFont(font);
 
-    // The step index comes from the simulator; fall back to step 0 if the list was edited since
-    QString text;
-    bool lit = false;          // a waveform source showing a 1 while the simulation runs
-    if (const auto* boolValues = std::get_if<QList<bool>>(&m_props.values)) {
-        const bool high = boolValues->value(m_currIdx, boolValues->value(0));
-        text = high ? QStringLiteral("1") : QStringLiteral("0");
-        lit = high && sim_values_visible;
-    }
-    else {
-        const auto& intValues = std::get<QList<int>>(m_props.values);
-        text = QString::number(intValues.value(m_currIdx, intValues.value(0)));
-    }
+    // The value at the tick the simulator last reported (tick 0, the first value, when not running)
+    const u64 current = value();
+    const QString text = QString::number(current);
+    const bool lit = m_props.bits == 1 && current != 0 && sim_values_visible;   // a 1-pin source showing a 1
 
     painter->setPen(QPen(lit ? theme.wireHigh : theme.source, 2));
     painter->setBrush(lit ? theme.wireHigh : theme.componentFill);
     painter->drawRoundedRect(m_rect, 3, 3);
     painter->setPen(lit ? theme.background : theme.componentText);
-    painter->drawText(m_rect, Qt::AlignCenter, text);
+
+    // A wide source is a tall, narrow box: run a number that does not fit across it along its length,
+    // and shrink the font if it does not fit that way either
+    QRectF box = m_rect;
+    painter->save();
+    if (QFontMetricsF(font).horizontalAdvance(text) > box.width() - 4 && box.height() > box.width()) {
+        painter->translate(box.center());
+        painter->rotate(-90);
+        box = QRectF(-m_rect.height() / 2, -m_rect.width() / 2, m_rect.height(), m_rect.width());
+    }
+    const qreal needed = QFontMetricsF(font).horizontalAdvance(text);
+    if (needed > box.width() - 4) {
+        font.setPointSizeF(std::max(5.0, font.pointSizeF() * (box.width() - 4) / needed));
+        painter->setFont(font);
+    }
+    painter->drawText(box, Qt::AlignCenter, text);
+    painter->restore();
+}
+
+void SourceItem::setTick(u64 tick)
+{
+    if (tick == m_tick) return;
+    const bool changed = sourceValueAt(m_props, tick) != value();
+    m_tick = tick;
+    if (changed) update();
 }
 
 void SourceItem::layoutPorts()
