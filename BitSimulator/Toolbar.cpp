@@ -1,6 +1,5 @@
 #include "Toolbar.h"
 #include "Items.h"
-#include "CanvasTheme.h"
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -50,9 +49,9 @@ void GateButton::paintEvent(QPaintEvent* event)
 
 void GateButton::drawGateSymbol(QPainter* painter, double width, double height)
 {
-    // A dark body outlined in the gate's color, as on the canvas. The draw functions below keep this pen and brush.
+    // Outlined in the gate's color with a body tinted with it, as on the canvas. The draw functions below keep this pen and brush.
     painter->setPen(QPen(canvasTheme().gateColor(m_gateType), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter->setBrush(canvasTheme().componentFill);
+    painter->setBrush(canvasTheme().fillFor(canvasTheme().gateColor(m_gateType)));
     
     switch (m_gateType) {
     case GType::AND:
@@ -307,7 +306,7 @@ void GateButton::drawNOTGate(QPainter* painter, double width, double height)
 void GateButton::drawNOTBubble(QPainter* painter, double width, double height)
 {
     painter->setPen(QPen(canvasTheme().gateColor(m_gateType), 2));
-    painter->setBrush(canvasTheme().componentFill);
+    painter->setBrush(canvasTheme().fillFor(canvasTheme().gateColor(m_gateType)));
     double bubbleRadius = width * 0.08;  // Bubble size relative to width
     double QuarterWidth = width / 4;
     
@@ -343,7 +342,7 @@ void SourceButton::paintEvent(QPaintEvent* event)
 
     const CanvasTheme& theme = canvasTheme();
     painter.setPen(QPen(theme.source, 2));
-    painter.setBrush(theme.componentFill);
+    painter.setBrush(theme.fillFor(theme.source));
     QRectF sourceRect(-12, -10, 24, 20);
     painter.drawRoundedRect(sourceRect, 3, 3);
 
@@ -385,7 +384,7 @@ void RegisterButton::paintEvent(QPaintEvent* event)
 
     const CanvasTheme& theme = canvasTheme();
     painter.setPen(QPen(theme.reg, 2));
-    painter.setBrush(theme.componentFill);
+    painter.setBrush(theme.fillFor(theme.reg));
     QRectF registerRect(-10, -14, 20, 28);   // taller than wide
     painter.drawRoundedRect(registerRect, 3, 3);
 
@@ -441,7 +440,7 @@ void MuxButton::paintEvent(QPaintEvent* event)
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
     painter.setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.setBrush(canvasTheme().componentFill);
+    painter.setBrush(canvasTheme().fillFor(canvasTheme().mux));
     painter.drawPath(path);
 
     // Draw "MUX" text on top
@@ -484,11 +483,11 @@ void DisplayButton::paintEvent(QPaintEvent* event)
     double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 60.0);
     painter.scale(scale, scale);
 
-    // Casing outlined in the display's color, a screen as dark as the canvas, and a sample digit
+    // Casing outlined in the display's color and tinted with it, a screen as dark as the canvas, and a sample digit
     const CanvasTheme& theme = canvasTheme();
     QRectF outerRect(-20, -30, 40, 60);
     painter.setPen(QPen(theme.display, 2));
-    painter.setBrush(theme.componentFill);
+    painter.setBrush(theme.fillFor(theme.display));
     painter.drawRoundedRect(outerRect, 4, 4);
 
     QRectF displayArea = outerRect.adjusted(5, 5, -5, -5);

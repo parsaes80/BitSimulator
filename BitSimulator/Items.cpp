@@ -1,5 +1,4 @@
 #include "Items.h"
-#include "CanvasTheme.h"
 #include <QFontMetricsF>
 #include <QMouseEvent>
 #include <qscrollbar.h>
@@ -168,7 +167,7 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     // Every gate shape below draws with this pen and brush: a dark body, outlined in the gate's color
     painter->setRenderHint(QPainter::Antialiasing, true);
     painter->setPen(QPen(canvasTheme().gateColor(m_props.type), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter->setBrush(canvasTheme().componentFill);
+    painter->setBrush(canvasTheme().fillFor(canvasTheme().gateColor(m_props.type)));
     drawGateShape(painter);
 }
 
@@ -495,7 +494,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     const bool lit = m_props.bits == 1 && current != 0 && sim_values_visible;   // a 1-pin source showing a 1
 
     painter->setPen(QPen(lit ? theme.wireHigh : theme.source, 2));
-    painter->setBrush(lit ? theme.wireHigh : theme.componentFill);
+    painter->setBrush(lit ? theme.wireHigh : theme.fillFor(theme.source));
     painter->drawRoundedRect(m_rect, 3, 3);
     painter->setPen(lit ? theme.background : theme.componentText);
 
@@ -608,7 +607,7 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
     const CanvasTheme& theme = canvasTheme();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(QPen(m_value ? theme.wireHigh : theme.reg, 2));
-    painter->setBrush(m_value ? theme.wireHigh : theme.componentFill);
+    painter->setBrush(m_value ? theme.wireHigh : theme.fillFor(theme.reg));
     painter->drawRoundedRect(m_rect, 3, 3);
     painter->setPen(m_value ? theme.background : theme.componentText);
 
@@ -696,7 +695,7 @@ void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     path.lineTo(-halfWidth,-halfHeight);
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter->setBrush(canvasTheme().componentFill);
+    painter->setBrush(canvasTheme().fillFor(canvasTheme().mux));
     painter->drawPath(path);
 }
 
@@ -735,7 +734,7 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
 
     // Casing, outlined in the display's color
     painter->setPen(QPen(theme.display, 2));
-    painter->setBrush(theme.componentFill);
+    painter->setBrush(theme.fillFor(theme.display));
     painter->drawRoundedRect(m_rect, 4, 4);
 
     // The screen: as dark as the canvas

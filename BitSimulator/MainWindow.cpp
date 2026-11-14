@@ -1,6 +1,8 @@
 #include "MainWindow.h"
 #include <QDebug>
-#include <QDockWidget>
+#include <QFrame>
+#include <QScrollArea>
+#include <QVBoxLayout>
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QStyle>
@@ -121,23 +123,44 @@ void MainWindow::setup()
 
 void MainWindow::setupPropertiesPanel()
 {
-    // The canvas gets its own (nested) main window so that the properties dock sits beside the
-    // canvas only. Docked to this window it would also sit beside the toolbar and widen the app.
-    auto* canvasHost = new QMainWindow;
-    canvasHost->setWindowFlags(Qt::Widget);
-    ui.gridLayout_2->replaceWidget(ui.camera, canvasHost);
-    canvasHost->setCentralWidget(ui.camera);
-
+    // The panel floats over the top-right corner of the canvas, 2/3 of the canvas high, so the
+    // canvas keeps its full width below it. Content taller than that scrolls.
     m_properties = new PropertiesPanel(ui.camera->getScene());
 
-    auto* dock = new QDockWidget(tr("Properties"), canvasHost);
-    dock->setObjectName(QStringLiteral("propertiesDock"));
-    dock->setWidget(m_properties);
-    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);   // no close button: there is no menu to bring it back
-    canvasHost->addDockWidget(Qt::RightDockWidgetArea, dock);
-    canvasHost->resizeDocks({dock}, {270}, Qt::Horizontal);
+    auto* scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("propertiesScroll"));
+    scroll->setWidget(m_properties);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    // A child of the canvas widget, not of its viewport: panning scrolls the viewport's children along
+    m_propertiesFrame = new QFrame(ui.camera);
+    m_propertiesFrame->setObjectName(QStringLiteral("propertiesFrame"));
+    auto* layout = new QVBoxLayout(m_propertiesFrame);
+    layout->setContentsMargins(2, 4, 2, 4);     // keeps the scroll bar inside the rounded corners
+    layout->addWidget(scroll);
+
+    ui.camera->viewport()->installEventFilter(this);   // follow the canvas when it is resized
+    placePropertiesPanel();
 }
+
+void MainWindow::placePropertiesPanel()
+{
+    constexpr int Width = 270, Margin = 12;
+    const QRect canvas = ui.camera->viewport()->geometry();   // the drawing area, without scroll bars
+    const int width = std::max(0, std::min(Width, canvas.width() - 2 * Margin));
+    const int height = canvas.height() * 2 / 3;
+    m_propertiesFrame->setGeometry(canvas.right() + 1 - Margin - width, canvas.top() + Margin, width, height);
+    m_propertiesFrame->raise();
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (m_propertiesFrame && watched == ui.camera->viewport() && event->type() == QEvent::Resize) placePropertiesPanel();
+    return QMainWindow::eventFilter(watched, event);
+}
+
 
 void MainWindow::setupColorScheme()
 {

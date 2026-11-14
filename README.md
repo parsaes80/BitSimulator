@@ -97,7 +97,7 @@ All colors are in one style sheet in `BitSimulator/BitSimulator.ui`, written in 
 
 - The table at the top pairs every dark color with its light-mode color. Light mode is the same style sheet with each color swapped for its partner, so a color is defined once per mode.
 - To change a color, replace it in the rules (each color is always written the same way, so find and replace works) and in its table row. A color without a row looks the same in both modes, and the app prints a warning naming it.
-- The canvas, the components and the toolbar icons are drawn in code. They read their colors from the `CircuitCanvas { qproperty-... }` rule at the bottom, e.g. `qproperty-wireHighColor` for a wire carrying 1 and `qproperty-dotColor` for the dot grid.
+- The canvas, the components and the toolbar icons are drawn in code. They read their colors from the `CircuitCanvas { qproperty-... }` rule at the bottom, e.g. `qproperty-wireHighColor` for a wire carrying 1 and `qproperty-dotColor` for the dot grid. A component's inside is tinted with its outline color; `qproperty-componentTint` sets how strongly (0 = no tint, 0.5 = halfway, 1 = the outline color).
 - The arrow, check-mark, sun and moon images are in `BitSimulator/theme`.
 
 # Running the Tests

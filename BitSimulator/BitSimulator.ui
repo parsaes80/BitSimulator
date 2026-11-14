@@ -45,7 +45,7 @@
    #edb740   #edb740   Pause button hover
    #1b1405   #1b1405   text on amber
    #ff9e80   #c2410c   error text
-   #141b1f   #ffffff   component bodies
+   #141b1f   #ffffff   component bodies, before they are tinted with their outline color
    #c3ced4   #3d4b53   wires while editing; component labels
    #3b4a52   #c3cdd2   wires carrying 0
    #4a5960   #a3b0b6   pins with nothing connected
@@ -56,7 +56,7 @@
    #f27c7c   #d9474b   NOT
    #f59e5b   #dd6f16   multiplexer
    #7aa2f7   #3567d6   register
-   #9fb0b8   #667680   source
+   #ef4444   #c62828   source
    #67e8f9   #0e8fae   display
 
    The canvas colors are at the bottom, in the CircuitCanvas rule.
@@ -387,23 +387,15 @@ QAbstractScrollArea::corner {
 
 /* ---------- Properties panel ---------- */
 
-QMainWindow::separator {
-	background-color: #263036;
-	width: 1px;
-	height: 1px;
-}
-
-QDockWidget {
-	color: #7a8890;
-}
-
-QDockWidget::title {
+/* The properties panel floats over the top-right of the canvas in this rounded box */
+#propertiesFrame {
 	background-color: #141a1e;
-	padding: 8px 14px 4px 14px;
+	border: 1px solid #263036;
+	border-radius: 10px;
 }
 
-#propertiesPanel {
-	background-color: #141a1e;
+#propertiesScroll, #propertiesScroll QWidget#qt_scrollarea_viewport, #propertiesPanel {
+	background-color: transparent;
 }
 
 #propertiesSeparator {
@@ -491,7 +483,8 @@ QToolButton[wavePin=&quot;true&quot;]:checked {
 /* ---------- Canvas ----------
    The canvas, its components and the toolbar icons are painted in code, which reads these.
    canvasColor and dotColor are the background and its dot grid.
-   Components are a dark body (componentFill) outlined in their own color.
+   Components are outlined in their own color, and their body (componentFill) is tinted with it:
+   componentTint 0 keeps the plain body, 0.5 goes halfway to the outline color, 1 is the outline color.
    While the simulation runs, a wire carrying 1 is wireHighColor and one carrying 0 is wireLowColor. */
 
 CircuitCanvas {
@@ -500,6 +493,7 @@ CircuitCanvas {
 	qproperty-canvasColor: #0a0e11;
 	qproperty-dotColor: #1e282e;
 	qproperty-componentFill: #141b1f;
+	qproperty-componentTint: 0.5;
 	qproperty-componentText: #c3ced4;
 	qproperty-andColor: #e8b05a;
 	qproperty-orColor: #5fd3a5;
@@ -507,7 +501,7 @@ CircuitCanvas {
 	qproperty-notColor: #f27c7c;
 	qproperty-muxColor: #f59e5b;
 	qproperty-registerColor: #7aa2f7;
-	qproperty-sourceColor: #9fb0b8;
+	qproperty-sourceColor: #ef4444;
 	qproperty-displayColor: #67e8f9;
 	qproperty-wireColor: #c3ced4;
 	qproperty-wireHighColor: #2dd4bf;

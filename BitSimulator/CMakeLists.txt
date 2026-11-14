@@ -25,7 +25,7 @@ set(PROJECT_SOURCES
     PropertiesPanel.cpp
     PropertiesPanel.h
     ItemProps.h
-    CanvasTheme.h
+
     SourceProps.h
     Theme.cpp
     Theme.h

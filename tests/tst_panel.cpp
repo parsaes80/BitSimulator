@@ -1,6 +1,9 @@
 // The Properties panel, driven through the real main window with simulated clicks and key presses.
 
 #include "TestSupport.h"
+#include <QFrame>
+#include <QScrollArea>
+#include <QScrollBar>
 
 using namespace TestSupport;
 
@@ -216,6 +219,44 @@ private slots:
         QCOMPARE(app.title(), QStringLiteral("T flip-flop"));
         segment(app.panel, QStringLiteral("SR"))->click();
         QVERIFY(labelWith(app.panel, QStringLiteral("S, R, clock")));
+    }
+
+    void panelFloatsOverTheCanvas()
+    {
+        App app;
+        auto* frame = child<QFrame>(&app.window, "propertiesFrame");
+        QWidget* viewport = app.canvas->viewport();
+        const QRect area = viewport->geometry();
+        const auto checkPlace = [&] {
+            const QRect box = frame->geometry();
+            QVERIFY(qAbs(box.height() - area.height() * 2 / 3) <= 1);   // 2/3 of the canvas high
+            QCOMPARE(box.right(), area.right() - 12);                     // in its top-right corner
+            QCOMPARE(box.top(), area.top() + 12);
+        };
+        checkPlace();
+
+        // Panning the canvas does not take the panel with it
+        app.canvas->horizontalScrollBar()->setValue(app.canvas->horizontalScrollBar()->value() + 300);
+        app.canvas->verticalScrollBar()->setValue(app.canvas->verticalScrollBar()->value() + 200);
+        QCoreApplication::processEvents();
+        checkPlace();
+
+        // Neither does resizing the window
+        app.window.resize(1500, 900);
+        QTRY_VERIFY(viewport->geometry() != area);
+        const QRect bigger = viewport->geometry();
+        QTRY_VERIFY(qAbs(frame->height() - bigger.height() * 2 / 3) <= 1);
+        QCOMPARE(frame->geometry().right(), bigger.right() - 12);
+
+        // In a short window the settings are taller than the box: they scroll inside it
+        app.window.resize(1280, 560);
+        SourceProps tall = SourceProps::waveform({true});
+        tall.bits = 8;
+        auto* source = add<SourceItem>(app, tall);
+        app.select(source);
+        auto* scroll = child<QScrollArea>(&app.window, "propertiesScroll");
+        QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
+        QVERIFY(qAbs(frame->height() - viewport->height() * 2 / 3) <= 1);   // still 2/3, not stretched by the content
     }
 
     void listSourceEditing()

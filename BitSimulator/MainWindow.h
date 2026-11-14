@@ -8,6 +8,7 @@
 #include "Theme.h"
 
 class PropertiesPanel;
+class QFrame;
 enum class SimState;
 
 class MainWindow : public QMainWindow
@@ -37,10 +38,13 @@ signals:
 private:
     void setup();
     void setupPropertiesPanel();
+    void placePropertiesPanel();             // top-right of the canvas, 2/3 of its height
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void setupColorScheme();
 
     Ui::BitSimulatorClass ui;
     PropertiesPanel* m_properties = nullptr;
+    QFrame* m_propertiesFrame = nullptr;     // the floating box holding the panel
     ThemeSheets m_themeSheets;               // the .ui style sheet in its dark and light versions
     ColorScheme m_colorScheme = ColorScheme::Dark;
     bool m_followSystemScheme = true;        // until the user picks a mode with the theme button

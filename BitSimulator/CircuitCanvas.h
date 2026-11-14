@@ -20,7 +20,6 @@
 #include "general.h"
 #include "Items.h"
 #include "hdlcompiler.h"
-#include "CanvasTheme.h"
 
 // Stopped: editing view, no values shown.
 // Running: live values; the circuit is read-only.
@@ -114,6 +113,7 @@ class CircuitCanvas : public QGraphicsView {
     // They are shared by every canvas and by the toolbar icons (see CanvasTheme.h).
     Q_PROPERTY(QColor canvasColor READ canvasColor WRITE setCanvasColor)
     Q_PROPERTY(QColor dotColor READ dotColor WRITE setDotColor)
+    Q_PROPERTY(double componentTint READ componentTint WRITE setComponentTint)
     Q_PROPERTY(QColor componentFill READ componentFill WRITE setComponentFill)
     Q_PROPERTY(QColor componentText READ componentText WRITE setComponentText)
     Q_PROPERTY(QColor andColor READ andColor WRITE setAndColor)
@@ -148,6 +148,8 @@ private:
     void setThemeColor(QColor CanvasTheme::* field, const QColor& color);
     QColor canvasColor() const { return canvasTheme().background; }
     void setCanvasColor(const QColor& color) { setThemeColor(&CanvasTheme::background, color); }
+    double componentTint() const { return canvasTheme().componentTint; }
+    void setComponentTint(double tint) { canvasTheme().componentTint = tint; m_scene->update(); }
     QColor dotColor() const { return canvasTheme().dot; }
     void setDotColor(const QColor& color) { setThemeColor(&CanvasTheme::dot, color); }
     QColor componentFill() const { return canvasTheme().componentFill; }
