@@ -2,6 +2,7 @@
 
 #include "TestSupport.h"
 #include <QFrame>
+#include <QTabWidget>
 #include <QScrollArea>
 #include <QScrollBar>
 
@@ -219,6 +220,14 @@ private slots:
         QCOMPARE(app.title(), QStringLiteral("T flip-flop"));
         segment(app.panel, QStringLiteral("SR"))->click();
         QVERIFY(labelWith(app.panel, QStringLiteral("S, R, clock")));
+    }
+
+    void opensOnTheCircuitTab()
+    {
+        // Designer saves whichever tab was showing; the app must start on the circuit regardless
+        App app;
+        QCOMPARE(child<QTabWidget>(&app.window, "tabWidget")->currentWidget()->objectName(), QStringLiteral("CircuitTab"));
+        QVERIFY(app.canvas->isVisible());
     }
 
     void panelFloatsOverTheCanvas()

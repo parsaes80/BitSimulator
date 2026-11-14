@@ -1,9 +1,9 @@
-// The small pure functions in ItemProps.h that the items and the properties panel rely on.
+// The small pure functions in Items.h (component and source properties) that the items and the properties panel rely on.
 
 #include <QtTest>
 #include <QSet>
 #include <bit>
-#include "ItemProps.h"
+#include "Items.h"
 
 namespace {
 // The values a source outputs at ticks 0 .. count-1

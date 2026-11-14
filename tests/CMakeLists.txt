@@ -58,7 +58,7 @@ function(bitsim_add_test name)
     set(BITSIM_TESTS ${BITSIM_TESTS} ${name} PARENT_SCOPE)
 endfunction()
 
-bitsim_add_test(tst_itemprops)      # helper functions in ItemProps.h
+bitsim_add_test(tst_itemprops)      # the property and source helpers in Items.h
 bitsim_add_test(tst_simulator)      # the simulation core, without any GUI
 bitsim_add_test(tst_scene)          # components, editing rules, simulation state, drawing -> netlist
 bitsim_add_test(tst_panel)          # the Properties panel, through the real window

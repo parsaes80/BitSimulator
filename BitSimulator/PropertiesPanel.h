@@ -3,7 +3,7 @@
 #include <QList>
 #include <QPointer>
 #include <QWidget>
-#include "ItemProps.h"
+#include "Items.h"
 
 class CircuitScene;
 enum class SimState;

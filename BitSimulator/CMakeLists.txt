@@ -24,9 +24,6 @@ set(PROJECT_SOURCES
     Toolbar.h
     PropertiesPanel.cpp
     PropertiesPanel.h
-    ItemProps.h
-
-    SourceProps.h
     Theme.cpp
     Theme.h
     simulator.cpp

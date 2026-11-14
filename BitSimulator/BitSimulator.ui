@@ -180,7 +180,7 @@ QPushButton:disabled {
 	qproperty-icon: url(:/theme/sun.png);
 }
 
-#themeButton[scheme="light"] {
+#themeButton[scheme=&quot;light&quot;] {
 	qproperty-icon: url(:/theme/moon.png);
 }
 
@@ -533,7 +533,7 @@ CircuitCanvas {
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="CircuitTab">
        <attribute name="title">
@@ -1119,6 +1119,44 @@ CircuitCanvas {
          <widget class="TextEditor" name="hdlEditor"/>
         </item>
        </layout>
+      </widget>
+      <widget class="QWidget" name="CompileDirTab">
+       <attribute name="title">
+        <string>Page</string>
+       </attribute>
+       <widget class="QPushButton" name="compileDirButton">
+        <property name="geometry">
+         <rect>
+          <x>870</x>
+          <y>170</y>
+          <width>141</width>
+          <height>61</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Compile directory</string>
+        </property>
+       </widget>
+       <widget class="QPlainTextEdit" name="compileDirPath">
+        <property name="geometry">
+         <rect>
+          <x>310</x>
+          <y>170</y>
+          <width>381</width>
+          <height>70</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QPlainTextEdit" name="FilesFound">
+        <property name="geometry">
+         <rect>
+          <x>180</x>
+          <y>310</y>
+          <width>1061</width>
+          <height>561</height>
+         </rect>
+        </property>
+       </widget>
       </widget>
      </widget>
     </item>

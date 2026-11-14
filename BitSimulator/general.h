@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
-#include "SourceProps.h"
 
 class WireItem;
 class GateItem;
@@ -26,6 +25,9 @@ enum class Direction : u8 { UP, RIGHT, DOWN, LEFT };
 enum class PortType : u8 {IN,OUT};
 enum class MType : u8 {MUX,DEMUX};
 enum class IOType : u8 {IN,OUT};
+
+// After the types and enums above, which Items.h uses; before Source below, which holds a SourceProps
+#include "Items.h"
 
 struct Register {
 	u32 inID;

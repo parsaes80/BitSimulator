@@ -1,26 +1,346 @@
 #pragma once
-#include <QGraphicsScene>
-#include <QGraphicsView>
-#include <QGraphicsItem>
-#include <QGraphicsRectItem>
-#include <QGraphicsLineItem>
-#include <QPainter>
-#include <QStyleOptionGraphicsItem>
-#include <QWidget>
-#include <QGraphicsSceneMouseEvent>
-#include <QWheelEvent>
+// The components of a circuit: their properties, the canvas items that draw them, and the colors
+// they are drawn with.
+//
+//   1. Source properties   what a source outputs at each tick (the simulator uses these too)
+//   2. Component properties the editable settings of every kind of component
+//   3. Canvas items         the QGraphicsItems on the canvas
+//   4. Canvas colors        CanvasTheme, filled from the style sheet in BitSimulator.ui
+//
+// Include order with general.h: part 1 needs nothing from general.h and comes before including
+// it, because general.h includes this file in turn (its Source struct holds a SourceProps).
+
+#include <QCoreApplication>
+#include <QColor>
+#include <QDebug>
 #include <QDragEnterEvent>
 #include <QDropEvent>
-#include <QMimeData>
-#include <QDebug>
+#include <QGraphicsItem>
+#include <QGraphicsLineItem>
+#include <QGraphicsRectItem>
+#include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
+#include <QGraphicsView>
 #include <QKeyEvent>
-#include <expected>
-#include "general.h"
-#include "ItemProps.h"
-#include <QColor>
+#include <QList>
+#include <QMimeData>
+#include <QPainter>
+#include <QString>
+#include <QStyleOptionGraphicsItem>
+#include <QWheelEvent>
+#include <QWidget>
 #include <algorithm>
+#include <bit>
 #include <cmath>
-#include "general.h"
+#include <cstdint>
+#include <expected>
+#include <variant>
+
+//===================== 1. Source properties ========================
+
+// What a source component drives, tick by tick.
+//
+// A source has `bits` output pins (lowest bit on the top pin) and a mode that decides which
+// number it outputs at each simulation tick. The value is a pure function of the tick number
+// (sourceValueAt), so the simulator and the canvas compute the same thing independently, and a
+// counter or random source needs no stored list however wide it is.
+
+enum class SourceMode : std::uint8_t {
+    Counter,      // start, start+step, start+2*step, ... (or downwards); wraps at the bit width
+    GrayCode,     // a counter in Gray code: one pin changes per step
+    WalkingOne,   // a single 1 moving across the pins: 0001, 0010, 0100, 1000, 0001, ...
+    Random,       // pseudo-random numbers over the full width; the same sequence on every run
+    List,         // a list of numbers, then it repeats
+    Waveforms,    // one 0/1 pattern per pin, each repeating on its own
+    Constant,     // always the same number
+};
+inline constexpr SourceMode allSourceModes[] = {
+    SourceMode::Counter, SourceMode::GrayCode, SourceMode::WalkingOne, SourceMode::Random,
+    SourceMode::List, SourceMode::Waveforms, SourceMode::Constant,
+};
+
+namespace SourceLimits {
+inline constexpr int maxBits = 64;
+inline constexpr int maxSteps = 65536;              // entries in a list, or steps in one pin's waveform
+inline constexpr int maxTicksPerStep = 1000000;
+}
+
+struct SourceProps {
+    SourceMode mode = SourceMode::Counter;
+    int bits = 3;                                   // output pins
+    int ticksPerStep = 1;                           // a new value every this many ticks (not for Constant)
+
+    // The settings of every mode are kept, so switching modes and back does not lose them
+    bool countDown = false;                         // Counter, Gray code; Walking one: from the top pin down
+    std::uint64_t start = 0;                        // Counter, Gray code
+    std::uint64_t step = 1;                         // Counter
+    std::uint32_t seed = 1;                         // Random
+    QList<std::uint64_t> values{2, 5};              // List
+    QList<QList<bool>> waves{{false, true}};        // Waveforms: one pattern per pin, lowest pin first
+    std::uint64_t constant = 0;                     // Constant
+
+    // Shorthands, mostly for tests and the HDL compiler
+    static SourceProps waveform(const QList<bool>& pattern)
+    {
+        SourceProps p;
+        p.mode = SourceMode::Waveforms;
+        p.bits = 1;
+        p.waves = {pattern};
+        return p;
+    }
+    static SourceProps list(const QList<std::uint64_t>& numbers, int bits)
+    {
+        SourceProps p;
+        p.mode = SourceMode::List;
+        p.values = numbers;
+        p.bits = bits;
+        return p;
+    }
+    static SourceProps counter(int bits, int ticksPerStep = 1)
+    {
+        SourceProps p;
+        p.mode = SourceMode::Counter;
+        p.bits = bits;
+        p.ticksPerStep = ticksPerStep;
+        return p;
+    }
+
+    bool operator==(const SourceProps&) const = default;
+};
+
+// All ones in the lowest `bits` bits.
+inline std::uint64_t sourceMask(int bits)
+{
+    return bits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << std::max(bits, 0)) - 1;
+}
+
+// Smallest number of pins that can show `value`.
+inline int bitsNeeded(std::uint64_t value)
+{
+    return std::max(1, static_cast<int>(std::bit_width(value)));
+}
+
+inline int bitsNeeded(const QList<std::uint64_t>& values)
+{
+    return values.isEmpty() ? 1 : bitsNeeded(*std::ranges::max_element(values));
+}
+
+// Mixes a 64-bit number into one that looks random (splitmix64). The same input always gives the same output.
+inline std::uint64_t sourceHash(std::uint64_t x)
+{
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+
+// The number the source outputs at `tick` (0 is the first tick of a run). Bit i drives pin i.
+inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
+{
+    const std::uint64_t mask = sourceMask(p.bits);
+    const std::uint64_t n = tick / static_cast<std::uint64_t>(std::max(p.ticksPerStep, 1));   // which step
+
+    switch (p.mode) {
+    case SourceMode::Counter:
+        // Unsigned arithmetic wraps at 2^64; the mask then wraps it at the bit width
+        return (p.countDown ? p.start - n * p.step : p.start + n * p.step) & mask;
+    case SourceMode::GrayCode: {
+        const std::uint64_t count = (p.countDown ? p.start - n : p.start + n) & mask;
+        return (count ^ (count >> 1)) & mask;
+    }
+    case SourceMode::WalkingOne: {
+        const int bits = std::clamp(p.bits, 1, 64);
+        const int pin = static_cast<int>(n % static_cast<std::uint64_t>(bits));
+        return std::uint64_t{1} << (p.countDown ? bits - 1 - pin : pin);
+    }
+    case SourceMode::Random:
+        return sourceHash((std::uint64_t{p.seed} << 32) ^ sourceHash(n)) & mask;
+    case SourceMode::List:
+        if (p.values.isEmpty()) return 0;
+        return p.values[static_cast<qsizetype>(n % static_cast<std::uint64_t>(p.values.size()))] & mask;
+    case SourceMode::Waveforms: {
+        std::uint64_t value = 0;
+        const int pins = std::min<int>(std::min<int>(p.bits, 64), static_cast<int>(p.waves.size()));
+        for (int pin = 0; pin < pins; pin++) {
+            const QList<bool>& wave = p.waves[pin];
+            if (!wave.isEmpty() && wave[static_cast<qsizetype>(n % static_cast<std::uint64_t>(wave.size()))])
+                value |= std::uint64_t{1} << pin;
+        }
+        return value;
+    }
+    case SourceMode::Constant:
+        return p.constant & mask;
+    }
+    return 0;
+}
+
+// Brings the properties into a consistent state: limits, enough pins for a list or constant,
+// one waveform per pin.
+inline SourceProps normalized(SourceProps p)
+{
+    p.ticksPerStep = std::clamp(p.ticksPerStep, 1, SourceLimits::maxTicksPerStep);
+
+    if (p.values.isEmpty()) p.values.append(0);
+    if (p.values.size() > SourceLimits::maxSteps) p.values.resize(SourceLimits::maxSteps);
+
+    int bits = std::clamp(p.bits, 1, SourceLimits::maxBits);
+    if (p.mode == SourceMode::List) bits = std::max(bits, bitsNeeded(p.values));
+    if (p.mode == SourceMode::Constant) bits = std::max(bits, bitsNeeded(p.constant));
+    p.bits = bits;
+
+    // Waveforms: a pattern for every pin; patterns of pins that were removed are kept for when they come back
+    if (p.mode == SourceMode::Waveforms) {
+        while (p.waves.size() < p.bits) p.waves.append(QList<bool>{false});
+        for (QList<bool>& wave : p.waves) {
+            if (wave.isEmpty()) wave.append(false);
+            if (wave.size() > SourceLimits::maxSteps) wave.resize(SourceLimits::maxSteps);
+        }
+    }
+    return p;
+}
+
+#include "general.h"   // after part 1, see the note at the top
+
+//===================== 2. Component properties ========================
+
+// The editable properties of each kind of component.
+//
+// The same types describe a component that is already on the canvas and the
+// defaults of the tool that places new ones, so one editor serves both.
+
+struct GateProps {
+    GType type = GType::AND;
+    int numInputs = 2;                 // always 1 for NOT
+    bool operator==(const GateProps&) const = default;
+};
+
+struct RegisterProps {
+    RType type = RType::D;
+    bool edgeTriggered = true;         // true: flip-flop with a clock pin, false: latch
+    bool hasEnable = true;
+    bool operator==(const RegisterProps&) const = default;
+};
+
+struct MuxProps {
+    MType type = MType::MUX;
+    int numInputs = 2;
+    bool operator==(const MuxProps&) const = default;
+};
+
+struct DisplayProps {
+    int numInputs = 2;
+    int numOutputs = 2;
+    bool operator==(const DisplayProps&) const = default;
+};
+
+using ItemProps = std::variant<GateProps, RegisterProps, MuxProps, SourceProps, DisplayProps>;
+
+// Position of T inside ItemProps; used instead of hard-coded page/tool numbers.
+namespace detail {
+template <typename T, typename Variant> struct VariantIndex;
+template <typename T, typename... Ts>
+struct VariantIndex<T, std::variant<Ts...>> {
+    static constexpr std::size_t value = [] {
+        std::size_t index = 0;
+        (void)((std::is_same_v<T, Ts> ? true : (++index, false)) || ...);
+        return index;
+    }();
+};
+}
+template <typename T>
+inline constexpr std::size_t itemKind = detail::VariantIndex<T, ItemProps>::value;
+inline constexpr std::size_t itemKindCount = std::variant_size_v<ItemProps>;
+
+namespace ItemLimits {
+inline constexpr int minGateInputs = 2, maxGateInputs = 8;
+inline constexpr int minMuxInputs = 2, maxMuxInputs = 8;
+inline constexpr int minDisplayInputs = 1, maxDisplayInputs = 8;
+inline constexpr int minDisplayOutputs = 0, maxDisplayOutputs = 8;
+}
+
+// Select lines a multiplexer needs to address `numInputs` data inputs.
+inline int muxSelectLines(int numInputs)
+{
+    return std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned>(std::max(numInputs, 2) - 1))));
+}
+
+// Bring properties into a consistent state (a NOT gate has one input, a waveform has one pin, ...).
+inline GateProps normalized(GateProps p)
+{
+    p.numInputs = (p.type == GType::NOT) ? 1 : std::max(p.numInputs, ItemLimits::minGateInputs);
+    return p;
+}
+inline MuxProps normalized(MuxProps p)
+{
+    p.numInputs = std::max(p.numInputs, ItemLimits::minMuxInputs);
+    return p;
+}
+inline DisplayProps normalized(DisplayProps p)
+{
+    p.numInputs = std::max(p.numInputs, ItemLimits::minDisplayInputs);
+    p.numOutputs = std::max(p.numOutputs, ItemLimits::minDisplayOutputs);
+    return p;
+}
+inline RegisterProps normalized(RegisterProps p) { return p; }
+
+inline QString gateTypeName(GType type)
+{
+    switch (type) {
+    case GType::AND:  return QStringLiteral("AND");
+    case GType::OR:   return QStringLiteral("OR");
+    case GType::XOR:  return QStringLiteral("XOR");
+    case GType::NAND: return QStringLiteral("NAND");
+    case GType::NOR:  return QStringLiteral("NOR");
+    case GType::XNOR: return QStringLiteral("XNOR");
+    case GType::NOT:  return QStringLiteral("NOT");
+    }
+    return {};
+}
+
+inline QString registerTypeName(RType type)
+{
+    switch (type) {
+    case RType::SR: return QStringLiteral("SR");
+    case RType::JK: return QStringLiteral("JK");
+    case RType::D:  return QStringLiteral("D");
+    case RType::T:  return QStringLiteral("T");
+    }
+    return {};
+}
+
+inline QString sourceModeName(SourceMode mode)
+{
+    switch (mode) {
+    case SourceMode::Counter:    return QCoreApplication::translate("ItemProps", "Counter");
+    case SourceMode::GrayCode:   return QCoreApplication::translate("ItemProps", "Gray code");
+    case SourceMode::WalkingOne: return QCoreApplication::translate("ItemProps", "Walking one");
+    case SourceMode::Random:     return QCoreApplication::translate("ItemProps", "Random");
+    case SourceMode::List:       return QCoreApplication::translate("ItemProps", "List");
+    case SourceMode::Waveforms:  return QCoreApplication::translate("ItemProps", "Waveform");
+    case SourceMode::Constant:   return QCoreApplication::translate("ItemProps", "Constant");
+    }
+    return {};
+}
+
+// Human-readable name of a component, e.g. "NAND gate" or "D flip-flop".
+inline QString itemTitle(const ItemProps& props)
+{
+    struct Visitor {
+        QString operator()(const GateProps& p) const { return QCoreApplication::translate("ItemProps", "%1 gate").arg(gateTypeName(p.type)); }
+        QString operator()(const RegisterProps& p) const {
+            return (p.edgeTriggered ? QCoreApplication::translate("ItemProps", "%1 flip-flop")
+                                    : QCoreApplication::translate("ItemProps", "%1 latch")).arg(registerTypeName(p.type));
+        }
+        QString operator()(const MuxProps&) const { return QCoreApplication::translate("ItemProps", "Multiplexer"); }
+        QString operator()(const SourceProps& p) const {
+            return QCoreApplication::translate("ItemProps", "%1 source").arg(sourceModeName(p.mode));
+        }
+        QString operator()(const DisplayProps&) const { return QCoreApplication::translate("ItemProps", "Display"); }
+    };
+    return std::visit(Visitor{}, props);
+}
+
+//===================== 3. Canvas items ========================
 
 class WireItem;
 class GateItem;
@@ -258,6 +578,8 @@ private:
     QList<PortItem*> m_inputPorts;
     QList<PortItem*> m_outputPorts;
 };
+
+//===================== 4. Canvas colors ========================
 
 // The colors the canvas, its components and the toolbar icons are painted with.
 //

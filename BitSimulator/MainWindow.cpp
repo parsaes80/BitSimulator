@@ -66,6 +66,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::setup()
 {
     ui.setupUi(this);
+    // Always open on the circuit, whichever tab was showing when the .ui was last saved in Designer
+    ui.tabWidget->setCurrentWidget(ui.CircuitTab);
     mainMenuPtr = this;
     CircuitScene* scene = ui.camera->getScene();
 
@@ -282,3 +284,9 @@ void MainWindow::compileFinished(bool ok)
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->open();        // not exec(): the window stays usable
 }
+
+void MainWindow::on_compileDirPath_textChanged()
+{
+
+}
+
