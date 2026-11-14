@@ -1,9 +1,10 @@
 #include "Items.h"
 #include <QMouseEvent>
 #include <qscrollbar.h>
+#include <algorithm>
 //===================== PortItem   ========================
 
-extern bool sim_running;
+extern bool sim_values_visible;
 
 PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
     : QGraphicsEllipseItem(-4, -4, 8, 8, parent)
@@ -18,7 +19,7 @@ PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
 
 void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-        if (!sim_running) {
+        if (!sim_values_visible) {
             if (m_highlighted) {
                 setPen(QPen(Qt::yellow, 1));
                 setBrush(Qt::yellow);
@@ -69,38 +70,109 @@ void PortItem::removeConnection(WireItem* wire)
     }
 }
 
-//===================== GateItem   ========================
+//===================== ComponentItem ========================
 
-GateItem::GateItem(GType gateType, int numInputs, QGraphicsItem* parent):
-    QGraphicsObject(parent),m_gateType(gateType),m_numInputs(numInputs)
+ComponentItem::ComponentItem(QGraphicsItem* parent) : QGraphicsObject(parent)
 {
     setFlag(QGraphicsObject::ItemIsMovable, true);
     setFlag(QGraphicsObject::ItemIsSelectable, true);
     setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
-
-    int x = -25;
-    int y = x - ((m_numInputs-2)*5) + 3;
-    int height = y* -2;
-
-    if(gateType == GType::NOT) {
-        m_numInputs =1;
-        y=-22;
-        height= 44;
-    }
-    m_rect = QRectF(x, y , 50, height);
-
-    createPorts();
 }
 
-void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
+bool ComponentItem::hasConnections() const
 {
+    return std::ranges::any_of(ports(), [](const PortItem* port) { return port && !port->getConnections().isEmpty(); });
+}
 
-    // Draw selection highlight
+void ComponentItem::drawSelection(QPainter* painter, const QStyleOptionGraphicsItem* option) const
+{
     if (option->state & QStyle::State_Selected) {
         painter->setPen(QPen(Qt::blue, 3));
         painter->setBrush(Qt::NoBrush);
         painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
     }
+}
+
+ComponentItem::EditResult ComponentItem::checkRemovable(const QList<PortItem*>& ports, int newCount, const QString& what)
+{
+    for (int i = std::max(newCount, 0); i < ports.size(); i++) {
+        if (!ports[i]->getConnections().isEmpty()) {
+            return std::unexpected(tr("%1 %2 is wired. Remove its wire first.").arg(what).arg(i + 1));
+        }
+    }
+    return {};
+}
+
+ComponentItem::EditResult ComponentItem::checkRemovable(const PortItem* port, bool stillWanted, const QString& what)
+{
+    if (port && !stillWanted && !port->getConnections().isEmpty()) {
+        return std::unexpected(tr("The %1 pin is wired. Remove its wire first.").arg(what));
+    }
+    return {};
+}
+
+void ComponentItem::resizePorts(QList<PortItem*>& ports, int count, PortType type)
+{
+    while (ports.size() > count) {
+        delete ports.takeLast();          // callers have checked that it has no wires
+    }
+    while (ports.size() < count) {
+        ports.append(new PortItem(type, ports.size(), this));
+    }
+}
+
+void ComponentItem::setOptionalPort(PortItem*& port, bool wanted, PortType type)
+{
+    if (wanted && !port) {
+        port = new PortItem(type, -1, this);
+    } else if (!wanted && port) {
+        delete port;                      // callers have checked that it has no wires
+        port = nullptr;
+    }
+}
+
+void ComponentItem::updateWires() const
+{
+    for (const PortItem* port : ports()) {
+        if (!port) continue;
+        for (WireItem* wire : port->getConnections()) {
+            if (wire->isConnected()) {
+                wire->updateWirePosition();
+                wire->update();
+            }
+        }
+    }
+}
+
+//===================== GateItem   ========================
+
+GateItem::GateItem(const GateProps& props, QGraphicsItem* parent)
+    : ComponentItem(parent), m_props(normalized(props))
+{
+    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    resizePorts(m_inputPorts, m_props.numInputs, PortType::IN);
+    layoutPorts();
+}
+
+ComponentItem::EditResult GateItem::setProps(const ItemProps& props)
+{
+    const auto* requested = std::get_if<GateProps>(&props);
+    if (!requested) return std::unexpected(tr("These properties do not belong to a gate."));
+
+    const GateProps next = normalized(*requested);
+    if (auto ok = checkRemovable(m_inputPorts, next.numInputs, tr("Input")); !ok) return ok;
+
+    prepareGeometryChange();
+    m_props = next;
+    resizePorts(m_inputPorts, m_props.numInputs, PortType::IN);
+    layoutPorts();
+    return {};
+}
+
+void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
+{
+
+    drawSelection(painter, option);
 
     painter->setRenderHint(QPainter::Antialiasing, true);
     drawGateShape(painter);
@@ -108,7 +180,7 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
 void GateItem::drawGateShape(QPainter* painter)
 {
-    switch (m_gateType) {
+    switch (m_props.type) {
     case GType::AND:
         drawAndGate(painter);
         break;
@@ -236,58 +308,36 @@ void GateItem::drawNotBubble(QPainter* painter)
     painter->setBrush(QColor(255, 215, 150)); 
 }
 
-void GateItem::createPorts()
+void GateItem::layoutPorts()
 {
+    // The body grows with the number of inputs; a NOT gate has a fixed size
+    int x = -25;
+    int y = x - ((m_props.numInputs - 2) * 5) + 3;
+    int height = y * -2;
+    if (m_props.type == GType::NOT) {
+        y = -22;
+        height = 44;
+    }
+    m_rect = QRectF(x, y, 50, height);
+
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (m_numInputs + 1);
+    double diffHeight = m_rect.height() / (m_inputPorts.size() + 1);
     double currHeight = -halfHeight;
 
-    for (int i = 0; i < m_numInputs; i++) {
+    for (PortItem* inputPort : std::as_const(m_inputPorts)) {
         currHeight += diffHeight;
-        PortItem* inputPort = new PortItem(PortType::IN, i, this);
         inputPort->setPos(-halfWidth, currHeight);
-        m_inputPorts.append(inputPort);
     }
-    // Create output port
-    m_outputPort = new PortItem(PortType::OUT, -1, this);
-    
-    bool hasNotBubble = (m_gateType == GType::NAND ||
-                         m_gateType == GType::NOR ||
-                         m_gateType == GType::XNOR);
-    
-    if (hasNotBubble) {
-        m_outputPort->setPos(halfWidth + 14, 0); // Shift right
-    } else {
-        m_outputPort->setPos(halfWidth, 0);
-    }
-}
 
-// Check if all ports are empty
-void GateItem::keyPressEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-       
-        bool allPortsEmpty = true;
+    bool hasNotBubble = (m_props.type == GType::NAND ||
+                         m_props.type == GType::NOR ||
+                         m_props.type == GType::XNOR);
 
-        for (PortItem* port : std::as_const(m_inputPorts)) {
-            if (!port->getConnections().isEmpty()) {
-                allPortsEmpty = false;
-                break;
-            }
-        }
-        
-        if (allPortsEmpty && m_outputPort && !m_outputPort->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-        
-        if (allPortsEmpty) {
-            scene()->removeItem(this);
-            deleteLater();
-        }
-    } else {
-        QGraphicsObject::keyPressEvent(event);
-    }
+    m_outputPort->setPos(hasNotBubble ? halfWidth + 14 : halfWidth, 0);   // make room for the bubble
+
+    updateWires();
+    update();
 }
 
 //===================== Wire Item   ========================
@@ -352,7 +402,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     QPen currentPen = m_pen;
 
     // Color based on simulation state
-    if (!sim_running) {
+    if (!sim_values_visible) {
         currentPen.setColor(Qt::black);
     }
     else {
@@ -404,6 +454,8 @@ QPainterPath WireItem::shape() const
 }
 void WireItem::updateWirePosition()
 {  
+    prepareGeometryChange();   // the bounding rect follows the two ends
+
     // Get the scene positions of both ports
     QPointF startPos = m_startPort->mapToScene(QPointF(0, 0));
     QPointF endPos = m_endPort->mapToScene(QPointF(0, 0));
@@ -414,75 +466,40 @@ void WireItem::updateWirePosition()
     
 }
 
-void WireItem::keyPressEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        if (m_startPort) {
-            m_startPort->removeConnection(this);
-        }
-        if (m_endPort) {
-            m_endPort->removeConnection(this);
-        }
-        scene()->removeItem(this);
-        deleteLater();
-    } else {
-        QGraphicsObject::keyPressEvent(event);
-    }
-}
-
 //===================== SourceItem ========================
 
-SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent) :
-    QGraphicsObject(parent), m_srcValues(cycleValues)
+SourceItem::SourceItem(const SourceProps& props, QGraphicsItem* parent)
+    : ComponentItem(parent), m_props(normalized(props))
 {
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
-
-    m_currIdx = 0;
-    if(std::holds_alternative<QList<bool>>(m_srcValues)){
-        m_numOutputs = 1;
-    }
-    else{
-        const auto& intValues = std::get<QList<int>>(m_srcValues);
-        int maxValue = *std::ranges::max_element(intValues);
-        m_numOutputs =  static_cast<int>(std::floor(std::log2(maxValue))) + 1;
-    }
-    int x = -15;
-    int y = x - ((m_numOutputs-1)*5);
-    int height = y* -2;
-    m_rect = QRectF(x, y , 30, height);
-    addPorts();
+    resizePorts(m_outputPorts, m_props.bits, PortType::OUT);
+    layoutPorts();
 }
-SourceItem::SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues,int numOut, QGraphicsItem* parent) :
-    QGraphicsObject(parent), m_srcValues(cycleValues)
+
+ComponentItem::EditResult SourceItem::setProps(const ItemProps& props)
 {
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+    const auto* requested = std::get_if<SourceProps>(&props);
+    if (!requested) return std::unexpected(tr("These properties do not belong to a source."));
 
+    const SourceProps next = normalized(*requested);
+    if (auto ok = checkRemovable(m_outputPorts, next.bits, tr("Output")); !ok) return ok;
+
+    prepareGeometryChange();
+    m_props = next;
     m_currIdx = 0;
-    m_numOutputs = numOut;
-
-    int x = -15;
-    int y = x - ((m_numOutputs-1)*5);
-    int height = y* -2;
-    m_rect = QRectF(x, y , 30, height);
-    addPorts();
+    resizePorts(m_outputPorts, m_props.bits, PortType::OUT);
+    layoutPorts();
+    return {};
 }
+
 void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    // Draw selection highlight
-    if (option->state & QStyle::State_Selected) {
-        painter->setPen(QPen(Qt::blue, 3));
-        painter->setBrush(Qt::NoBrush);
-        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
-    }
+    drawSelection(painter, option);
 
     painter->setPen(QPen(Qt::black, 2));
-    if(std::holds_alternative<QList<bool>>(m_srcValues)){
-        const auto& boolValues = std::get<QList<bool>>(m_srcValues);
-        if (boolValues[m_currIdx]) {
+    if (const auto* boolValues = std::get_if<QList<bool>>(&m_props.values)) {
+        // The step index comes from the simulator; fall back to step 0 if the list was edited since
+        const bool high = boolValues->value(m_currIdx, boolValues->value(0));
+        if (high) {
             painter->setBrush(QColor(255, 150, 150));
             painter->drawRect(m_rect);
 
@@ -499,103 +516,93 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
         }
     }
     else { // QList<int> - show the number at the current index
-        const auto& intValues = std::get<QList<int>>(m_srcValues);
+        const auto& intValues = std::get<QList<int>>(m_props.values);
         painter->setBrush(QColor(200, 200, 255));
         painter->drawRect(m_rect);
 
         painter->setPen(QPen(Qt::black, 2));
-        painter->drawText(m_rect, Qt::AlignCenter, QString::number(intValues[m_currIdx]));
+        painter->drawText(m_rect, Qt::AlignCenter, QString::number(intValues.value(m_currIdx, intValues.value(0))));
     }
 }
 
-void SourceItem::addPorts()
+void SourceItem::layoutPorts()
 {
+    int x = -15;
+    int y = x - ((m_props.bits - 1) * 5);
+    int height = y * -2;
+    m_rect = QRectF(x, y, 30, height);
+
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (m_numOutputs + 1);
+    double diffHeight = m_rect.height() / (m_outputPorts.size() + 1);
     double currHeight = -halfHeight;
 
-    for (int i = 0; i < m_numOutputs; i++) {
+    for (PortItem* outputPort : std::as_const(m_outputPorts)) {
         currHeight += diffHeight;
-        PortItem* outputPort = new PortItem(PortType::OUT, i, this);
         outputPort->setPos(halfWidth, currHeight);
-        m_outputPorts.append(outputPort);
     }
-}
 
-void SourceItem::keyPressEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // Check if all output ports are empty
-        bool allPortsEmpty = true;
-        
-        for (PortItem* port : std::as_const(m_outputPorts)) {
-            if (!port->getConnections().isEmpty()) {
-                allPortsEmpty = false;
-                break;
-            }
-        }
-        
-        // If all ports are empty, remove the item
-        if (allPortsEmpty) {
-            scene()->removeItem(this);
-            deleteLater();
-        }
-    }
-    else {
-        QGraphicsObject::keyPressEvent(event);
-    }
-}
-
-void SourceItem::mousePressEvent(QGraphicsSceneMouseEvent* event){
-    emit setOverlay(this);
+    updateWires();
+    update();
 }
 
 //===================== RegisterItem ========================
 
-RegisterItem::RegisterItem(RType RegType,bool isFlipFlop, bool hasEnable, QGraphicsItem* parent):m_regType(RegType) {
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
-
+RegisterItem::RegisterItem(const RegisterProps& props, QGraphicsItem* parent)
+    : ComponentItem(parent), m_props(normalized(props))
+{
     m_rect = QRectF(-20, -30, 40, 60);
 
-    createPorts(isFlipFlop, hasEnable);
+    m_inputPortOne = new PortItem(PortType::IN, 0, this);
+    m_inputPortTwo = new PortItem(PortType::IN, 1, this);
+    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    layoutPorts();
 }
 
-void RegisterItem::createPorts(bool isFlipFlop, bool hasEnable)
+QList<PortItem*> RegisterItem::ports() const
+{
+    QList<PortItem*> all{m_inputPortOne, m_inputPortTwo, m_outputPort};
+    if (m_clkPort) all.append(m_clkPort);
+    if (m_readEnbPort) all.append(m_readEnbPort);
+    return all;
+}
+
+ComponentItem::EditResult RegisterItem::setProps(const ItemProps& props)
+{
+    const auto* requested = std::get_if<RegisterProps>(&props);
+    if (!requested) return std::unexpected(tr("These properties do not belong to a register."));
+
+    const RegisterProps next = normalized(*requested);
+    if (auto ok = checkRemovable(m_clkPort, next.edgeTriggered, tr("clock")); !ok) return ok;
+    if (auto ok = checkRemovable(m_readEnbPort, next.hasEnable, tr("enable")); !ok) return ok;
+
+    m_props = next;
+    layoutPorts();
+    return {};
+}
+
+void RegisterItem::layoutPorts()
 {
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
 
-    PortItem* inputPort1 = new PortItem(PortType::IN, 0, this);
-    inputPort1->setPos(-halfWidth, - halfHeight + halfHeight / 8);
-    m_inputPortOne =inputPort1;
+    // The clock pin exists only on flip-flops, the enable pin only when requested
+    setOptionalPort(m_clkPort, m_props.edgeTriggered, PortType::IN);
+    setOptionalPort(m_readEnbPort, m_props.hasEnable, PortType::IN);
 
-    PortItem* inputPort2 = new PortItem(PortType::IN, 1, this);
-    inputPort2->setPos(-halfWidth, -halfHeight / 2 );
-    m_inputPortTwo =inputPort2;
-
-    if(isFlipFlop){
-        m_clkPort = new PortItem(PortType::IN, 2, this);
-        m_clkPort->setPos(-halfWidth, 0);
-    }
-
-    if(hasEnable){
-        m_readEnbPort = new PortItem(PortType::IN, 3, this);
-        m_readEnbPort->setPos(-halfWidth, halfHeight/2); // Right side, center
-    }
-    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    m_inputPortOne->setPos(-halfWidth, -halfHeight + halfHeight / 8);
+    m_inputPortTwo->setPos(-halfWidth, -halfHeight / 2);
+    if (m_clkPort) m_clkPort->setPos(-halfWidth, 0);
+    if (m_readEnbPort) m_readEnbPort->setPos(-halfWidth, halfHeight / 2);
     m_outputPort->setPos(halfWidth, 0); // Right side, center
+
+    updateWires();
+    update();
 }
 
 void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) {
 
-    if (option->state & QStyle::State_Selected) {
-        painter->setPen(QPen(Qt::blue, 3));
-        painter->setBrush(Qt::NoBrush);
-        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
-    }
+    drawSelection(painter, option);
 
     painter->setPen(QPen(Qt::black, 4));
     painter->drawRect(m_rect);
@@ -613,101 +620,75 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 
     painter->fillRect(m_rect, painter->brush());
 
+    // Label the register with its type so an edit in the properties panel is visible on the canvas
+    const QString label = registerTypeName(m_props.type);
     QFont font = painter->font();
     font.setBold(true);
-    font.setPointSize(15);
+    font.setPointSize(label.size() > 1 ? 12 : 15);
     painter->setFont(font);
-    painter->drawText(m_rect, Qt::AlignCenter, "R");
-}
-
-void RegisterItem::keyPressEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // Check if all ports are empty
-        bool allPortsEmpty = true;
-        
-        // Check input ports
-        if (m_inputPortOne && !m_inputPortOne->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-        if (m_inputPortTwo && !m_inputPortTwo->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-        if (m_clkPort && !m_clkPort->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-        if (m_readEnbPort && !m_readEnbPort->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-        
-        // Check output port
-        if (m_outputPort && !m_outputPort->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-        
-        // If all ports are empty, remove the item
-        if (allPortsEmpty) {
-            scene()->removeItem(this);
-            deleteLater();
-        }
-    } else {
-        QGraphicsObject::keyPressEvent(event);
-    }
+    painter->drawText(m_rect, Qt::AlignCenter, label);
 }
 
 //===================== MuxItem ========================
 
-MuxItem::MuxItem(MType MuxType, int numInputs, QGraphicsItem* parent): m_muxType(MuxType),m_numInputs(numInputs) {
-
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
-
+MuxItem::MuxItem(const MuxProps& props, QGraphicsItem* parent)
+    : ComponentItem(parent), m_props(normalized(props))
+{
     m_rect = QRectF(-20, -30, 40, 60);
 
-    createPorts();
+    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    resizePorts(m_inputDataPorts, m_props.numInputs, PortType::IN);
+    resizePorts(m_inputAddressPorts, muxSelectLines(m_props.numInputs), PortType::IN);
+    layoutPorts();
 }
 
+ComponentItem::EditResult MuxItem::setProps(const ItemProps& props)
+{
+    const auto* requested = std::get_if<MuxProps>(&props);
+    if (!requested) return std::unexpected(tr("These properties do not belong to a multiplexer."));
 
-void MuxItem::createPorts()
+    const MuxProps next = normalized(*requested);
+    const int selectLines = muxSelectLines(next.numInputs);
+    if (auto ok = checkRemovable(m_inputDataPorts, next.numInputs, tr("Input")); !ok) return ok;
+    if (auto ok = checkRemovable(m_inputAddressPorts, selectLines, tr("Select line")); !ok) return ok;
+
+    m_props = next;
+    resizePorts(m_inputDataPorts, m_props.numInputs, PortType::IN);
+    resizePorts(m_inputAddressPorts, selectLines, PortType::IN);
+    layoutPorts();
+    return {};
+}
+
+void MuxItem::layoutPorts()
 {
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (m_numInputs + 1);
+
+    // Data inputs down the left side
+    double diffHeight = m_rect.height() / (m_inputDataPorts.size() + 1);
     double currHeight = -halfHeight;
-    double currWidth  = halfWidth;
-
-    //data ports
-    for (int i = 0; i < m_numInputs; i++) {
+    for (PortItem* inputPort : std::as_const(m_inputDataPorts)) {
         currHeight += diffHeight;
-        PortItem* inputPort = new PortItem(PortType::IN, i, this);
         inputPort->setPos(-halfWidth, currHeight);
-        m_inputDataPorts.append(inputPort);
     }
 
-    m_numInputs = static_cast<int>(ceil(log(m_numInputs)));
-    double diffWidth = m_rect.width() / (m_numInputs + 1);
-
-    //address ports
-    for (int i = 0; i < m_numInputs; i++) {
+    // Select lines along the bottom, from right to left
+    double diffWidth = m_rect.width() / (m_inputAddressPorts.size() + 1);
+    double currWidth = halfWidth;
+    for (PortItem* addressPort : std::as_const(m_inputAddressPorts)) {
         currWidth -= diffWidth;
-        PortItem* inputPort = new PortItem(PortType::IN, m_inputDataPorts.size() + i , this);
-        inputPort->setPos(currWidth, halfHeight);
-        m_inputAddressPorts.append(inputPort);
+        addressPort->setPos(currWidth, halfHeight);
     }
 
-    // Create output port
-    m_outputPort = new PortItem(PortType::OUT, -1, this);
     m_outputPort->setPos(halfWidth, 0); // Right side, center
+
+    updateWires();
+    update();
 }
 
 void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget){
 
-    if (option->state & QStyle::State_Selected) {
-        painter->setPen(QPen(Qt::blue, 3));
-        painter->setBrush(Qt::NoBrush);
-        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
-    }
+    drawSelection(painter, option);
 
     QPainterPath path;
     double width = m_rect.width();
@@ -727,68 +708,35 @@ void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->fillPath(path, painter->brush());
 }
 
-void MuxItem::keyPressEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-                // If all ports are empty, remove the item
-        bool allPortsEmpty = true;
-        
-        for (PortItem* port : std::as_const(m_inputDataPorts)) {
-            if (!port->getConnections().isEmpty()) {
-                allPortsEmpty = false;
-                break;
-            }
-        }
-
-        if (allPortsEmpty) {
-            for (PortItem* port : std::as_const(m_inputAddressPorts)) {
-                if (!port->getConnections().isEmpty()) {
-                    allPortsEmpty = false;
-                    break;
-                }
-            }
-        }
-
-        if (allPortsEmpty && m_outputPort && !m_outputPort->getConnections().isEmpty()) {
-            allPortsEmpty = false;
-        }
-
-        if (allPortsEmpty) {
-            scene()->removeItem(this);
-            deleteLater();
-        }
-    } else {
-        QGraphicsObject::keyPressEvent(event);
-    }
-}
-
 //===================== DisplayItem ========================
 
-DisplayItem::DisplayItem(int numInputs,int numOutputs, QGraphicsItem* parent):
-    m_numInputs(numInputs),m_numOutputs(numOutputs) {
+DisplayItem::DisplayItem(const DisplayProps& props, QGraphicsItem* parent)
+    : ComponentItem(parent), m_props(normalized(props))
+{
+    resizePorts(m_inputPorts, m_props.numInputs, PortType::IN);
+    resizePorts(m_outputPorts, m_props.numOutputs, PortType::OUT);
+    layoutPorts();
+}
 
-    setFlag(QGraphicsObject::ItemIsMovable, true);
-    setFlag(QGraphicsObject::ItemIsSelectable, true);
-    setFlag(QGraphicsObject::ItemSendsGeometryChanges, true);
+ComponentItem::EditResult DisplayItem::setProps(const ItemProps& props)
+{
+    const auto* requested = std::get_if<DisplayProps>(&props);
+    if (!requested) return std::unexpected(tr("These properties do not belong to a display."));
 
-    int bitWidth = std::max(m_numInputs,m_numOutputs);
-    int x = -23;
-    int y = x - (bitWidth*4);
-    int height = y* -2;
-    int width = x * -2;
+    const DisplayProps next = normalized(*requested);
+    if (auto ok = checkRemovable(m_inputPorts, next.numInputs, tr("Input")); !ok) return ok;
+    if (auto ok = checkRemovable(m_outputPorts, next.numOutputs, tr("Output")); !ok) return ok;
 
-    m_rect = QRectF(x, y, width, height);
-
-    createPorts();
+    prepareGeometryChange();
+    m_props = next;
+    resizePorts(m_inputPorts, m_props.numInputs, PortType::IN);
+    resizePorts(m_outputPorts, m_props.numOutputs, PortType::OUT);
+    layoutPorts();
+    return {};
 }
 
 void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) {
-    // Draw selection highlight
-    if (option->state & QStyle::State_Selected) {
-        painter->setPen(QPen(Qt::blue, 3));
-        painter->setBrush(Qt::NoBrush);
-        painter->drawRect(m_rect.adjusted(-2, -2, 2, 2));
-    }
+    drawSelection(painter, option);
 
     // Draw outer border and background
     painter->setPen(QPen(Qt::black, 2));
@@ -822,69 +770,44 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     painter->drawText(labelRect, Qt::AlignCenter, "DISPLAY");
 }
 
-void DisplayItem::createPorts()
+void DisplayItem::layoutPorts()
 {
+    int bitWidth = std::max(m_props.numInputs, m_props.numOutputs);
+    int x = -23;
+    int y = x - (bitWidth * 4);
+    int height = y * -2;
+    int width = x * -2;
+    m_rect = QRectF(x, y, width, height);
+
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (m_numInputs + 1);
+
+    double diffHeight = m_rect.height() / (m_inputPorts.size() + 1);
     double currHeight = -halfHeight;
-
-
-    for (int i = 0; i < m_numInputs; i++) {
+    for (PortItem* inputPort : std::as_const(m_inputPorts)) {
         currHeight += diffHeight;
-        PortItem* inputPort = new PortItem(PortType::IN, i, this);
         inputPort->setPos(-halfWidth, currHeight);
-        m_inputPorts.append(inputPort);
     }
+
+    diffHeight = m_rect.height() / (m_outputPorts.size() + 1);
     currHeight = -halfHeight;
-    diffHeight = m_rect.height() / (m_numOutputs + 1);
-    for (int i = 0; i < m_numOutputs; i++) {
+    for (PortItem* outputPort : std::as_const(m_outputPorts)) {
         currHeight += diffHeight;
-        PortItem* outputPort = new PortItem(PortType::OUT, m_numInputs+i, this);
         outputPort->setPos(halfWidth, currHeight);
-        m_outputPorts.append(outputPort);
     }
+
+    updateWires();
+    update();
 }
 
 void DisplayItem::updateValue()
 {
     int value = 0;
-    for(int i = m_numInputs - 1; i >= 0; i--) {
+    for(int i = m_inputPorts.size() - 1; i >= 0; i--) {
         value = value << 1;  // Shift first
         if (m_inputPorts[i]->getValue()) {
             value |= 1;  // Set the least significant bit
         }
     }
     m_value = value;  // Store the calculated value
-}
-
-void DisplayItem::keyPressEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        // If all ports are empty, remove the item
-        bool allPortsEmpty = true;
-        
-        for (PortItem* port : std::as_const(m_inputPorts)) {
-            if (!port->getConnections().isEmpty()) {
-                allPortsEmpty = false;
-                break;
-            }
-        }
-        
-        if (allPortsEmpty) {
-            for (PortItem* port : std::as_const(m_outputPorts)) {
-                if (!port->getConnections().isEmpty()) {
-                    allPortsEmpty = false;
-                    break;
-                }
-            }
-        }
-        
-        if (allPortsEmpty) {
-            scene()->removeItem(this);
-            deleteLater();
-        }
-    } else {
-        QGraphicsObject::keyPressEvent(event);
-    }
 }

@@ -25,3 +25,10 @@ endif()
 
 # Make the app depend on the bundle so building just the BitSimulator target still copies it
 add_dependencies(BitSimulator copy_yosys_bundle)
+
+# Automated tests are optional: configure with -DBITSIM_BUILD_TESTS=ON, then build the "check" target
+option(BITSIM_BUILD_TESTS "Build the automated tests (needs the Qt Test module)" OFF)
+if(BITSIM_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

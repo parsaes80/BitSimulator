@@ -75,6 +75,9 @@ struct ExportGraph
 	std::vector<Register> registers;
     std::vector<Mux> muxes;
 
+    u32 numNets = 0;   // highest net id used by the components above
+    u32 runId = 0;     // identifies this run; the simulator copies it into every result
+
     void clear()
     {
         gates.clear();
@@ -86,6 +89,7 @@ struct ExportGraph
 
 struct SimResult
 {
+    u32 runId = 0;     // which run produced this result; the canvas ignores results of older runs
     std::vector<u8> netValues;
 	std::vector<u8> sourcesCurrIdx;
 	std::vector<bool> registerValues;

@@ -3,7 +3,6 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QPainter>
-#include <QStackedWidget>
 #include "general.h"
 
 class GateButton : public QPushButton{
@@ -18,10 +17,9 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit gateTypeSelected(m_gateType); emit setOverlay(0);};
+    void onButtonClicked() { emit gateTypeSelected(m_gateType); };
 signals:
     void gateTypeSelected(GType gateType);
-    void setOverlay(int val);
 private:
     void drawGateSymbol(QPainter* painter, double width, double height);
     void drawANDGate(QPainter* painter, double width, double height);
@@ -44,10 +42,9 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit sourceSelected(); emit setOverlay(2);};
+    void onButtonClicked() { emit sourceSelected(); };
 signals:
     void sourceSelected();
-    void setOverlay(int val);
 };
 
 class RegisterButton : public QPushButton{
@@ -59,10 +56,9 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit RegSelected(RType::D);emit setOverlay(1);};
+    void onButtonClicked() { emit RegSelected(); };
 signals:
-    void RegSelected(RType regType);
-    void setOverlay(int val);
+    void RegSelected();
 };
 
 class MuxButton : public QPushButton{
@@ -74,10 +70,9 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit MuxSelected(MType::MUX);emit setOverlay(0);};
+    void onButtonClicked() { emit MuxSelected(); };
 signals:
-    void MuxSelected(MType muxType);
-    void setOverlay(int val);
+    void MuxSelected();
 };
 
 class DisplayButton : public QPushButton{
@@ -89,21 +84,7 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 public slots:
-    void onButtonClicked() { emit DisplaySelected(); emit setOverlay(3);};
+    void onButtonClicked() { emit DisplaySelected(); };
 signals:
     void DisplaySelected();
-    void setOverlay(int val);
-};
-
-class ItemOverlay : public QStackedWidget{
-    Q_OBJECT
-public:
-    ItemOverlay(QWidget* parent = nullptr);
-    SourceItem* getCurrentSource() const { return m_currentSource; }
-public slots:
-    void onSourceClicked(SourceItem* sourcePtr);
-signals:
-    void setOverlay(int val);
-private:
-    SourceItem* m_currentSource = nullptr;
 };

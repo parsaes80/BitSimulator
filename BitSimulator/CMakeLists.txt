@@ -22,6 +22,9 @@ set(PROJECT_SOURCES
     Items.h
     Toolbar.cpp
     Toolbar.h
+    PropertiesPanel.cpp
+    PropertiesPanel.h
+    ItemProps.h
     simulator.cpp
     simulator.h
     hdlcompiler.cpp

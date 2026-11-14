@@ -38,6 +38,7 @@ public slots:
 signals:
     void error(const QString& err);
     void success();
+    void finished(bool ok);   // always emitted once per receiveCode(), after any error() or sendGraph()
     void sendGraph(const QHash<QString,Node> graph);
 
 private:

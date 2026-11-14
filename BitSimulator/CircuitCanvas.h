@@ -13,6 +13,7 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QDebug>
+#include <array>
 #include <variant>
 #include <vector>
 #include <QPointer>
@@ -20,36 +21,38 @@
 #include "Items.h"
 #include "hdlcompiler.h"
 
+// Stopped: editing view, no values shown.
+// Running: live values; the circuit is read-only.
+// Paused:  values frozen on screen. The circuit can be edited, but any edit ends the paused run.
+enum class SimState { Stopped, Running, Paused };
+
 class CircuitScene : public QGraphicsScene {
     Q_OBJECT
 public:
     explicit CircuitScene(QObject* parent = nullptr);
+    ~CircuitScene() override;
 
-    QGraphicsObject* addGate(GType gateType,int numIn, QPointF position);
-    QGraphicsObject* addSource(QPointF position);
-    QGraphicsObject* addSource(std::variant<QList<bool>,QList<int>> srcValues,int numOut,QPointF position);
-    QGraphicsObject* addRegister(RType RegType, QPointF position);
-    QGraphicsObject* addRegister(RType RegType,bool hasEnable, QPointF position);
-    QGraphicsObject* addMux(MType MuxType,int numIn, QPointF position);
-    QGraphicsObject* addDisplay(int numIn,int numOut, QPointF position);
+    SimState simState() const { return m_simState; }
+    bool isLocked() const { return m_simState == SimState::Running; }   // no structural edits while running
+
+    // Every change to the circuit's structure goes through the functions below. They do nothing
+    // while the simulation is running, and they end a paused run (its values no longer apply).
+
+    // Creates the component described by `props` and places it on the canvas (null while running).
+    ComponentItem* addComponent(const ItemProps& props, QPointF position);
+    // Changes a placed component; refused with a reason if a wired pin would disappear.
+    ComponentItem::EditResult editComponent(ComponentItem* item, const ItemProps& props);
+    // Removes the selected wires, and the selected components that have no wires left.
+    void deleteSelection();
+    // Stops the simulation and empties the canvas.
+    void resetCircuit();
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
 
-    void startSim();
-
-    std::variant<QList<bool>,QList<int>> getSrcValues() const {return m_srcValues;}
-    int getNumInputs() const { return m_numInputs; }
-    int getNumOutputs() const { return m_numOutputs; }
-    bool getHasEnable() const { return m_hasEnable; }
-    bool getIsFlipFlop() const { return m_isFlipFlop; }
-    bool getSrcIsWave() const { return std::holds_alternative<QList<bool>>(m_srcValues);}
-    RType getNextRegisterType() const {
-        if (std::holds_alternative<RType>(m_nextItem)) {
-            return std::get<RType>(m_nextItem);
-        }
-        return RType::SR;
-    }
+    // The active tool: what a middle click places next, and with which properties.
+    // Each kind of component remembers its own defaults while another tool is active.
+    const ItemProps& toolProps() const { return m_toolDefaults[m_activeTool]; }
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override {
         painter->fillRect(rect, QColor(10, 100, 100));};
@@ -58,24 +61,35 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 public slots:
-    void setNextGateType(GType gatetype) {m_nextItem = gatetype;};
-    void setNextSource() {m_nextItem = true;  };// Use true to represent source
-    void setNextDisplay() {m_nextItem = false;  };// Use false to represent Display
-    void setNextRegister(RType regType) {m_nextItem = regType;};
-    void setNextMux(MType muxType) {m_nextItem = muxType;};
-    void setSrcValues(const QList<bool>& values){m_srcValues = values;}
-    void setSrcValues(const QList<int>& values){m_srcValues = values;}
-    void setNumInputs(const int value){m_numInputs = value;}
-    void setNumOutputs(const int value){m_numOutputs = value;}
-    void setHasEnable(const bool value){m_hasEnable = value;}
-    void setIsFlipFlop(const bool value){m_isFlipFlop = value;}
+    void startOrResumeSim();   // Stopped: build the circuit and run it from tick 0. Paused: continue.
+    void pauseSim();           // freeze; values stay on screen
+    void stopSim();            // end the run and return to the editing view
+
+    void setToolProps(const ItemProps& props);   // makes that kind of component the active tool
+    void selectTool(std::size_t kind);           // kind = itemKind<...>; keeps that tool's defaults
+    void selectGateTool(GType gateType);
     void receiveResult(const SimResult& result);
     void receiveGraph(QHash<QString,Node> graph);
 signals:
+    // To the simulator (queued across threads, so they arrive in this order)
     void startSimSIG(ExportGraph graph);
+    void setSimRunningSIG(bool running);
+    void stopSimSIG();
+
+    void simStateChanged(SimState state);
+    void toolChanged();
 private:
+    ExportGraph buildGraph();          // numbers the nets and fills the global wire map
+    void setSimState(SimState state);
+    void circuitEdited();              // call after every structural change
+    void cancelWireConnection();       // drop a wire that is still being dragged
+    void resetValues();                // clear the values the last run left on the items
+
     void clearHighlights();
     PortItem* getPortFromItem(QGraphicsObject* item, PortType type);
+
+    SimState m_simState = SimState::Stopped;
+    u32 m_runId = 0;                   // bumped for every new run and every stop; older results are ignored
 
     bool m_connectingWire;
     QPointF m_wireStartPoint;
@@ -83,10 +97,9 @@ private:
     PortItem* m_currWireStartPort = nullptr;
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
-    std::variant<GType, RType, MType,bool> m_nextItem = GType::AND;  // bool true for source false for Display
-    std::variant<QList<bool>,QList<int>> m_srcValues = QList<int>{ 2, 5 };
-    int m_numInputs = 2,m_numOutputs = 2;
-    bool m_hasEnable = true, m_isFlipFlop = true;
+    // One entry per alternative of ItemProps, in the same order (m_toolDefaults[i].index() == i)
+    std::array<ItemProps, itemKindCount> m_toolDefaults{GateProps{}, RegisterProps{}, MuxProps{}, SourceProps{}, DisplayProps{}};
+    std::size_t m_activeTool = itemKind<GateProps>;
 
     // Cached per simulation run (rebuilt in startSim) so receiveResult avoids scanning items()
     QList<QPointer<DisplayItem>> m_displays;
@@ -97,7 +110,7 @@ class CircuitCanvas : public QGraphicsView {
     Q_OBJECT
 public:
     explicit CircuitCanvas(QWidget* parent = nullptr);
-    void clearCanvas() {m_scene->clear();};
+    void clearCanvas() {m_scene->resetCircuit();};
     CircuitScene* getScene() const { return m_scene; }
 
 protected:
@@ -113,4 +126,5 @@ private:
     bool m_shiftPressed = false;
     bool m_middleMousePressed = false;
     QPoint m_lastPanPoint;
+    QPoint m_panStartPoint;   // to tell a click on empty canvas (deselect) from a drag (pan)
 };

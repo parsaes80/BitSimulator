@@ -6,12 +6,7 @@
 #include <QEventLoop>
 #include <chrono>
 
-extern bool sim_running;
-extern GlobalMap map;
-
 Simulator::Simulator(QObject *parent) : QObject(parent) {
-    sim_running = false;
-
     m_nets.reserve(1000);
     m_gates.reserve(500);
     m_registers.reserve(100);
@@ -235,8 +230,9 @@ void Simulator::processRegisters() {
                     break;
             }
         }
-        else {
-            // No clock, no enable: transparent latch (always follows input)
+        else if (!hasEnableConnection) {
+            // No clock, no enable: transparent latch (always follows input).
+            // A latch whose enable pin is wired but low reaches none of these branches and holds its value.
             switch (reg.regType) {
                 case RType::D:
                 case RType::T:
@@ -266,10 +262,10 @@ void Simulator::processRegisters() {
 }
 
 void Simulator::tick() {
-    sim_running = true;
-
     if (firstTick) {
-        for (size_t i = 1; i < m_nets.size(); i++) {  // Skip net 0
+        // Every net once, including net 0 ("not connected"): a gate with only unwired inputs
+        // hangs off net 0 alone and would otherwise never be evaluated (a NOT of nothing is 1).
+        for (size_t i = 0; i < m_nets.size(); i++) {
             enqueue(i);
         }
     firstTick = false;
@@ -315,6 +311,7 @@ void Simulator::tick() {
     processRegisters();
 
     SimResult result;
+    result.runId = m_runId;
     result.sourcesCurrIdx.reserve(m_sources.size());
     for (const auto& source : m_sources) {result.sourcesCurrIdx.push_back(source.currentIndex);}
     result.registerValues.reserve(m_registers.size());
@@ -334,7 +331,8 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_muxes = graph.muxes;
 
     firstTick = true;
-    auto numNets = map.net2wire.size();
+    m_runId = graph.runId;
+    const size_t numNets = graph.numNets;   // sent with the circuit; the GUI's wire map is not ours to read
     m_nets.assign(numNets + 1, 0);
     m_inQueue.assign(numNets + 1, 0);
     m_eventQueue.reserve(numNets + 1);
@@ -344,10 +342,9 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
     for (size_t gateIdx = 0; gateIdx < m_gates.size(); gateIdx++) {
         Gate& gate = m_gates[gateIdx];
+        // Net 0 gets a fan-out list too. It never changes, so this only costs one evaluation on the first tick.
         for (auto inputNetId: gate.inIDs) {
-            if (inputNetId != 0) {
-                m_gateFanout[inputNetId].push_back(gateIdx);
-            }
+            m_gateFanout[inputNetId].push_back(gateIdx);
         }
     }
 
@@ -365,32 +362,41 @@ void Simulator::receiveCircuit(ExportGraph graph){
         }
     }
 
-    sim_running = true;
+    m_running = true;
+
+    // Produce the first values right away; waiting for the timer would leave the canvas showing
+    // a running circuit with no values for up to one tick period (a full second at slow speeds).
+    tick();
+    if (m_timer) m_timer->start();   // the next tick comes one whole period from now
+}
+
+void Simulator::setRunning(bool running) {
+    m_running = running;
+}
+
+void Simulator::unloadCircuit() {
+    m_running = false;
+    clearCircuit();
 }
 
 void Simulator::setTimerPeriod(int milliseconds) {
-    m_timer->setInterval(milliseconds);
+    if (m_timer) m_timer->setInterval(milliseconds);
 }
 
 void Simulator::printRunDataInfo() {
-    if (runData.empty()) {
+    if (m_tickCount == 0) {
         qDebug() << "No tick timings recorded.";
         return;
     }
 
-    long long total = 0;
-    for (long value : runData) {
-        total += value;
-    }
-
-    double average = static_cast<double>(total) / static_cast<double>(runData.size());
+    double average = static_cast<double>(m_tickMicrosTotal) / static_cast<double>(m_tickCount);
     qDebug() << "Average tick execution time:" << average << "microseconds";
 }
 
 void Simulator::SimController() {
     m_timer = new QTimer(this);
         connect(m_timer, &QTimer::timeout, this, [this]() {
-        if (sim_running) {
+        if (m_running) {
             auto startTime = std::chrono::high_resolution_clock::now();
 
             tick();
@@ -398,8 +404,8 @@ void Simulator::SimController() {
             auto endTime = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
-            auto time = duration.count();
-            runData.push_back(time);
+            m_tickMicrosTotal += duration.count();
+            m_tickCount++;
         }
         });
     m_timer->start(100);

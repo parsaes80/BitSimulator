@@ -1,12 +1,14 @@
 #include "MainWindow.h"
 #include <QDebug>
+#include <QDockWidget>
+#include <QMessageBox>
+#include <QStatusBar>
 #include "CircuitCanvas.h"
+#include "PropertiesPanel.h"
 #include "Toolbar.h"
 
-bool sim_running;
 GlobalMap map;
 
-ItemOverlay* overlayPtr;
 QGraphicsScene* scenePtr;
 MainWindow* mainMenuPtr;
 
@@ -39,8 +41,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
 {
     qDebug() << "Closing application - stopping simulator thread...";
 
+    ui.camera->getScene()->stopSim();
+
     if (simThread && simThread->isRunning()) {
-        simObj->printRunDataInfo();
+        // Run it in the simulator's own thread, which is the only one allowed to read its data
+        QMetaObject::invokeMethod(simObj, &Simulator::printRunDataInfo, Qt::BlockingQueuedConnection);
         simThread->quit();
 
         if (!simThread->wait(3000)) {  // Wait up to 3 seconds
@@ -57,24 +62,17 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::setup()
 {
     ui.setupUi(this);
-    overlayPtr = ui.overlay;
     mainMenuPtr = this;
+    CircuitScene* scene = ui.camera->getScene();
 
-    //setup slider
-    ui.slider->setRange(1, 10000);  // 1ms to 1000ms
+    // Set the slider up before connecting it, so its initial value is not sent to a simulator
+    // that has not started yet. 3350 maps to ~100 ms per tick, the simulator's own initial period.
+    ui.slider->setRange(1, 10000);
     ui.slider->setValue(3350);
-    on_slider_valueChanged(3350);
 
-    ui.numDisplayInputs->setRange(1,8);
-    ui.numDisplayInputs->setValue(2);
-    ui.numDisplayOutputs->setRange(0,8);
-    ui.numDisplayOutputs->setValue(2);
-    ui.numGateMuxInputs->setRange(2, 8);
-    ui.numGateMuxInputs->setValue(2);
+    setupPropertiesPanel();
 
-    ui.overlay->setCurrentIndex(0);
-
-    // setup button connections to the scene
+    // Toolbar: each button makes its component the active tool
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
     ui.nandButton->setGateType(GType::NAND);
@@ -83,46 +81,62 @@ void MainWindow::setup()
     ui.xnorButton->setGateType(GType::XNOR);
     ui.notButton->setGateType(GType::NOT);
 
-    connect(ui.andButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.orButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.notButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.nandButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.norButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.xorButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.xnorButton,&GateButton::gateTypeSelected,ui.camera->getScene(),&CircuitScene::setNextGateType);
-    connect(ui.srcButton,&SourceButton::sourceSelected,ui.camera->getScene(),&CircuitScene::setNextSource);
-    connect(ui.regButton, &RegisterButton::RegSelected, ui.camera->getScene(), &CircuitScene::setNextRegister);
-    connect(ui.muxButton, &MuxButton::MuxSelected, ui.camera->getScene(), &CircuitScene::setNextMux);
-    connect(ui.displayButton, &DisplayButton::DisplaySelected, ui.camera->getScene(), &CircuitScene::setNextDisplay);
+    for (GateButton* button : {ui.andButton, ui.orButton, ui.notButton, ui.nandButton,
+                               ui.norButton, ui.xorButton, ui.xnorButton}) {
+        connect(button, &GateButton::gateTypeSelected, scene, &CircuitScene::selectGateTool);
+    }
+    connect(ui.srcButton, &SourceButton::sourceSelected, scene, [scene] { scene->selectTool(itemKind<SourceProps>); });
+    connect(ui.regButton, &RegisterButton::RegSelected, scene, [scene] { scene->selectTool(itemKind<RegisterProps>); });
+    connect(ui.muxButton, &MuxButton::MuxSelected, scene, [scene] { scene->selectTool(itemKind<MuxProps>); });
+    connect(ui.displayButton, &DisplayButton::DisplaySelected, scene, [scene] { scene->selectTool(itemKind<DisplayProps>); });
 
-    connect(ui.andButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.orButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.notButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.nandButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.norButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.xorButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.xnorButton,&GateButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.srcButton,&SourceButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.regButton, &RegisterButton::setOverlay, ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.muxButton, &MuxButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
-    connect(ui.displayButton, &DisplayButton::setOverlay,ui.overlay,&QStackedWidget::setCurrentIndex);
+    // Toolbar: simulation controls
+    connect(ui.startButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
+    connect(ui.clearButton, &QPushButton::clicked, this, &MainWindow::clearCircuit);
+    connect(ui.compileButton, &QPushButton::clicked, this, &MainWindow::compileHdl);
+    connect(ui.slider, &QSlider::valueChanged, this, &MainWindow::updateTimerPeriod);
+    connect(scene, &CircuitScene::simStateChanged, this, &MainWindow::showSimState);
+    showSimState(scene->simState());
 
-
+    // Simulator and HDL compiler threads
     connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
-    connect(ui.camera->getScene(),&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit);
+    connect(scene,&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit);
+    connect(scene,&CircuitScene::setSimRunningSIG,simObj,&Simulator::setRunning);
+    connect(scene,&CircuitScene::stopSimSIG,simObj,&Simulator::unloadCircuit);
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
     connect(compilerThread, &QThread::finished, compiler, &QObject::deleteLater);
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
-    connect(simObj, &Simulator::sendResult,ui.camera->getScene(),&CircuitScene::receiveResult);
+    connect(simObj, &Simulator::sendResult,scene,&CircuitScene::receiveResult);
     connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
-    connect(compiler, &HDLCompiler::sendGraph, ui.camera->getScene(), &CircuitScene::receiveGraph);
+    connect(compiler, &HDLCompiler::sendGraph, scene, &CircuitScene::receiveGraph);
+    connect(compiler, &HDLCompiler::error, this, [this](const QString& message) { m_compileError = message; });
+    connect(compiler, &HDLCompiler::finished, this, &MainWindow::compileFinished);
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
 }
 
+void MainWindow::setupPropertiesPanel()
+{
+    // The canvas gets its own (nested) main window so that the properties dock sits beside the
+    // canvas only. Docked to this window it would also sit beside the toolbar and widen the app.
+    auto* canvasHost = new QMainWindow;
+    canvasHost->setWindowFlags(Qt::Widget);
+    ui.gridLayout_2->replaceWidget(ui.camera, canvasHost);
+    canvasHost->setCentralWidget(ui.camera);
 
-void MainWindow::on_slider_valueChanged(int value) {
+    m_properties = new PropertiesPanel(ui.camera->getScene());
+
+    auto* dock = new QDockWidget(tr("Properties"), canvasHost);
+    dock->setObjectName(QStringLiteral("propertiesDock"));
+    dock->setWidget(m_properties);
+    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);   // no close button: there is no menu to bring it back
+    canvasHost->addDockWidget(Qt::RightDockWidgetArea, dock);
+    canvasHost->resizeDocks({dock}, {270}, Qt::Horizontal);
+}
+
+void MainWindow::updateTimerPeriod(int value) {
     double minInput = 1.0;      // Slider minimum
     double maxInput = 10000.0;  // Slider maximum
     double minOutput = 1.0;     // Fastest speed (1ms)
@@ -147,332 +161,65 @@ void MainWindow::on_slider_valueChanged(int value) {
 
     emit sendTimerPeriod(result);
 }
-void MainWindow::on_startButton_clicked()
+void MainWindow::toggleSimulation()
 {
-    ui.camera->getScene()->startSim();
+    CircuitScene* scene = ui.camera->getScene();
+    if (scene->simState() == SimState::Running) scene->pauseSim();
+    else scene->startOrResumeSim();     // from Stopped: run from the first tick; from Paused: continue
 }
-void MainWindow::on_compileButton_clicked()
+
+void MainWindow::showSimState(SimState state)
 {
+    // One button: "Pause" (amber) while running, "Start" (green) otherwise
+    const bool running = (state == SimState::Running);
+    static const QString style = QStringLiteral(
+        "QPushButton { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; font-weight: bold; }"
+        "QPushButton:hover { background-color: %4; }"
+        "QPushButton:pressed { background-color: %3; }");
+
+    ui.startButton->setText(running ? tr("Pause") : tr("Start"));
+    ui.startButton->setStyleSheet(running ? style.arg("#e0a526", "#1b1c1f", "#b98510", "#edb740")
+                                          : style.arg("#2e9e5b", "#ffffff", "#23824a", "#38b56a"));
+    ui.startButton->setToolTip(running ? tr("Freeze the simulation")
+                                       : state == SimState::Paused ? tr("Continue the simulation")
+                                                                   : tr("Run the circuit from the first tick"));
+}
+
+void MainWindow::clearCircuit()
+{
+    ui.camera->getScene()->resetCircuit();   // stops the simulation, then empties the canvas
+}
+
+void MainWindow::compileHdl()
+{
+    // Stop first: the simulation must not be running when the compiled circuit replaces this one.
+    // The current circuit stays on the canvas until the new one has compiled successfully.
+    ui.camera->getScene()->stopSim();
+
+    m_compileError.clear();
+    ui.compileButton->setEnabled(false);
+    statusBar()->showMessage(tr("Compiling..."));
     ui.hdlEditor->onSendCode();
 }
 
-void MainWindow::on_overlay_currentChanged(int arg1)
+void MainWindow::compileFinished(bool ok)
 {
-    auto scene = ui.camera->getScene();
-    
-    // Block signals to prevent feedback loops
-    const bool oldState = ui.overlay->blockSignals(true);
-    
-    switch(arg1) {
-    case 0: // Gate/Mux page
-        ui.numGateMuxInputs->setValue(scene->getNumInputs());
-        break;
-        
-    case 1: // Register page
-        switch (scene->getNextRegisterType()) {
-        case RType::SR:
-            ui.regType->setCurrentIndex(0);
-            break;
-        case RType::JK:
-            ui.regType->setCurrentIndex(1);
-            break;
-        case RType::D:
-            ui.regType->setCurrentIndex(2);
-            break;
-        case RType::T:
-            ui.regType->setCurrentIndex(3);
-            break;
-        default:
-            ui.regType->setCurrentIndex(0); // Default to SR
-            break;
-        }
-        if (scene->getHasEnable()) {
-            ui.regEnableType->setCurrentIndex(1);
-        } else {
-            ui.regEnableType->setCurrentIndex(0);
-        }
-        
-        if (scene->getIsFlipFlop()) {
-            ui.regHoldType->setCurrentIndex(0);
-        } else {
-            ui.regHoldType->setCurrentIndex(1);
-        }
-        break;
-        
-    case 2: // Source page
-        if (scene->getSrcIsWave()) {
-            ui.srcType->setCurrentIndex(0);
-            // Show current bool values in text edit
-            if (std::holds_alternative<QList<bool>>(scene->getSrcValues())) {
-                const auto boolValues = std::get<QList<bool>>(scene->getSrcValues());
-                QString text;
-                for (bool val : boolValues) {
-                    text += val ? "1" : "0";
-                }
-                ui.srcValues->setPlainText(text);
-            }
-        } else {
-            ui.srcType->setCurrentIndex(1);
-            // Show current int values in text edit
-            if (std::holds_alternative<QList<int>>(scene->getSrcValues())) {
-                const auto intValues = std::get<QList<int>>(scene->getSrcValues());
-                QStringList textList;
-                for (int val : intValues) {
-                    textList << QString::number(val);
-                }
-                ui.srcValues->setPlainText(textList.join(","));
-            }
-        }
-        break;
-        
-    case 3: // Display page
-        ui.numDisplayInputs->setValue(scene->getNumInputs());
-        ui.numDisplayOutputs->setValue(scene->getNumOutputs());
-        break;
+    ui.compileButton->setEnabled(true);
+
+    if (ok) {
+        statusBar()->showMessage(tr("Compiled. The new circuit is on the canvas."), 6000);
+        return;
     }
-    
-    ui.overlay->blockSignals(oldState);
+
+    statusBar()->showMessage(tr("Compilation failed. The circuit on the canvas was kept."), 8000);
+
+    const QString details = m_compileError.isEmpty() ? tr("The compiler gave no further details.") : m_compileError;
+    auto* box = new QMessageBox(QMessageBox::Warning, tr("Compilation failed"),
+                                tr("The Verilog could not be compiled, so the circuit on the canvas was left as it is."),
+                                QMessageBox::Ok, this);
+    box->setObjectName(QStringLiteral("compileErrorBox"));
+    box->setInformativeText(details.size() > 600 ? details.left(600) + QStringLiteral("...") : details);
+    if (details.size() > 600) box->setDetailedText(details);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->open();        // not exec(): the window stays usable
 }
-
-void MainWindow::on_numGateMuxInputs_valueChanged(int value)
-{
-    ui.camera->getScene()->setNumInputs(value);
-}
-
-void MainWindow::on_regType_currentIndexChanged(int index)
-{
-    switch (index) {
-    case 0:
-        ui.camera->getScene()->setNextRegister(RType::SR);
-        break;
-    case 1:
-        ui.camera->getScene()->setNextRegister(RType::JK);
-        break;
-    case 2:
-        ui.camera->getScene()->setNextRegister(RType::D);
-        break;
-    case 3:
-        ui.camera->getScene()->setNextRegister(RType::T);
-        break;
-    default:
-        break;
-    }
-}
-
-void MainWindow::on_regHoldType_currentIndexChanged(int index)
-{
-    switch (index) {
-    case 0:
-        ui.camera->getScene()->setIsFlipFlop(true);
-        break;
-    case 1:
-        ui.camera->getScene()->setIsFlipFlop(false);
-        break;
-    }
-}
-
-void MainWindow::on_regEnableType_currentIndexChanged(int index)
-{
-    switch (index) {
-    case 0:
-        ui.camera->getScene()->setHasEnable(true);
-        break;
-    case 1:
-        ui.camera->getScene()->setHasEnable(false);
-        break;
-    }
-}
-
-
-void MainWindow::on_srcType_currentIndexChanged(int index)
-{
-    switch (index) {
-    case 0:
-        ui.camera->getScene()->setSrcValues(QList<bool>({false,true}));
-        break;
-    case 1:
-        ui.camera->getScene()->setSrcValues(QList<int>({0,1,2}));
-        break;
-    }
-}
-
-
-void MainWindow::on_srcValues_textChanged()
-{
-    if(std::holds_alternative<QList<bool>>(ui.camera->getScene()->getSrcValues())){
-        auto scene = ui.camera->getScene();
-        QString text = ui.srcValues->toPlainText();
-
-        QList<bool> values;
-        bool isValid = true;
-        QString cleanText;  // For displaying cleaned version
-
-        // Parse and clean text
-        for (QChar c : std::as_const(text)) {
-            if (c == '0') {
-                values.append(false);
-                cleanText += '0';
-            }
-            else if (c == '1') {
-                values.append(true);
-                cleanText += '1';
-            }
-            else if (c.isSpace() || c == ',' || c == '-') {
-                // Allow separators but don't include in cleanText
-                continue;
-            }
-            else {
-                isValid = false;
-                break;
-            }
-        }
-
-        if (isValid && !values.isEmpty()) {
-            // Valid input
-            ui.srcValues->setStyleSheet("");
-            scene->setSrcValues(values);
-        }
-        else {
-            // Invalid input
-            values.clear();
-            values.append(0);
-            scene->setSrcValues(values);
-            ui.srcValues->setStyleSheet("QTextEdit { background-color: #ffcccc; }");
-        }
-    }
-    else{
-        // Handle QList<int> case
-        auto scene = ui.camera->getScene();
-        QString text = ui.srcValues->toPlainText();
-        
-        QList<int> values;
-        bool isValid = true;
-        
-        // Split by comma or whitespace
-        QStringList parts = text.split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts);
-        
-        for (const QString& part : std::as_const(parts)) {
-            bool ok;
-            int value = part.toInt(&ok);
-            if (ok && value >= 0) {
-                values.append(value);
-            } else {
-                isValid = false;
-                break;
-            }
-        }
-        
-        if (isValid && !values.isEmpty()) {
-            // Valid input
-            ui.srcValues->setStyleSheet("");
-            scene->setSrcValues(values);
-        } else {
-            // Invalid input
-            values.clear();
-            values.append(0);
-            scene->setSrcValues(values);
-            ui.srcValues->setStyleSheet("QTextEdit { background-color: #ffcccc; }");
-        }
-    }
-}
-
-
-void MainWindow::on_numDisplayInputs_valueChanged(int value)
-{
-    ui.camera->getScene()->setNumInputs(value);
-}
-
-
-void MainWindow::on_numDisplayOutputs_valueChanged(int value)
-{
-    ui.camera->getScene()->setNumOutputs(value);
-}
-
-
-void MainWindow::on_clearButton_clicked()
-{
-    sim_running = false;
-    ui.camera->getScene()->clear();
-    map.clear();
-}
-
-
-void MainWindow::on_srcTextEdit_textChanged()
-{
-    SourceItem* currentSource = ui.overlay->getCurrentSource();
-    if (!currentSource) return;
-
-    QString text = ui.srcTextEdit->toPlainText();
-    auto values = currentSource->getValues();
-
-    if(std::holds_alternative<QList<bool>>(values)){
-        // Parse as boolean values 
-        QList<bool> newValues;
-        bool isValid = true;
-
-        // Parse and clean text
-        for (QChar c : std::as_const(text)) {
-            if (c == '0') {
-                newValues.append(false);
-            }
-            else if (c == '1') {
-                newValues.append(true);
-            }
-            else if (c.isSpace() || c == ',' || c == '-') {
-                // Allow separators but skip them
-                continue;
-            }
-            else {
-                isValid = false;
-                break;
-            }
-        }
-
-        if (isValid && !newValues.isEmpty()) {
-            // Valid input - update the source
-            ui.srcTextEdit->setStyleSheet("");
-            currentSource->setValues(newValues);
-            currentSource->update();
-        }
-        else {
-            // Invalid input - show error
-            ui.srcTextEdit->setStyleSheet("QPlainTextEdit { background-color: #ffcccc; }");
-        }
-    }
-    else{
-        // Parse as integer values
-        QList<int> newValues;
-        bool isValid = true;
-
-        // Split by comma or whitespace
-        QStringList parts = text.split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts);
-
-        for (const QString& part : std::as_const(parts)) {
-            bool ok;
-            int value = part.toInt(&ok);
-            if (ok && value >= 0) {
-                newValues.append(value);
-            } else {
-                isValid = false;
-                break;
-            }
-        }
-
-        if (isValid && !newValues.isEmpty()) {
-            // Valid input - update the source
-            ui.srcTextEdit->setStyleSheet("");
-            // Need to add setValues overload for QList<int> in SourceItem
-            currentSource->setValues(newValues);
-            currentSource->update();
-        } else {
-            // Invalid input - show error
-            ui.srcTextEdit->setStyleSheet("QPlainTextEdit { background-color: #ffcccc; }");
-        }
-    }
-}
-
-void MainWindow::on_pushButton_clicked()
-{
-    sim_running=false;
-}
-

@@ -51,19 +51,29 @@ bool HDLCompiler::compile(const QString& hdlCode) {
 #else
     QStringList arguments;
     arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
+    //makes images too
+    // arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; "
+    //                      "abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; "
+    //                      "write_json code_netlist.json; "
+    //                      "show -format svg -viewer none -prefix code_graph";
+
     Process->start(yosysPath, arguments);
 #endif
 
     if (!Process->waitForFinished(100000)) {
         qDebug() << "Process timeout or failed to start";
-        emit error("Yosys process timeout");
+        emit error("Yosys did not run: " + Process->errorString());
+        Process->deleteLater();
         return false;
     }
 
     if (Process->exitCode() != 0) {
+        // The error output can only be read once, so keep it for both the log and the message
+        const QString yosysErrors = QString::fromLocal8Bit(Process->readAllStandardError()).trimmed();
         qDebug() << "Yosys compilation failed";
-        qDebug() << "Error:" << Process->readAllStandardError();
-        emit error("Compilation failed: " + Process->readAllStandardError());
+        qDebug() << "Error:" << yosysErrors;
+        emit error(yosysErrors);
+        Process->deleteLater();
         return false;
     }
 
@@ -444,7 +454,14 @@ bool HDLCompiler::processJsonFile(const QString& filePath) {
 }
 
 void HDLCompiler::receiveCode(const QString& hdlCode) {
-    compile(hdlCode);
+    // Each compile starts from nothing. Without this, components of the previous design
+    // that the new one does not happen to overwrite stay in the result.
+    m_components.clear();
+    m_componentsPos.clear();
+    m_bitToNet.clear();
+
+    const bool ok = compile(hdlCode);
+    emit finished(ok);
 }
 
 //===================== TextEditor ========================

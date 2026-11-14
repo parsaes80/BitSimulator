@@ -14,7 +14,9 @@
 #include <QMimeData>
 #include <QDebug>
 #include <QKeyEvent>
+#include <expected>
 #include "general.h"
+#include "ItemProps.h"
 
 class WireItem;
 class GateItem;
@@ -46,23 +48,53 @@ private:
     QList<WireItem*> m_connections;
 };
 
-class GateItem : public QGraphicsObject{
+// Base of everything that can be placed on the canvas and wired up.
+// Its properties can be read and changed after it has been placed.
+class ComponentItem : public QGraphicsObject {
     Q_OBJECT
 public:
-    explicit GateItem( GType gateType,int numInputs,QGraphicsItem* parent = nullptr);
+    // Empty on success; otherwise the reason the edit was refused (nothing is changed in that case).
+    using EditResult = std::expected<void, QString>;
 
-    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
+    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); }
+
+    virtual ItemProps props() const = 0;
+    // An edit that would remove a pin which still has a wire on it is refused.
+    virtual EditResult setProps(const ItemProps& props) = 0;
+    virtual QList<PortItem*> ports() const = 0;
+
+    bool hasConnections() const;
+
+protected:
+    explicit ComponentItem(QGraphicsItem* parent = nullptr);
+
+    void drawSelection(QPainter* painter, const QStyleOptionGraphicsItem* option) const;
+
+    // Refuses if any of ports[newCount..] is wired; `what` names the pin group, e.g. "Input".
+    static EditResult checkRemovable(const QList<PortItem*>& ports, int newCount, const QString& what);
+    static EditResult checkRemovable(const PortItem* port, bool stillWanted, const QString& what);
+    // Grows or shrinks a pin list; existing pins (and the wires on them) are kept.
+    void resizePorts(QList<PortItem*>& ports, int count, PortType type);
+    void setOptionalPort(PortItem*& port, bool wanted, PortType type);
+    void updateWires() const;                         // call after pins have moved
+
+    QRectF m_rect;
+};
+
+class GateItem : public ComponentItem {
+public:
+    explicit GateItem(const GateProps& props, QGraphicsItem* parent = nullptr);
+
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    QString gateTypeToString() const;
+    ItemProps props() const override { return m_props; }
+    EditResult setProps(const ItemProps& props) override;
+    QList<PortItem*> ports() const override { return m_inputPorts + QList<PortItem*>{m_outputPort}; }
 
-    GType getGateType() const { return m_gateType; };
+    GType getGateType() const { return m_props.type; };
     PortItem* getInputPort(int index) const { return m_inputPorts[index]; };
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
-
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void drawGateShape(QPainter* painter);
@@ -71,48 +103,35 @@ private:
     void drawXorGate(QPainter* painter);
     void drawNotGate(QPainter* painter);
     void drawNotBubble(QPainter* painter);
-    void createPorts();
+    void layoutPorts();
 
-    GType m_gateType;
-    QRectF m_rect;
-
-    Direction m_direction = Direction::RIGHT;
-
-    int m_numInputs;
-    QVector<PortItem*> m_inputPorts;
+    GateProps m_props;
+    QList<PortItem*> m_inputPorts;
     PortItem* m_outputPort = nullptr;
 };
 
-class SourceItem : public QGraphicsObject {
-    Q_OBJECT
+class SourceItem : public ComponentItem {
 public:
+    explicit SourceItem(const SourceProps& props, QGraphicsItem* parent = nullptr);
 
-    SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, QGraphicsItem* parent = nullptr);
-    SourceItem(const std::variant<QList<bool>,QList<int>>& cycleValues, int numOut, QGraphicsItem* parent = nullptr);
-    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    void setValues(QList<bool> values) { m_srcValues = values; };
-    void setValues(QList<int> values) { m_srcValues = values; };
+    ItemProps props() const override { return m_props; }
+    EditResult setProps(const ItemProps& props) override;
+    QList<PortItem*> ports() const override { return m_outputPorts; }
 
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; };
     int getIdx() const { return m_currIdx;};
     void setIdx(u8 value) { m_currIdx = value; };
-    int getNumOutputPorts() const { return m_numOutputs; };
-    std::variant<QList<bool>,QList<int>> getValues() const { return m_srcValues; };
+    int getNumOutputPorts() const { return m_props.bits; };
+    SourceValues getValues() const { return m_props.values; };
 
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
-    void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
-signals:
-    void setOverlay(SourceItem* sourcePtr);
 private:
-    void addPorts();
+    void layoutPorts();
 
-    int m_currIdx, m_numOutputs;
-    std::variant<QList<bool>,QList<int>> m_srcValues;
+    SourceProps m_props;
+    int m_currIdx = 0;
     QList<PortItem*> m_outputPorts;
-    QRectF m_rect;
 };
 
 class WireItem : public QGraphicsObject{
@@ -136,9 +155,6 @@ public:
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
-
 public slots:
     void updateWirePosition();
 
@@ -151,88 +167,83 @@ private:
     QPen m_pen;  //need pen because of outside access
 };
 
-class RegisterItem : public QGraphicsObject {
-    //Q_OBJECT
+class RegisterItem : public ComponentItem {
 public:
-    explicit RegisterItem(RType RegType,bool isFlipFlop,bool hasEnable, QGraphicsItem* parent= nullptr);
+    explicit RegisterItem(const RegisterProps& props, QGraphicsItem* parent = nullptr);
 
-    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    RType getRegType() const { return m_regType; };
+    ItemProps props() const override { return m_props; }
+    EditResult setProps(const ItemProps& props) override;
+    QList<PortItem*> ports() const override;
+
+    RType getRegType() const { return m_props.type; };
     PortItem* getInputPort() const { return m_inputPortOne; };
     PortItem* getInputPortTwo() const { return m_inputPortTwo; };
     PortItem* getOutputPort() const { return m_outputPort; }
     PortItem* getReadEnablePort() const { return m_readEnbPort; }
     PortItem* getClkPort() const { return m_clkPort; }
     void setValue(bool value) { m_value = value;};
-
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
+    bool getValue() const { return m_value; }
 
 private:
-    void createPorts(bool isFlipFlop, bool hasEnable);
+    void layoutPorts();
+
+    RegisterProps m_props;
     bool m_value = false;
-
-    RType m_regType;
-    QRectF m_rect;
-
-    Direction m_direction = Direction::RIGHT;
 
     PortItem* m_inputPortOne = nullptr; // S,J,D,T
     PortItem* m_inputPortTwo = nullptr; // R,K,R,R
 
-    PortItem* m_clkPort = nullptr;
-    PortItem* m_readEnbPort = nullptr;
+    PortItem* m_clkPort = nullptr;      // only on flip-flops
+    PortItem* m_readEnbPort = nullptr;  // only with an enable input
 
     PortItem* m_outputPort = nullptr;
 };
 
-class MuxItem : public QGraphicsObject {
+class MuxItem : public ComponentItem {
 public:
-    explicit MuxItem(MType MuxType,int numInputs, QGraphicsItem* parent= nullptr);
-    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
+    explicit MuxItem(const MuxProps& props, QGraphicsItem* parent = nullptr);
+
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    ItemProps props() const override { return m_props; }
+    EditResult setProps(const ItemProps& props) override;
+    QList<PortItem*> ports() const override { return m_inputDataPorts + m_inputAddressPorts + QList<PortItem*>{m_outputPort}; }
 
     QList<PortItem*> getInputPorts() const { return m_inputDataPorts; }
     QList<PortItem*> getAddressPorts() const { return m_inputAddressPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
 
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
-
 private:
-    void createPorts();
-    int m_numInputs;
-    MType m_muxType;
-    QRectF m_rect;
+    void layoutPorts();
 
+    MuxProps m_props;
     QList<PortItem*> m_inputDataPorts;
     QList<PortItem*> m_inputAddressPorts;
     PortItem* m_outputPort = nullptr;
 };
 
-class DisplayItem: public QGraphicsObject{
+class DisplayItem : public ComponentItem {
 public:
-    explicit DisplayItem(int numInputs,int numOutputs, QGraphicsItem* parent= nullptr);
-    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); };
+    explicit DisplayItem(const DisplayProps& props, QGraphicsItem* parent = nullptr);
+
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    ItemProps props() const override { return m_props; }
+    EditResult setProps(const ItemProps& props) override;
+    QList<PortItem*> ports() const override { return m_inputPorts + m_outputPorts; }
 
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
     void updateValue();
-
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
+    int getValue() const { return m_value; }     // the number currently shown
 
 private:
-    void createPorts();
+    void layoutPorts();
 
-    QRectF m_rect;
-
+    DisplayProps m_props;
     int m_value = 0;
-    int m_numInputs;
-    int m_numOutputs;
     QList<PortItem*> m_inputPorts;
     QList<PortItem*> m_outputPorts;
 };

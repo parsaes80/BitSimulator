@@ -7,17 +7,21 @@ class Simulator : public QObject {
     Q_OBJECT
 public:
     explicit Simulator(QObject *parent = nullptr);
-    void clearCircuit();
-  
+
+    // All of these run in the simulator's thread. The GUI reaches them through queued connections,
+    // so they execute in the order the GUI asked for them and no state is shared between threads.
 public slots:
-    void tick();
-    void receiveCircuit(ExportGraph graph);
+    void receiveCircuit(ExportGraph graph);   // replaces any previous circuit and starts running it
+    void setRunning(bool running);            // pause (keeps all state) or continue
+    void unloadCircuit();                     // stop and forget the circuit
     void SimController(); 
     void setTimerPeriod(int milliseconds);
     void printRunDataInfo();
 signals:
     void sendResult(SimResult result);
 private:
+    void tick();
+    void clearCircuit();
     void processGates(u32 changedNetId);
     void processMuxes(u32 changedNetId);
     void processRegisters();
@@ -41,8 +45,12 @@ private:
     std::vector<u32> m_sourceOutputs;
 
     bool firstTick = true;
+    bool m_running = false;
+    u32 m_runId = 0;
 
-    std::vector<long> runData;
+    // Tick timing statistics (a running total, so a long run does not grow memory)
+    long long m_tickMicrosTotal = 0;
+    long long m_tickCount = 0;
 
     std::vector<std::vector<u32>> m_gateFanout;
     std::vector<std::vector<u32>> m_MuxFanout;

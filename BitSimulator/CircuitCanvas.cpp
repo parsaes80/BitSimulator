@@ -7,11 +7,13 @@
 #include <QDebug>
 #include <qscrollbar.h>
 #include <vector>
-#include "Toolbar.h"
+#include <QApplication>
 
 extern GlobalMap map;
-extern ItemOverlay* overlayPtr;
 extern QGraphicsScene* scenePtr;
+
+// True while the items should draw simulation values (running or paused). Only the GUI thread uses it.
+bool sim_values_visible = false;
 
 //===================== QGraphicsScene ========================
 
@@ -27,52 +29,182 @@ CircuitScene::CircuitScene(QObject* parent)
     connect(this, &QGraphicsScene::selectionChanged, this, [this]() { update(); });
 }
 
-QGraphicsObject* CircuitScene::addGate(GType gateType,int numIn, QPointF position)
+CircuitScene::~CircuitScene()
 {
-    GateItem* gate = new GateItem(gateType,numIn);
-    gate->setPos(position);
-    addItem(gate);
-    return gate;
+    // ~QGraphicsScene deletes the items next, which can emit selectionChanged. Listeners such as the
+    // properties panel would then call into this object after its members are destroyed.
+    disconnect(this, &QGraphicsScene::selectionChanged, nullptr, nullptr);
 }
-QGraphicsObject* CircuitScene::addSource(QPointF position)
+
+ComponentItem* CircuitScene::addComponent(const ItemProps& props, QPointF position)
 {
-    SourceItem* source = new SourceItem(m_srcValues);
-    source->setPos(position);
-    addItem(source);
-    connect(source, &SourceItem::setOverlay, overlayPtr, &ItemOverlay::onSourceClicked);
-    return source;
+    if (isLocked()) return nullptr;
+
+    ComponentItem* item = std::visit([](const auto& p) -> ComponentItem* {
+        using T = std::decay_t<decltype(p)>;
+        if constexpr (std::is_same_v<T, GateProps>)          return new GateItem(p);
+        else if constexpr (std::is_same_v<T, RegisterProps>) return new RegisterItem(p);
+        else if constexpr (std::is_same_v<T, MuxProps>)      return new MuxItem(p);
+        else if constexpr (std::is_same_v<T, SourceProps>)   return new SourceItem(p);
+        else                                                 return new DisplayItem(p);
+    }, props);
+
+    item->setPos(position);
+    addItem(item);
+    circuitEdited();
+    return item;
 }
-QGraphicsObject* CircuitScene::addSource(std::variant<QList<bool>,QList<int>> srcValues,int numOut,QPointF position)
+
+ComponentItem::EditResult CircuitScene::editComponent(ComponentItem* item, const ItemProps& props)
 {
-    SourceItem* source = new SourceItem(srcValues,numOut);
-    source->setPos(position);
-    addItem(source);
-    connect(source, &SourceItem::setOverlay, overlayPtr, &ItemOverlay::onSourceClicked);
-    return source;
+    if (isLocked()) return std::unexpected(tr("Pause the simulation to edit the circuit."));
+
+    auto result = item->setProps(props);
+    if (result) circuitEdited();
+    return result;
 }
-QGraphicsObject* CircuitScene::addRegister(RType RegType, QPointF position) {
-    RegisterItem* Reg = new RegisterItem(RegType,m_isFlipFlop,m_hasEnable);
-    Reg->setPos(position);
-    addItem(Reg);
-    return Reg;
+
+void CircuitScene::deleteSelection()
+{
+    if (isLocked()) return;
+
+    const QList<QGraphicsItem*> selected = selectedItems();
+    bool removedAny = false;
+
+    // Wires first, so a component selected together with all of its wires goes too
+    for (QGraphicsItem* item : selected) {
+        if (auto* wire = dynamic_cast<WireItem*>(item)) {
+            wire->setStartPort(nullptr);
+            wire->setEndPort(nullptr);
+            removeItem(wire);
+            wire->deleteLater();
+            removedAny = true;
+        }
+    }
+    // Only a component with no wires attached can be deleted
+    for (QGraphicsItem* item : selected) {
+        if (auto* component = dynamic_cast<ComponentItem*>(item); component && !component->hasConnections()) {
+            removeItem(component);
+            component->deleteLater();
+            removedAny = true;
+        }
+    }
+
+    if (removedAny) circuitEdited();
 }
-QGraphicsObject* CircuitScene::addRegister(RType RegType,bool hasEnable, QPointF position) {
-    RegisterItem* Reg = new RegisterItem(RegType,true,hasEnable);
-    Reg->setPos(position);
-    addItem(Reg);
-    return Reg;
+
+void CircuitScene::resetCircuit()
+{
+    stopSim();
+    cancelWireConnection();
+    clear();
+    map.clear();
+    m_displays.clear();
+    m_lastNetValues.clear();
 }
-QGraphicsObject* CircuitScene::addMux(MType MuxType,int numIn, QPointF position) {
-    MuxItem* Mux = new MuxItem(MuxType,m_numInputs);
-    Mux->setPos(position);
-    addItem(Mux);
-    return Mux;
+
+//===================== Simulation state ========================
+
+void CircuitScene::setSimState(SimState state)
+{
+    if (m_simState == state) return;
+    m_simState = state;
+    sim_values_visible = (state != SimState::Stopped);
+    update();
+    emit simStateChanged(state);
 }
-QGraphicsObject* CircuitScene::addDisplay(int numIn,int numOut, QPointF position) {
-    DisplayItem* Display = new DisplayItem(numIn,numOut);
-    Display->setPos(position);
-    addItem(Display);
-    return Display;
+
+void CircuitScene::startOrResumeSim()
+{
+    if (m_simState == SimState::Running) return;
+
+    if (m_simState == SimState::Paused) {
+        // Nothing was edited since Pause (an edit would have ended the run), so just carry on
+        cancelWireConnection();
+        setSimState(SimState::Running);
+        emit setSimRunningSIG(true);
+        return;
+    }
+
+    cancelWireConnection();
+    ExportGraph graph = buildGraph();
+    graph.runId = ++m_runId;
+    setSimState(SimState::Running);
+    emit startSimSIG(graph);
+}
+
+void CircuitScene::pauseSim()
+{
+    if (m_simState != SimState::Running) return;
+    setSimState(SimState::Paused);
+    emit setSimRunningSIG(false);
+}
+
+void CircuitScene::stopSim()
+{
+    if (m_simState == SimState::Stopped) return;
+
+    ++m_runId;                 // results of this run that are still on their way are now ignored
+    emit stopSimSIG();
+    map.clear();
+    m_displays.clear();
+    m_lastNetValues.clear();
+    resetValues();
+    setSimState(SimState::Stopped);
+}
+
+void CircuitScene::circuitEdited()
+{
+    // The frozen values describe the circuit as it was; once it changes they are meaningless
+    if (m_simState == SimState::Paused) stopSim();
+}
+
+void CircuitScene::cancelWireConnection()
+{
+    if (m_currWire) {
+        removeItem(m_currWire);
+        delete m_currWire;
+    }
+    clearHighlights();
+    m_connectingWire = false;
+    m_currWire = nullptr;
+    m_currWireStartPort = nullptr;
+}
+
+void CircuitScene::resetValues()
+{
+    QList<DisplayItem*> displays;
+    for (QGraphicsItem* item : items()) {
+        if (auto* port = dynamic_cast<PortItem*>(item)) port->setValue(false);
+        else if (auto* wire = dynamic_cast<WireItem*>(item)) wire->setValue(false);
+        else if (auto* reg = dynamic_cast<RegisterItem*>(item)) reg->setValue(false);
+        else if (auto* source = dynamic_cast<SourceItem*>(item)) source->setIdx(0);
+        else if (auto* display = dynamic_cast<DisplayItem*>(item)) displays.append(display);
+    }
+    for (DisplayItem* display : std::as_const(displays)) display->updateValue();   // after their pins were cleared
+}
+
+void CircuitScene::setToolProps(const ItemProps& props)
+{
+    m_toolDefaults[props.index()] = props;
+    m_activeTool = props.index();
+    emit toolChanged();
+}
+
+void CircuitScene::selectTool(std::size_t kind)
+{
+    if (kind >= m_toolDefaults.size()) return;
+    clearSelection();            // picking a tool means "I want to place something new"
+    m_activeTool = kind;
+    emit toolChanged();
+}
+
+void CircuitScene::selectGateTool(GType gateType)
+{
+    auto gate = std::get<GateProps>(m_toolDefaults[itemKind<GateProps>]);
+    gate.type = gateType;
+    m_toolDefaults[itemKind<GateProps>] = normalized(gate);
+    selectTool(itemKind<GateProps>);
 }
 
 PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshold)
@@ -162,6 +294,12 @@ void CircuitScene::updateWireConnection(QPointF currentPoint)
 
 void CircuitScene::finishWireConnection(QPointF endPoint)
 {
+    // A drag that began before the simulation started must not add a wire to the running circuit
+    if (isLocked()) {
+        cancelWireConnection();
+        return;
+    }
+
     if (m_connectingWire && m_currWire) {
         PortItem* endPort = findNearestPort(endPoint);
 
@@ -191,6 +329,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
             // Set final wire appearance
             m_currWire->setPen(QPen(Qt::black, 2));
             m_currWire->updateWirePosition();
+            circuitEdited();
         } else {
             // Remove invalid wire
             removeItem(m_currWire);
@@ -205,7 +344,7 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
     }
 }
 
-void CircuitScene::startSim()
+ExportGraph CircuitScene::buildGraph()
 {
     ExportGraph graph;
     graph.clear();
@@ -221,7 +360,7 @@ void CircuitScene::startSim()
 
     for (QGraphicsItem* item : items()) {
         if (WireItem* wire = dynamic_cast<WireItem*>(item)) {
-            wireItems.push_back(wire);
+            if (wire->isConnected()) wireItems.push_back(wire);   // ignore a wire that is not attached at both ends
         }
         else if (GateItem* gate = dynamic_cast<GateItem*>(item)) {
             gateItems.push_back(gate);
@@ -436,11 +575,16 @@ void CircuitScene::startSim()
     graph.sources = sources;
     graph.registers = registers;
     graph.muxes = muxes;
-    emit startSimSIG(graph);
+    graph.numNets = netCounter - 1;    // nets are numbered 1..netCounter-1; net 0 means "not connected"
+    return graph;
 }
 
 void CircuitScene::receiveResult(const SimResult& result)
 {
+    // Results travel through the event queue, so one can arrive after its run was stopped or replaced.
+    // A paused run still accepts its own last results: they are the state it froze in.
+    if (m_simState == SimState::Stopped || result.runId != m_runId) return;
+
     const auto& nets = result.netValues;
     // Size mismatch = first result of a run (cache cleared in startSim): repaint every net
     const bool fullUpdate = m_lastNetValues.size() != nets.size();
@@ -476,7 +620,7 @@ void CircuitScene::receiveResult(const SimResult& result)
 void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
 {
     qDebug() << "Received graph with" << graph.size() << "nodes";
-    clear();
+    resetCircuit();   // stop the simulation first; it must never outlive the items it reports on
 
     QHash<QString,QGraphicsObject*> node2Item;
 
@@ -487,30 +631,30 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
 
         if( std::holds_alternative<GType>(node.type)){
 
-            item = addGate(std::get<GType>(node.type),2,node.position);
+            item = addComponent(GateProps{std::get<GType>(node.type), 2}, node.position);
         }
         else if( std::holds_alternative<RType>(node.type)){
-            item = addRegister(std::get<RType>(node.type),true,node.position);
+            item = addComponent(RegisterProps{std::get<RType>(node.type), true, true}, node.position);
         }
         else if( std::holds_alternative<MType>(node.type)){
-            item = addMux(std::get<MType>(node.type),2,node.position);
+            item = addComponent(MuxProps{std::get<MType>(node.type), 2}, node.position);
         }
         else if( std::holds_alternative<IOType>(node.type)){
             auto IoType = std::get<IOType>(node.type);
             if (IoType == IOType::IN){
                 int bitWidth = node.ports[node.id].connections.size();
                 if (bitWidth==1)
-                    item = addSource(QList<bool>{false,true},bitWidth,node.position);
+                    item = addComponent(SourceProps{QList<bool>{false,true}, bitWidth}, node.position);
                 else{
                     QList<int> values;
                     int maxValue = 1 << bitWidth;
                     for (int i = 0; i < maxValue; i++) {values.append(i); values.append(i);}
-                    item = addSource(values,bitWidth,node.position);
+                    item = addComponent(SourceProps{values, bitWidth}, node.position);
                 }
             }
             else{
                 int bitWidth = node.ports[node.id].connections.size();
-                item = addDisplay(bitWidth,0,node.position);
+                item = addComponent(DisplayProps{bitWidth, 0}, node.position);
             }
         }
         node2Item[nodeId]=item;
@@ -671,7 +815,7 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
                         else if (inputPortName.contains("C") || inputPortName.toLower().contains("c")) {
                             inPort = ptr->getClkPort();
                         }
-                        else if (inputPortName.contains("EN") || inputPortName.toLower().contains("enable")) {
+                        else if (inputPortName.contains("E") || inputPortName.toLower().contains("enable")) {
                             inPort = ptr->getReadEnablePort();
                         }
                         else if (inputPortName.contains("R") || inputPortName.toLower().contains("reset")) {
@@ -712,119 +856,21 @@ void CircuitScene::receiveGraph(const QHash<QString,Node> graph)
         }
     }
 
-    // QList<QGraphicsObject*> components;
-    // for (QGraphicsItem* item : items()) {
-    //     if (GateItem* gate = dynamic_cast<GateItem*>(item)) {
-    //         components.push_back(gate);
-    //     }
-    //     else if (SourceItem* source = dynamic_cast<SourceItem*>(item)) {
-    //         components.push_back(source);
-    //     }
-    //     else if (RegisterItem* reg = dynamic_cast<RegisterItem*>(item)) {
-    //         components.push_back(reg);
-    //     }
-    //     else if (MuxItem* mux = dynamic_cast<MuxItem*>(item)) {
-    //         components.push_back(mux);
-    //     }
-    //     else if (DisplayItem* display = dynamic_cast<DisplayItem*>(item)) {
-    //         components.push_back(display);
-    //     }
-    // }
-    // // Group items by vertical proximity (within 100 pixels)
-    // QList<QList<QGraphicsObject*>> groups;
-    // QSet<QGraphicsObject*> processed;
-
-    // for (auto* comp : components) {
-    //     if (processed.contains(comp)) continue;
-
-    //     QList<QGraphicsObject*> group;
-    //     group.append(comp);
-    //     processed.insert(comp);
-
-    //     qreal compY = comp->pos().x();
-
-    //     // Find all items at similar Y position
-    //     for (auto* other : components) {
-    //         if (processed.contains(other)) continue;
-
-    //         qreal otherY = other->pos().x();
-    //         if (qAbs(compY - otherY) < 100) {  // Within 100 pixels vertically
-    //             group.append(other);
-    //             processed.insert(other);
-    //         }
-    //     }
-
-    //     if (group.size() > 1) {
-    //         groups.append(group);
-    //     }
-    // }
-
-    // // Process each group
-    // for (auto& group : groups) {
-    //     // Sort group by Y position (top to bottom)
-    //     std::sort(group.begin(), group.end(), [](QGraphicsObject* a, QGraphicsObject* b) {
-    //         return a->pos().y() < b->pos().y();
-    //     });
-
-    //     int groupSize = group.size();
-
-    //     if (groupSize == 1) {
-    //         continue; 
-    //     }
-
-    //    
-    //     for (int i = 0; i < groupSize; i++) {
-    //         QGraphicsObject* obj = group[i];
-
-    //         qreal shift;
-    //         if (groupSize == 2) {
-    //             // Special case: only 2 items
-    //             shift = (i == 0) ? -5.0 : 5.0;
-    //         } else {
-    //             // 3 or more items: linear interpolation from -5 to +5
-    //             // Middle item(s) should be close to 0
-    //             shift = -200.0 + (100.0 * i / (groupSize - 1));
-    //         }
-
-    //      
-    //         QPointF currentPos = obj->pos();
-    //         obj->setPos(currentPos.x() + shift, currentPos.y());
-    //     }
-    // }
-
-    // // Update all wires after moving components
-    // for (QGraphicsItem* wireItem : items()) {
-    //     if (auto* wire = dynamic_cast<WireItem*>(wireItem)) {
-    //         wire->updateWirePosition();
-    //     }
-    // }
-
     return;
 }
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 
+    // Placing and wiring change the circuit, so they are off while the simulation runs
+    if (isLocked() && (event->button() == Qt::MiddleButton || event->button() == Qt::RightButton)) {
+        event->accept();
+        return;
+    }
+
     if (event->button() == Qt::MiddleButton) {
         QGraphicsItem* clickedItem = itemAt(event->scenePos(), QTransform());
         if (!clickedItem) {
-            std::visit([&](auto&& arg) {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, GType>) {
-                    addGate(arg,m_numInputs, event->scenePos());
-                }
-                else if constexpr (std::is_same_v<T, RType>) {
-                    addRegister(arg, event->scenePos());
-                }
-                else if constexpr (std::is_same_v<T, MType>) {
-                    addMux(arg,m_numInputs,event->scenePos());
-                }
-                else if constexpr (std::is_same_v<T, bool>) {
-                    if (arg)
-                        addSource(event->scenePos());
-                    else
-                        addDisplay(m_numInputs,m_numOutputs,event->scenePos());
-                }},
-                m_nextItem);
+            addComponent(toolProps(), event->scenePos());
 
             event->accept();
             return;
@@ -886,13 +932,7 @@ void CircuitCanvas::keyPressEvent(QKeyEvent* event)
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
     {
-        QList<QGraphicsItem*> selectedItems = m_scene->selectedItems();
-
-        for (QGraphicsItem* item : std::as_const(selectedItems)) {
-            // Let the items handle their own deletion (they have keyPressEvent handlers)
-            QKeyEvent deleteEvent(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
-            m_scene->sendEvent(item, &deleteEvent);
-        }
+        m_scene->deleteSelection();
         event->accept();
         break;
     }
@@ -914,6 +954,7 @@ void CircuitCanvas::mousePressEvent(QMouseEvent* event)
             // Clicked on empty space - start camera dragging
             m_middleMousePressed = true;
             m_lastPanPoint = event->pos();
+            m_panStartPoint = event->pos();
             setCursor(Qt::ClosedHandCursor);
             event->accept();
             return;
@@ -950,6 +991,11 @@ void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
 
         m_middleMousePressed = false;
         setCursor(Qt::ArrowCursor);
+
+        // A click on empty canvas without dragging deselects everything
+        if ((event->pos() - m_panStartPoint).manhattanLength() < QApplication::startDragDistance()) {
+            m_scene->clearSelection();
+        }
         event->accept();
         return;
     }
