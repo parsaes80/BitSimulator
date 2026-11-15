@@ -1,27 +1,19 @@
-// Light and dark mode: the style sheet table in BitSimulator.ui, the theme button, and the canvas dots.
+// Light and dark mode: the colors and style sheet in Theme.cpp, the theme button, and the canvas dots.
 
 #include "TestSupport.h"
 #include "Theme.h"
 #include <QElapsedTimer>
 #include <QStyleHints>
 
+using namespace Qt::StringLiterals;
+
 using namespace TestSupport;
 
 namespace {
 
-// The value of "qproperty-<name>: #rrggbb" in a style sheet
-QString canvasProperty(const QString& sheet, const QString& name)
+QImage iconImage(const QIcon& icon)
 {
-    const QRegularExpression pattern(QStringLiteral("qproperty-%1:\\s*(#[0-9a-fA-F]{6})").arg(name));
-    return pattern.match(sheet).captured(1);
-}
-
-QString uiStyleSheet()
-{
-    QMainWindow window;
-    Ui::BitSimulatorClass ui;
-    ui.setupUi(&window);
-    return window.styleSheet();
+    return icon.pixmap(QSize(18, 18), 1.0).toImage();
 }
 
 } // namespace
@@ -31,39 +23,56 @@ class TestTheme : public QObject {
 private slots:
     void cleanup() { QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); }
 
-    //===================== The table in BitSimulator.ui ========================
+    //===================== The colors and the style sheet in Theme.cpp ========================
 
-    void everyColorInTheUiHasALightModeColor()
+    void theStyleSheetNamesOnlyThemeColors_data()
     {
-        const ThemeSheets sheets(uiStyleSheet());
-        QVERIFY2(sheets.unpairedColors().isEmpty(),
-                 qPrintable(QStringLiteral("add these to the table at the top of the style sheet: ")
-                            + sheets.unpairedColors().join(QStringLiteral(", "))));
-
-        const QString dark = sheets.sheet(ColorScheme::Dark), light = sheets.sheet(ColorScheme::Light);
-        QVERIFY(!canvasProperty(dark, QStringLiteral("canvasColor")).isEmpty());
-        QVERIFY(canvasProperty(dark, QStringLiteral("canvasColor")) != canvasProperty(light, QStringLiteral("canvasColor")));
-        QVERIFY(canvasProperty(dark, QStringLiteral("wireColor")) != canvasProperty(light, QStringLiteral("wireColor")));
+        QTest::addColumn<ColorScheme>("scheme");
+        QTest::newRow("dark") << ColorScheme::Dark;
+        QTest::newRow("light") << ColorScheme::Light;
     }
 
-    void colorsAreSwappedInOnePass()
+    void theStyleSheetNamesOnlyThemeColors()
     {
-        // #111111 is a light color and also a dark one; it must not be swapped twice
-        const ThemeSheets sheets(QStringLiteral("/* table\n  #000000  #111111  a\n  #111111  #222222  b\n*/\n"
-                                                "A { color: #000000; } B { color: #111111; } C { color: #ABCDEF; }"));
-        const QString light = sheets.sheet(ColorScheme::Light);
-        QVERIFY(light.contains(QStringLiteral("A { color: #111111; }")));
-        QVERIFY(light.contains(QStringLiteral("B { color: #222222; }")));
-        QVERIFY(light.contains(QStringLiteral("C { color: #ABCDEF; }")));          // not in the table: unchanged
-        QCOMPARE(sheets.unpairedColors(), QStringList{QStringLiteral("#abcdef")});
-        QCOMPARE(sheets.color(QStringLiteral("#000000"), ColorScheme::Light), QColor(QStringLiteral("#111111")));
-        QCOMPARE(sheets.color(QStringLiteral("#000000"), ColorScheme::Dark), QColor(QStringLiteral("#000000")));
+        QFETCH(ColorScheme, scheme);
+        QTest::failOnWarning(QRegularExpression(u"style ?sheet|Theme\\.cpp"_s, QRegularExpression::CaseInsensitiveOption));
+        const QString sheet = themeStyleSheet(themeFor(scheme));
+        QVERIFY(!sheet.isEmpty());
+        QVERIFY2(!sheet.contains(u'@'), qPrintable(sheet.mid(sheet.indexOf(u'@'), 40)));   // every @name was a Theme color
+        QVERIFY(sheet.contains(u"CircuitCanvas"_s));
+
+        // Qt parses it without complaint
+        QWidget widget;
+        widget.setStyleSheet(sheet);
+        auto* button = new QPushButton(u"x"_s, &widget);
+        widget.ensurePolished();
+        button->ensurePolished();
     }
 
-    void onlyTheFirstCommentIsTheTable()
+    void theSchemesHaveTheirOwnColors()
     {
-        const ThemeSheets sheets(QStringLiteral("/*\n #000000 #ffffff\n*/\nA { color: #000000; }\n/*\n #000000 #ff0000\n*/"));
-        QVERIFY(sheets.sheet(ColorScheme::Light).contains(QStringLiteral("A { color: #ffffff; }")));
+        const Theme& dark = themeFor(ColorScheme::Dark);
+        const Theme& light = themeFor(ColorScheme::Light);
+        QVERIFY(dark.canvas.lightness() < 40);
+        QVERIFY(light.canvas.lightness() > 200);
+        QVERIFY(dark.text.lightness() > light.text.lightness());
+        QVERIFY(dark.wire != light.wire);
+        QVERIFY(dark.andGate != light.andGate);
+        QCOMPARE(dark.accent, light.accent);                             // teal in both
+        QVERIFY(themeStyleSheet(dark) != themeStyleSheet(light));
+        QVERIFY(themeStyleSheet(dark).contains(dark.window.name()));
+        QVERIFY(themeStyleSheet(light).contains(light.window.name()));
+    }
+
+    void aComponentBodyIsTintedWithItsOutline()
+    {
+        Theme theme = themeFor(ColorScheme::Dark);
+        theme.componentTint = 0;
+        QCOMPARE(theme.fillFor(theme.andGate), theme.componentFill);
+        theme.componentTint = 1;
+        QCOMPARE(theme.fillFor(theme.andGate), theme.andGate);
+        QCOMPARE(theme.gateColor(GType::NAND), theme.andGate);
+        QCOMPARE(theme.gateColor(GType::XNOR), theme.xorGate);
     }
 
     //===================== The theme button ========================
@@ -105,27 +114,28 @@ private slots:
         App app;
         auto* button = child<QPushButton>(&app.window, "themeButton");
         app.window.setColorScheme(ColorScheme::Dark);
-        const QColor darkCanvas = canvasTheme().background;
-        const QColor darkWire = canvasTheme().wire;
+        const QColor darkCanvas = currentTheme().canvas;
+        const QColor darkWire = currentTheme().wire;
         const QString darkSheet = app.window.styleSheet();
-        QCOMPARE(button->property("scheme").toString(), QStringLiteral("dark"));
-        QVERIFY(button->toolTip().contains(QStringLiteral("light")));
+        QCOMPARE(iconImage(button->icon()), iconImage(colorSchemeIcon(ColorScheme::Dark)));   // the sun
+        QVERIFY(button->toolTip().contains(u"light"_s));
 
         button->click();
         QCOMPARE(app.window.colorScheme(), ColorScheme::Light);
         QVERIFY(app.window.styleSheet() != darkSheet);
-        QVERIFY(canvasTheme().background != darkCanvas);                 // the canvas got its light colors
-        QVERIFY(canvasTheme().background.lightness() > 200);
-        QVERIFY(canvasTheme().wire != darkWire);
-        QCOMPARE(button->property("scheme").toString(), QStringLiteral("light"));
-        QVERIFY(button->toolTip().contains(QStringLiteral("dark")));
+        QVERIFY(currentTheme().canvas != darkCanvas);                 // the canvas got its light colors
+        QVERIFY(currentTheme().canvas.lightness() > 200);
+        QVERIFY(currentTheme().wire != darkWire);
+        QCOMPARE(iconImage(button->icon()), iconImage(colorSchemeIcon(ColorScheme::Light)));  // the moon
+        QVERIFY(iconImage(colorSchemeIcon(ColorScheme::Light)) != iconImage(colorSchemeIcon(ColorScheme::Dark)));
+        QVERIFY(button->toolTip().contains(u"dark"_s));
         QVERIFY(qApp->palette().color(QPalette::Window).lightness() > 200);
 
         button->click();
         QCOMPARE(app.window.colorScheme(), ColorScheme::Dark);
         QCOMPARE(app.window.styleSheet(), darkSheet);
-        QCOMPARE(canvasTheme().background, darkCanvas);
-        QCOMPARE(canvasTheme().wire, darkWire);
+        QCOMPARE(currentTheme().canvas, darkCanvas);
+        QCOMPARE(currentTheme().wire, darkWire);
     }
 
     void switchingKeepsTheCircuitAndTheSimulation()
@@ -140,7 +150,7 @@ private slots:
         button->click();
         QCOMPARE(app.scene->simState(), SimState::Running);
         QVERIFY(app.scene->items().contains(gate));
-        QCOMPARE(app.start->text(), QStringLiteral("Pause"));
+        QCOMPARE(app.start->text(), u"Pause"_s);
         app.clear->click();
     }
 
@@ -155,7 +165,7 @@ private slots:
         QElapsedTimer timer;
         timer.start();
         scene.render(&painter, QRectF(image.rect()), scene.sceneRect());
-        QVERIFY2(timer.elapsed() < 2000, qPrintable(QStringLiteral("took %1 ms").arg(timer.elapsed())));
+        QVERIFY2(timer.elapsed() < 2000, qPrintable(u"took %1 ms"_s.arg(timer.elapsed())));
     }
 
     void dotsAreDrawnWhenZoomedIn()
@@ -169,7 +179,7 @@ private slots:
         int dotPixels = 0;
         for (int y = 0; y < image.height(); y++) {
             for (int x = 0; x < image.width(); x++) {
-                if (image.pixelColor(x, y) != canvasTheme().background) dotPixels++;
+                if (image.pixelColor(x, y) != currentTheme().canvas) dotPixels++;
             }
         }
         QVERIFY(dotPixels > 50);                                         // about 100 dots in this area

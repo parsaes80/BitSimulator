@@ -226,7 +226,7 @@ void Simulator::tick() {
     for (const auto& reg : m_registers) {result.registerValues.push_back(reg.storedValue);}
 
     result.netValues = m_nets;
-    emit sendResult(std::move(result));
+    sendResult(std::move(result));
 }
 
 void Simulator::receiveCircuit(ExportGraph graph){

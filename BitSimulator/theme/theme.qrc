@@ -1,6 +1,6 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
-    <!-- Images the style sheet in BitSimulator.ui uses, as url(:/theme/...).
+    <!-- Images the style sheet in Theme.cpp uses, as url(:/theme/...), and the light/dark button icons.
          The @2x files are picked automatically on high-DPI screens. -->
     <qresource prefix="/theme">
         <file>arrow-down.png</file>

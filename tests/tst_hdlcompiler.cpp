@@ -12,6 +12,8 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
+using namespace Qt::StringLiterals;
+
 using namespace TestSupport;
 
 namespace {
@@ -109,8 +111,7 @@ QList<SimResult> simulate(const ExportGraph& graph, int ticks)
 
 // Two levels of submodules: top uses add2 (three half adders, an OR, and an input passed straight
 // through to an output) and dff2 (two flip-flops); top also drives a constant 1.
-const QString hierarchicalVerilog = QStringLiteral(
-    "module ha(input wire a, input wire b, output wire s, output wire c);\n"
+const QString hierarchicalVerilog = u"module ha(input wire a, input wire b, output wire s, output wire c);\n"
     "  assign s = a ^ b;\n  assign c = a & b;\nendmodule\n"
     "module add2(input wire [1:0] x, input wire [1:0] y, output wire [2:0] z, output wire [1:0] xcopy);\n"
     "  wire c0, s1, c1a, c1b;\n"
@@ -124,7 +125,7 @@ const QString hierarchicalVerilog = QStringLiteral(
     "           output wire [2:0] sum, output wire [1:0] acopy, output wire [1:0] regq, output wire one);\n"
     "  add2 u(.x(a), .y(b), .z(sum), .xcopy(acopy));\n"
     "  dff2 r(.clk(clk), .d(sum[1:0]), .q(regq));\n"
-    "  assign one = 1'b1;\nendmodule\n");
+    "  assign one = 1'b1;\nendmodule\n"_s;
 
 template <typename T>
 T* findItem(const QGraphicsScene* scene, auto&& pred)
@@ -161,11 +162,11 @@ int terminalValue(const QGraphicsScene* scene, const QString& name)
 class TestHdlCompiler : public QObject {
     Q_OBJECT
 private slots:
-    void initTestCase() { REQUIRE_HDL_TOOLS(); }
+    void initTestCase() { if (!hdlToolsAvailable()) QSKIP(MissingHdlTools); }
 
     void aSingleGate()
     {
-        const CompileRun run = compile(QStringLiteral("module top(input wire a, input wire b, output wire y);\nassign y = a & b;\nendmodule\n"));
+        const CompileRun run = compile(u"module top(input wire a, input wire b, output wire y);\nassign y = a & b;\nendmodule\n"_s);
         QVERIFY(run.finished && run.ok);
         QCOMPARE(run.graphs, 1);
         QVERIFY2(run.errors.isEmpty(), qPrintable(run.errors.join('\n')));
@@ -192,7 +193,7 @@ private slots:
     {
         QFETCH(QString, expression);
         QFETCH(int, type);
-        const CompileRun run = compile(QStringLiteral("module top(input wire a, input wire b, output wire y);\nassign y = %1;\nendmodule\n").arg(expression));
+        const CompileRun run = compile(u"module top(input wire a, input wire b, output wire y);\nassign y = %1;\nendmodule\n"_s.arg(expression));
         QVERIFY(run.ok);
         QCOMPARE(run.gates(), 1);
         QCOMPARE(run.count(static_cast<GType>(type)), 1);
@@ -200,9 +201,8 @@ private slots:
 
     void everyWireHasADriver()
     {
-        const CompileRun run = compile(QStringLiteral(
-            "module top(input wire clk, input wire [1:0] a, input wire [1:0] b, input wire s, output reg [1:0] r);\n"
-            "always @(posedge clk) r <= s ? (a & b) : (a ^ b);\nendmodule\n"));
+        const CompileRun run = compile(u"module top(input wire clk, input wire [1:0] a, input wire [1:0] b, input wire s, output reg [1:0] r);\n"
+            "always @(posedge clk) r <= s ? (a & b) : (a ^ b);\nendmodule\n"_s);
         QVERIFY(run.ok);
         QCOMPARE(run.countKind<FlipFlop>(), 2);                              // one flip-flop per output bit
         QCOMPARE(run.muxes(), 2);
@@ -224,7 +224,7 @@ private slots:
 
     void componentsGetDifferentPositions()
     {
-        const CompileRun run = compile(QStringLiteral("module top(input wire a, input wire b, input wire c, output wire y);\nassign y = (a & b) | c;\nendmodule\n"));
+        const CompileRun run = compile(u"module top(input wire a, input wire b, input wire c, output wire y);\nassign y = (a & b) | c;\nendmodule\n"_s);
         QVERIFY(run.ok);
         QSet<QPair<int, int>> positions;
         for (const NetNode& node : run.nodes()) positions.insert({qRound(node.position.x()), qRound(node.position.y())});
@@ -235,9 +235,8 @@ private slots:
     {
         // A 1-bit input toggles every tick; a wider one counts 0, 1, 2, ... holding each value for
         // 2 ticks. Wide inputs used to get a list too long to play (15 bits) or almost no values (32 bits).
-        const CompileRun run = compile(QStringLiteral(
-            "module top(input wire clk, input wire [14:0] a, input wire [31:0] b, output wire [31:0] y);\n"
-            "assign y = b ^ {17'b0, a} ^ {31'b0, clk};\nendmodule\n"));
+        const CompileRun run = compile(u"module top(input wire clk, input wire [14:0] a, input wire [31:0] b, output wire [31:0] y);\n"
+            "assign y = b ^ {17'b0, a} ^ {31'b0, clk};\nendmodule\n"_s);
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
 
         CircuitScene scene;
@@ -278,9 +277,9 @@ private slots:
         const CompileRun run = compileFiles({root + "/rtl parts/adder.v", root + "/cpu.sv"}, {root + "/shared headers"});
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
         QCOMPARE(run.graphs, 1);
-        QCOMPARE(run.design.top, QStringLiteral("cpu"));
-        QCOMPARE(run.count(ModuleRef{QStringLiteral("adder")}), 1);      // the adder is a block in cpu
-        QCOMPARE(run.count(GType::XOR, QStringLiteral("adder")), 4);     // with its gates inside
+        QCOMPARE(run.design.top, u"cpu"_s);
+        QCOMPARE(run.count(ModuleRef{u"adder"_s}), 1);      // the adder is a block in cpu
+        QCOMPARE(run.count(GType::XOR, u"adder"_s), 4);     // with its gates inside
         QCOMPARE(run.gates(), 0);
         QCOMPARE(run.countKind<FlipFlop>(), 4);
         QCOMPARE(run.count(IOType::IN), 3);                              // clk, x, y
@@ -318,41 +317,40 @@ private slots:
         const CompileRun broken = compileFiles({dir.path() + "/broken.v"});
         QVERIFY(broken.finished && !broken.ok);
         const QString message = broken.errors.join(u' ');
-        QVERIFY2(message.contains(QStringLiteral("broken.v:2")) && message.contains(QStringLiteral("Parse error")), qPrintable(message));   // file and line
+        QVERIFY2(message.contains(u"broken.v:2"_s) && message.contains(u"Parse error"_s), qPrintable(message));   // file and line
 
         const CompileRun nothing = compileFiles({});
         QVERIFY(nothing.finished && !nothing.ok);
-        QVERIFY(nothing.errors.join(u' ').contains(QStringLiteral("No Verilog files")));
+        QVERIFY(nothing.errors.join(u' ').contains(u"No Verilog files"_s));
     }
 
     void aSyntaxErrorIsReported()
     {
-        const CompileRun run = compile(QStringLiteral("module top(input wire a, output wire y);\nassign y = a &&& ;\nendmodule\n"));
+        const CompileRun run = compile(u"module top(input wire a, output wire y);\nassign y = a &&& ;\nendmodule\n"_s);
         QVERIFY(run.finished);
         QVERIFY(!run.ok);
         QCOMPARE(run.graphs, 0);                                         // no half-built circuit is sent
         QCOMPARE(run.errors.size(), 1);
-        QVERIFY2(run.errors.first().contains(QStringLiteral("code.v:2")) && run.errors.first().contains(QStringLiteral("Parse error")),
+        QVERIFY2(run.errors.first().contains(u"code.v:2"_s) && run.errors.first().contains(u"Parse error"_s),
                  qPrintable(run.errors.first()));                        // sv2v names the line
-        QVERIFY2(run.errors.first().contains(QStringLiteral("code.v:2")), qPrintable(run.errors.first()));     // with the line number
+        QVERIFY2(run.errors.first().contains(u"code.v:2"_s), qPrintable(run.errors.first()));     // with the line number
     }
 
     void theTopModuleCanHaveAnyName()
     {
         // The top is the module no other module uses, whatever it is called
-        const CompileRun single = compile(QStringLiteral("module adder(input wire a, input wire b, output wire y);\nassign y = a ^ b;\nendmodule\n"));
+        const CompileRun single = compile(u"module adder(input wire a, input wire b, output wire y);\nassign y = a ^ b;\nendmodule\n"_s);
         QVERIFY2(single.ok, qPrintable(single.errors.join(u'\n')));
         QCOMPARE(single.count(GType::XOR), 1);
 
         // With a submodule written above it, the outer module is still the top; the submodule is a block in it
-        const CompileRun nested = compile(QStringLiteral(
-            "module inv(input wire a, output wire y);\nassign y = ~a;\nendmodule\n"
-            "module pair(input wire p, q, output wire r, s);\ninv i0(.a(p), .y(r));\ninv i1(.a(q), .y(s));\nendmodule\n"));
+        const CompileRun nested = compile(u"module inv(input wire a, output wire y);\nassign y = ~a;\nendmodule\n"
+            "module pair(input wire p, q, output wire r, s);\ninv i0(.a(p), .y(r));\ninv i1(.a(q), .y(s));\nendmodule\n"_s);
         QVERIFY2(nested.ok, qPrintable(nested.errors.join(u'\n')));
         QCOMPARE(nested.graphs, 1);
-        QCOMPARE(nested.design.top, QStringLiteral("pair"));
-        QCOMPARE(nested.count(ModuleRef{QStringLiteral("inv")}), 2);     // i0 and i1
-        QCOMPARE(nested.count(GType::NOT, QStringLiteral("inv")), 1);
+        QCOMPARE(nested.design.top, u"pair"_s);
+        QCOMPARE(nested.count(ModuleRef{u"inv"_s}), 2);     // i0 and i1
+        QCOMPARE(nested.count(GType::NOT, u"inv"_s), 1);
         QCOMPARE(nested.count(IOType::IN), 2);                           // p and q: the ports of pair, not of inv
         QCOMPARE(nested.count(IOType::OUT), 2);
     }
@@ -361,19 +359,19 @@ private slots:
     {
         const CompileRun run = compile(hierarchicalVerilog);
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
-        QCOMPARE(run.design.top, QStringLiteral("top"));
+        QCOMPARE(run.design.top, u"top"_s);
         QCOMPARE(run.design.modules.size(), 4);
-        QCOMPARE(run.count(ModuleRef{QStringLiteral("add2")}), 1);
-        QCOMPARE(run.count(ModuleRef{QStringLiteral("dff2")}), 1);
-        QCOMPARE(run.count(ModuleRef{QStringLiteral("ha")}, QStringLiteral("add2")), 3);
-        QCOMPARE(run.countKind<FlipFlop>(QStringLiteral("dff2")), 2);
+        QCOMPARE(run.count(ModuleRef{u"add2"_s}), 1);
+        QCOMPARE(run.count(ModuleRef{u"dff2"_s}), 1);
+        QCOMPARE(run.count(ModuleRef{u"ha"_s}, u"add2"_s), 3);
+        QCOMPARE(run.countKind<FlipFlop>(u"dff2"_s), 2);
 
         CircuitScene scene;
         scene.receiveDesign(run.design);
         QCOMPARE(itemsOfType<BlockItem>(&scene).size(), 2);              // u and r
-        BlockItem* u = blockNamed(&scene, QStringLiteral("u"));
+        BlockItem* u = blockNamed(&scene, u"u"_s);
         QVERIFY(u);
-        QCOMPARE(u->blockProps().module, QStringLiteral("add2"));
+        QCOMPARE(u->blockProps().module, u"add2"_s);
         QCOMPARE(u->getInputPorts().size(), 4);                          // x[2], y[2]
         QCOMPARE(u->getOutputPorts().size(), 5);                         // xcopy[2], z[3]
         QVERIFY(u->flags() & QGraphicsItem::ItemIsMovable);              // the top level can be edited
@@ -383,7 +381,7 @@ private slots:
         // The inside of a block: port terminals instead of sources and displays, nothing editable
         CircuitScene inside;
         inside.setReadOnly(true);
-        inside.buildModule(run.design, QStringLiteral("add2"), false);
+        inside.buildModule(run.design, u"add2"_s, false);
         QCOMPARE(itemsOfType<TerminalItem>(&inside).size(), 4);          // x, y, z, xcopy
         QCOMPARE(itemsOfType<BlockItem>(&inside).size(), 3);             // h0, h1, h2
         QCOMPARE(itemsOfType<SourceItem>(&inside).size(), 0);
@@ -410,8 +408,8 @@ private slots:
         for (DisplayItem* display : itemsOfType<DisplayItem>(&scene)) displays << display->name();
         sources.sort();
         displays.sort();
-        QCOMPARE(sources, (QStringList{QString(), QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("clk")}));
-        QCOMPARE(displays, (QStringList{QStringLiteral("acopy"), QStringLiteral("one"), QStringLiteral("regq"), QStringLiteral("sum")}));
+        QCOMPARE(sources, (QStringList{QString(), u"a"_s, u"b"_s, u"clk"_s}));
+        QCOMPARE(displays, (QStringList{u"acopy"_s, u"one"_s, u"regq"_s, u"sum"_s}));
 
         // Each one is wide enough for its name; one placed by hand has no name and keeps its size
         QFont font;
@@ -455,11 +453,11 @@ private slots:
 
         // Inside a block, the port tags fit their names too
         CircuitScene inside;
-        inside.buildModule(run.design, QStringLiteral("add2"), false);
+        inside.buildModule(run.design, u"add2"_s, false);
         QFont tagFont;
         tagFont.setPointSizeF(8);
         for (TerminalItem* terminal : itemsOfType<TerminalItem>(&inside)) {
-            const QString label = terminal->pins().size() > 1 ? QStringLiteral("%1[%2]").arg(terminal->name()).arg(terminal->pins().size()) : terminal->name();
+            const QString label = terminal->pins().size() > 1 ? u"%1[%2]"_s.arg(terminal->name()).arg(terminal->pins().size()) : terminal->name();
             QVERIFY(terminal->boundingRect().width() > QFontMetricsF(tagFont).horizontalAdvance(label) + 10);
             QCOMPARE(terminal->boundingRect().adjusted(2, 2, -2, -2).size(), terminalSize(terminal->name(), int(terminal->pins().size())));
         }
@@ -471,8 +469,8 @@ private slots:
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
         CircuitScene scene;
         scene.receiveDesign(run.design);
-        BlockItem* u = blockNamed(&scene, QStringLiteral("u"));
-        BlockItem* r = blockNamed(&scene, QStringLiteral("r"));
+        BlockItem* u = blockNamed(&scene, u"u"_s);
+        BlockItem* r = blockNamed(&scene, u"r"_s);
         QVERIFY(u && r);
 
         // Feed every combination: a counts every tick, b every 4 ticks
@@ -501,8 +499,8 @@ private slots:
 
         // The view of the inside of u and of one of its half adders, following the run
         CircuitScene insideU, insideH0;
-        insideU.buildModule(run.design, QStringLiteral("add2"), false);
-        insideH0.buildModule(run.design, QStringLiteral("ha"), false);
+        insideU.buildModule(run.design, u"add2"_s, false);
+        insideH0.buildModule(run.design, u"ha"_s, false);
 
         QSet<int> earlierSums{0};
         const QList<SimResult> results = simulate(graph, 64);
@@ -512,18 +510,18 @@ private slots:
             scene.receiveResult(result);
             const int tick = int(result.sourceTick);
             const int expected = int(a->value() + b->value());
-            QVERIFY2(sum->getValue() == expected, qPrintable(QStringLiteral("tick %1: %2 + %3 gave %4").arg(tick).arg(a->value()).arg(b->value()).arg(sum->getValue())));
+            QVERIFY2(sum->getValue() == expected, qPrintable(u"tick %1: %2 + %3 gave %4"_s.arg(tick).arg(a->value()).arg(b->value()).arg(sum->getValue())));
             QCOMPARE(acopy->getValue(), int(a->value()));                // passed straight through the block
             QCOMPARE(one->getValue(), 1);
-            QVERIFY2(earlierSums.contains(regq->getValue()), qPrintable(QStringLiteral("tick %1: the register holds %2").arg(tick).arg(regq->getValue())));
+            QVERIFY2(earlierSums.contains(regq->getValue()), qPrintable(u"tick %1: the register holds %2"_s.arg(tick).arg(regq->getValue())));
 
-            scene.showInstanceValues(QStringLiteral("u"), &insideU);
-            scene.showInstanceValues(QStringLiteral("u/h0"), &insideH0);
-            QCOMPARE(terminalValue(&insideU, QStringLiteral("x")), int(a->value()));
-            QCOMPARE(terminalValue(&insideU, QStringLiteral("y")), int(b->value()));
-            QCOMPARE(terminalValue(&insideU, QStringLiteral("z")), expected);
-            QCOMPARE(terminalValue(&insideH0, QStringLiteral("s")), expected & 1);
-            QCOMPARE(terminalValue(&insideH0, QStringLiteral("c")), int(a->value() & b->value() & 1));
+            scene.showInstanceValues(u"u"_s, &insideU);
+            scene.showInstanceValues(u"u/h0"_s, &insideH0);
+            QCOMPARE(terminalValue(&insideU, u"x"_s), int(a->value()));
+            QCOMPARE(terminalValue(&insideU, u"y"_s), int(b->value()));
+            QCOMPARE(terminalValue(&insideU, u"z"_s), expected);
+            QCOMPARE(terminalValue(&insideH0, u"s"_s), expected & 1);
+            QCOMPARE(terminalValue(&insideH0, u"c"_s), int(a->value() & b->value() & 1));
             earlierSums.insert(expected & 3);
         }
         scene.stopSim();
@@ -543,25 +541,25 @@ private slots:
         QSignalSpy depth(&canvas, &CircuitCanvas::depthChanged);
 
         // Double-click the block
-        BlockItem* u = blockNamed(top, QStringLiteral("u"));
+        BlockItem* u = blockNamed(top, u"u"_s);
         QVERIFY(u);
         canvas.centerOn(u);
         QTest::mouseDClick(canvas.viewport(), Qt::LeftButton, {}, canvas.mapFromScene(u->sceneBoundingRect().center()));
         QCOMPARE(canvas.depth(), 1);
-        QCOMPARE(canvas.currentPath(), QStringLiteral("u"));
+        QCOMPARE(canvas.currentPath(), u"u"_s);
         QVERIFY(canvas.scene() == canvas.currentScene() && canvas.currentScene() != top);
         QVERIFY(canvas.currentScene()->isReadOnly());
         QCOMPARE(itemsOfType<BlockItem>(canvas.currentScene()).size(), 3);
-        auto* breadcrumb = canvas.findChild<QFrame*>(QStringLiteral("blockBreadcrumb"));
+        auto* breadcrumb = canvas.findChild<QFrame*>(u"blockBreadcrumb"_s);
         QVERIFY(breadcrumb && breadcrumb->isVisible());
         QStringList path;
         for (QToolButton* button : breadcrumb->findChildren<QToolButton*>()) path << button->text();
-        QCOMPARE(path, (QStringList{QStringLiteral("top"), QStringLiteral("u (add2)")}));
+        QCOMPARE(path, (QStringList{u"top"_s, u"u (add2)"_s}));
 
         // A block inside a block
-        canvas.openBlock(blockNamed(canvas.currentScene(), QStringLiteral("h1")));
+        canvas.openBlock(blockNamed(canvas.currentScene(), u"h1"_s));
         QCOMPARE(canvas.depth(), 2);
-        QCOMPARE(canvas.currentPath(), QStringLiteral("u/h1"));
+        QCOMPARE(canvas.currentPath(), u"u/h1"_s);
         QCOMPARE(itemsOfType<GateItem>(canvas.currentScene()).size(), 2);
         QCOMPARE(breadcrumb->findChildren<QToolButton*>().size(), 3);
         QVERIFY2(breadcrumb->width() > 100, "the path bar was measured before its buttons appeared");
@@ -569,7 +567,7 @@ private slots:
         // Esc goes up one level, the path's first entry back to the top
         QTest::keyClick(&canvas, Qt::Key_Escape);
         QCOMPARE(canvas.depth(), 1);
-        QCOMPARE(canvas.currentPath(), QStringLiteral("u"));
+        QCOMPARE(canvas.currentPath(), u"u"_s);
         breadcrumb->findChildren<QToolButton*>().first()->click();
         QCOMPARE(canvas.depth(), 0);
         QVERIFY(canvas.scene() == top);
@@ -577,11 +575,11 @@ private slots:
         QCOMPARE(depth.size(), 4);
 
         // A new design or Clear always returns to the top
-        canvas.openBlock(blockNamed(top, QStringLiteral("r")));
+        canvas.openBlock(blockNamed(top, u"r"_s));
         QCOMPARE(canvas.depth(), 1);
         top->receiveDesign(run.design);
         QCOMPARE(canvas.depth(), 0);
-        canvas.openBlock(blockNamed(top, QStringLiteral("u")));
+        canvas.openBlock(blockNamed(top, u"u"_s));
         top->resetCircuit();
         QCOMPARE(canvas.depth(), 0);
         QVERIFY(canvas.scene() == top);
@@ -590,11 +588,10 @@ private slots:
     void resetInputsStayZero()
     {
         // A reset toggling with the clock would reset the circuit on every clock edge
-        const CompileRun run = compile(QStringLiteral(
-            "module top(input clk, input rst, input rst_n, input sys_reset, input resetn, input first, input burst, input [1:0] rst_bus,\n"
+        const CompileRun run = compile(u"module top(input clk, input rst, input rst_n, input sys_reset, input resetn, input first, input burst, input [1:0] rst_bus,\n"
             "           output y);\n"
             "  assign y = clk ^ rst ^ rst_n ^ sys_reset ^ resetn ^ first ^ burst ^ rst_bus[0] ^ rst_bus[1];\n"
-            "endmodule\n"));
+            "endmodule\n"_s);
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
         CircuitScene scene;
         scene.receiveDesign(run.design);
@@ -606,15 +603,14 @@ private slots:
         for (const char* other : {"clk", "first", "burst"}) {                 // "rst" inside a word is not a reset
             QVERIFY2(sources.value(QLatin1String(other)).mode == SourceMode::Waveforms, other);
         }
-        QCOMPARE(sources.value(QStringLiteral("rst_bus")).mode, SourceMode::Counter);   // only 1-bit inputs
+        QCOMPARE(sources.value(u"rst_bus"_s).mode, SourceMode::Counter);   // only 1-bit inputs
     }
 
     void everyKindOfFlipFlop()
     {
         // One of each kind yosys makes from Verilog. The compiler turns them into the simulator's few
         // kinds; here every output is compared with what the Verilog says, on every tick.
-        const CompileRun run = compile(QStringLiteral(
-            "module kinds(input clk, input rst, input rst_n, input en, input en_n, input [7:0] d,\n"
+        const CompileRun run = compile(u"module kinds(input clk, input rst, input rst_n, input en, input en_n, input [7:0] d,\n"
             "             output reg [7:0] q1, q2, q3, q4, q5, output reg q7, output reg [7:0] q8);\n"
             "  always @(posedge clk or posedge rst) if (rst) q1 <= 8'hA5; else q1 <= d;              // asynchronous reset to 0s and 1s\n"
             "  always @(posedge clk or negedge rst_n) if (!rst_n) q2 <= 0; else if (!en_n) q2 <= d;  // active-low reset and enable\n"
@@ -624,7 +620,7 @@ private slots:
             "  always @* if (en) q7 = d[1];                                                            // latch\n"
             "  initial q8 = 8'h81;\n"
             "  always @(posedge clk) q8 <= d;                                                          // power-up value\n"
-            "endmodule\n"));
+            "endmodule\n"_s);
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
 
         CircuitScene scene;
@@ -659,7 +655,7 @@ private slots:
             result.runId = graph.runId;
             scene.receiveResult(result);
             const int tick = int(result.sourceTick);
-            const QString at = QStringLiteral("tick %1").arg(tick);
+            const QString at = u"tick %1"_s.arg(tick);
             QVERIFY2(display("q1")->getValue() == state.q1, qPrintable(at + " q1"));
             QVERIFY2(display("q2")->getValue() == state.q2, qPrintable(at + " q2"));
             QVERIFY2(display("q3")->getValue() == state.q3, qPrintable(at + " q3"));
@@ -689,12 +685,11 @@ private slots:
     void aFlipFlopWithAsyncSetAndResetIsReported()
     {
         // The simulator's flip-flops have one reset; yosys cannot turn this one into them, and says so
-        const CompileRun run = compile(QStringLiteral(
-            "module sr(input clk, input rst_n, input set_n, input d, output reg q);\n"
+        const CompileRun run = compile(u"module sr(input clk, input rst_n, input set_n, input d, output reg q);\n"
             "  always @(posedge clk or negedge rst_n or negedge set_n) if (!rst_n) q <= 0; else if (!set_n) q <= 1; else q <= d;\n"
-            "endmodule\n"));
+            "endmodule\n"_s);
         QVERIFY(run.finished && !run.ok);
-        QVERIFY2(run.errors.join(u' ').contains(QStringLiteral("async set and reset")), qPrintable(run.errors.join(u'\n')));
+        QVERIFY2(run.errors.join(u' ').contains(u"async set and reset"_s), qPrintable(run.errors.join(u'\n')));
     }
 
     void emptyTextFailsCleanly()
@@ -706,13 +701,13 @@ private slots:
 
     void oneCompilerCanCompileAgainAndAgain()
     {
-        const QString andGate = QStringLiteral("module top(input wire a, input wire b, output wire y);\nassign y = a & b;\nendmodule\n");
-        const QString twoGates = QStringLiteral("module top(input wire a, input wire b, input wire c, output wire y);\nassign y = (a ^ b) | c;\nendmodule\n");
+        const QString andGate = u"module top(input wire a, input wire b, output wire y);\nassign y = a & b;\nendmodule\n"_s;
+        const QString twoGates = u"module top(input wire a, input wire b, input wire c, output wire y);\nassign y = (a ^ b) | c;\nendmodule\n"_s;
 
         HDLCompiler compiler;
         const CompileRun first = compile(compiler, twoGates);
         const CompileRun second = compile(compiler, andGate);
-        const CompileRun failed = compile(compiler, QStringLiteral("module top(;\n"));
+        const CompileRun failed = compile(compiler, u"module top(;\n"_s);
         const CompileRun third = compile(compiler, andGate);
         QVERIFY(first.ok && second.ok && !failed.ok && third.ok);
 

@@ -2,6 +2,9 @@
 #include <QFontMetricsF>
 #include <QPainterPath>
 #include <algorithm>
+
+using namespace Qt::StringLiterals;
+
 //===================== PortItem   ========================
 
 bool sim_values_visible = false;
@@ -16,10 +19,10 @@ PortItem::PortItem(PortType portType, QGraphicsItem* parent)
 void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     // Colors are chosen here instead of with setPen()/setBrush(), which would schedule another repaint
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     const bool wired = !m_connections.isEmpty();
     QColor ring = theme.pin;
-    QColor fill = theme.background;              // hollow: nothing connected
+    QColor fill = theme.canvas;              // hollow: nothing connected
     if (m_highlighted) {
         ring = fill = theme.snap;
     }
@@ -81,7 +84,7 @@ void ComponentItem::drawSelection(QPainter* painter, const QStyleOptionGraphicsI
 {
     if (option->state & QStyle::State_Selected) {
         painter->setRenderHint(QPainter::Antialiasing);
-        painter->setPen(QPen(canvasTheme().selection, 1.5, Qt::DashLine));
+        painter->setPen(QPen(currentTheme().selection, 1.5, Qt::DashLine));
         painter->setBrush(Qt::NoBrush);
         painter->drawRoundedRect(m_rect.adjusted(-SelectionMargin, -SelectionMargin, SelectionMargin, SelectionMargin), 5, 5);
     }
@@ -168,7 +171,7 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     drawSelection(painter, option);
 
     // A dark body, outlined in the gate's color
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing, true);
     painter->setPen(QPen(theme.gateColor(m_props.type), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter->setBrush(theme.fillFor(theme.gateColor(m_props.type)));
@@ -250,7 +253,7 @@ void GateItem::layoutPorts()
 //===================== Wire Item   ========================
 
 WireItem::WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent)
-    : QGraphicsObject(parent), localStartPos(startpos), localEndPos(endpos), m_pen(QPen(canvasTheme().wire, 2))
+    : QGraphicsObject(parent), localStartPos(startpos), localEndPos(endpos), m_pen(QPen(currentTheme().wire, 2))
 {
     setFlags(ItemIsSelectable);
 }
@@ -317,7 +320,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
         return;
     }
 
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     QPen pen = m_pen;
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
@@ -425,7 +428,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 {
     drawSelection(painter, option);
 
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
     QFont font = painter->font();
     font.setBold(true);
@@ -439,8 +442,8 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     painter->setPen(QPen(lit ? theme.wireHigh : theme.source, 2));
     painter->setBrush(lit ? theme.wireHigh : theme.fillFor(theme.source));
     painter->drawRoundedRect(m_rect, 3, 3);
-    painter->setPen(lit ? theme.background : theme.componentText);
-    drawName(painter, m_rect, m_name, lit ? theme.background : theme.componentText, lit ? theme.background : theme.source);
+    painter->setPen(lit ? theme.canvas : theme.componentText);
+    drawName(painter, m_rect, m_name, lit ? theme.canvas : theme.componentText, lit ? theme.canvas : theme.source);
 
     // A wide source is a tall, narrow box: run a number that does not fit across it along its length,
     // and shrink the font if it does not fit that way either
@@ -564,12 +567,12 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
     drawSelection(painter, option);
 
     // A register that holds a 1 lights up like a wire carrying one
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(QPen(m_value ? theme.wireHigh : theme.reg, 2));
     painter->setBrush(m_value ? theme.wireHigh : theme.fillFor(theme.reg));
     painter->drawRoundedRect(m_rect, 3, 3);
-    painter->setPen(m_value ? theme.background : theme.componentText);
+    painter->setPen(m_value ? theme.canvas : theme.componentText);
 
     // Label the register with its type so an edit in the properties panel is visible on the canvas
     const QString label = registerTypeName(m_props.type);
@@ -655,8 +658,8 @@ void MuxItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     path.lineTo(-halfWidth,halfHeight);
     path.lineTo(-halfWidth,-halfHeight);
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter->setBrush(canvasTheme().fillFor(canvasTheme().mux));
+    painter->setPen(QPen(currentTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter->setBrush(currentTheme().fillFor(currentTheme().mux));
     painter->drawPath(path);
 }
 
@@ -690,7 +693,7 @@ ComponentItem::EditResult DisplayItem::setProps(const ItemProps& props)
 void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) {
     drawSelection(painter, option);
 
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
 
     // Casing, outlined in the display's color
@@ -704,7 +707,7 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     const QRectF body = m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0);
     QRectF displayArea = body.adjusted(5, 5, -5, -5);
     painter->setPen(Qt::NoPen);
-    painter->setBrush(theme.background);
+    painter->setBrush(theme.canvas);
     painter->drawRoundedRect(displayArea, 2, 2);
 
     // The value
@@ -782,7 +785,7 @@ constexpr double BlockWidth = 150, BlockHeader = 36;
 
 QString portLabel(const BlockPort& port)
 {
-    return port.width > 1 ? QStringLiteral("%1[%2]").arg(port.name).arg(port.width) : port.name;
+    return port.width > 1 ? u"%1[%2]"_s.arg(port.name).arg(port.width) : port.name;
 }
 }
 
@@ -809,7 +812,7 @@ ComponentItem::EditResult BlockItem::setProps(const ItemProps&)
 void BlockItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget*)
 {
     drawSelection(painter, option);
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
 
     painter->setPen(QPen(theme.block, 2));
@@ -863,7 +866,7 @@ TerminalItem::TerminalItem(const QString& name, bool output, int width, QGraphic
 
 void TerminalItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
 {
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
 
     // A tag pointing the way signals flow, left to right: input ports sit on the left of the
@@ -885,7 +888,7 @@ void TerminalItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWi
     font.setPointSizeF(8);
     painter->setFont(font);
     painter->setPen(theme.componentText);
-    const QString label = m_pins.size() > 1 ? QStringLiteral("%1[%2]").arg(m_name).arg(m_pins.size()) : m_name;
+    const QString label = m_pins.size() > 1 ? u"%1[%2]"_s.arg(m_name).arg(m_pins.size()) : m_name;
     painter->drawText(r.adjusted(6, 0, -tip, 0), Qt::AlignCenter, label);
 }
 
@@ -929,7 +932,7 @@ QSizeF terminalSize(const QString& name, int width)
     const double height = pins * BlockItem::PinSpacing + 10;
     QFont font;
     font.setPointSizeF(8);
-    const QString label = pins > 1 ? QStringLiteral("%1[%2]").arg(name).arg(pins) : name;
+    const QString label = pins > 1 ? u"%1[%2]"_s.arg(name).arg(pins) : name;
     const double tip = std::min(14.0, height / 2);
     return {std::max(90.0, QFontMetricsF(font).horizontalAdvance(label) + tip + 16), height};
 }

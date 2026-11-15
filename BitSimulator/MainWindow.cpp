@@ -19,6 +19,8 @@
 #include "PropertiesPanel.h"
 #include "Toolbar.h"
 
+using namespace Qt::StringLiterals;
+
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
     // Create thread and Simulator
@@ -148,7 +150,7 @@ void MainWindow::setup()
 void MainWindow::setupHdlEditor()
 {
     // A monospace font, tabs four spaces wide, and no line wrapping
-    QFont font(QStringLiteral("Courier"));
+    QFont font(u"Courier"_s);
     font.setStyleHint(QFont::Monospace);
     font.setFixedPitch(true);
     font.setPointSize(12);
@@ -165,7 +167,7 @@ void MainWindow::setupPropertiesPanel()
     m_properties = new PropertiesPanel(ui.camera->getScene());
 
     auto* scroll = new QScrollArea;
-    scroll->setObjectName(QStringLiteral("propertiesScroll"));
+    scroll->setObjectName(u"propertiesScroll"_s);
     scroll->setWidget(m_properties);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -173,7 +175,7 @@ void MainWindow::setupPropertiesPanel()
 
     // A child of the canvas widget, not of its viewport: panning scrolls the viewport's children along
     m_propertiesFrame = new QFrame(ui.camera);
-    m_propertiesFrame->setObjectName(QStringLiteral("propertiesFrame"));
+    m_propertiesFrame->setObjectName(u"propertiesFrame"_s);
     auto* layout = new QVBoxLayout(m_propertiesFrame);
     layout->setContentsMargins(2, 4, 2, 4);     // keeps the scroll bar inside the rounded corners
     layout->addWidget(scroll);
@@ -201,13 +203,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 
 void MainWindow::setupColorScheme()
 {
-    // The style sheet setupUi() just applied is the dark one; light mode is derived from it
-    m_themeSheets = ThemeSheets(styleSheet());
-    if (!m_themeSheets.unpairedColors().isEmpty()) {
-        qWarning() << "BitSimulator.ui: these style sheet colors have no light-mode color in the table at its top:"
-                   << m_themeSheets.unpairedColors();
-    }
-
     connect(ui.themeButton, &QPushButton::clicked, this, &MainWindow::toggleColorScheme);
     // Follow the system setting, also when it changes while the app runs, until the user picks a mode
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this] {
@@ -221,13 +216,17 @@ void MainWindow::setColorScheme(ColorScheme scheme)
     m_colorScheme = scheme;
     const bool dark = (scheme == ColorScheme::Dark);
 
-    // The button shows the mode it switches to; BitSimulator.ui picks its icon by this property
-    ui.themeButton->setProperty("scheme", dark ? "dark" : "light");
+    // The button shows the mode it switches to
+    ui.themeButton->setIcon(colorSchemeIcon(scheme));
     ui.themeButton->setToolTip(dark ? tr("Switch to light mode") : tr("Switch to dark mode"));
 
-    applyPalette(*qApp, m_themeSheets, scheme);
-    // Setting the style sheet re-styles every widget, and through its qproperty-* rule hands the canvas its colors
-    setStyleSheet(m_themeSheets.sheet(scheme));
+    // The canvas, its components and the toolbar icons paint with the current theme; the widgets
+    // get the palette and the style sheet. Setting the style sheet re-styles and repaints every widget.
+    setCurrentTheme(scheme);
+    const Theme& theme = currentTheme();
+    applyPalette(*qApp, theme);
+    setStyleSheet(themeStyleSheet(theme));
+    ui.camera->viewport()->update();
 }
 
 void MainWindow::toggleColorScheme()
@@ -259,7 +258,7 @@ void MainWindow::updateTimerPeriod(int value) {
     // Clamp to valid range
     result = qBound(1, result, 10000);
 
-    emit sendTimerPeriod(result);
+    sendTimerPeriod(result);
 }
 void MainWindow::toggleSimulation()
 {
@@ -270,7 +269,7 @@ void MainWindow::toggleSimulation()
 
 void MainWindow::showSimState(SimState state)
 {
-    // One button: "Start" or "Pause". BitSimulator.ui colors it through the #startButton[running="true"] rule.
+    // One button: "Start" or "Pause". The style sheet (Theme.cpp) colors it through the #startButton[running="true"] rule.
     const bool running = (state == SimState::Running);
     ui.startButton->setText(running ? tr("Pause") : tr("Start"));
     ui.startButton->setProperty("running", running);
@@ -302,7 +301,7 @@ void MainWindow::beginCompile(const QString& message)
 void MainWindow::compileHdl()
 {
     beginCompile(tr("Compiling..."));
-    emit sendCodeToCompiler(ui.hdlEditor->toPlainText());
+    sendCodeToCompiler(ui.hdlEditor->toPlainText());
 }
 
 void MainWindow::compileFinished(bool ok)
@@ -324,8 +323,8 @@ void MainWindow::compileFinished(bool ok)
     auto* box = new QMessageBox(QMessageBox::Warning, tr("Compilation failed"),
                                 tr("The Verilog could not be compiled, so the circuit on the canvas was left as it is."),
                                 QMessageBox::Ok, this);
-    box->setObjectName(QStringLiteral("compileErrorBox"));
-    box->setInformativeText(details.size() > 600 ? details.left(600) + QStringLiteral("...") : details);
+    box->setObjectName(u"compileErrorBox"_s);
+    box->setInformativeText(details.size() > 600 ? details.left(600) + u"..."_s : details);
     if (details.size() > 600) box->setDetailedText(details);
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->open();        // not exec(): the window stays usable
@@ -366,7 +365,7 @@ void MainWindow::scanCompileDir()
     timer.start();
     QStringList sources;
     QSet<QString> includeDirs;
-    QDirIterator it(root.absolutePath(), {QStringLiteral("*.v"), QStringLiteral("*.sv"), QStringLiteral("*.vh"), QStringLiteral("*.svh")},
+    QDirIterator it(root.absolutePath(), {u"*.v"_s, u"*.sv"_s, u"*.vh"_s, u"*.svh"_s},
                     QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
     bool stopped = false;
     while (it.hasNext()) {
@@ -423,6 +422,6 @@ void MainWindow::compileDir()
     if (files.isEmpty()) return;
 
     beginCompile(files.size() == 1 ? tr("Compiling 1 file...") : tr("Compiling %1 files...").arg(files.size()));
-    emit sendFilesToCompiler(files, m_compileIncludeDirs);
+    sendFilesToCompiler(files, m_compileIncludeDirs);
 }
 

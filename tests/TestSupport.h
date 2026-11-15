@@ -88,20 +88,21 @@ inline void choose(QComboBox* combo, const QString& text)
     const int index = combo->findText(text);
     if (index < 0) qFatal("Test setup: combo box has no entry '%s'", qPrintable(text));
     combo->setCurrentIndex(index);
-    emit combo->activated(index);
+    combo->activated(index);
 }
 
 // The HDL tests need the same external tools as the app's Compile button.
 inline bool hdlToolsAvailable()
 {
+    using namespace Qt::StringLiterals;
 #ifdef Q_OS_WIN
-    return QFile::exists(QStringLiteral("script.bat")) && QFile::exists(QStringLiteral("dot.exe")) && QFile::exists(QStringLiteral("sv2v.exe"));
+    return QFile::exists(u"script.bat"_s) && QFile::exists(u"dot.exe"_s) && QFile::exists(u"sv2v.exe"_s);
 #else
-    return QFile::exists(QStringLiteral("yosys_bundle/bin/yosys")) && QFile::exists(QStringLiteral("dot")) && QFile::exists(QStringLiteral("sv2v"));
+    return QFile::exists(u"yosys_bundle/bin/yosys"_s) && QFile::exists(u"dot"_s) && QFile::exists(u"sv2v"_s);
 #endif
 }
-#define REQUIRE_HDL_TOOLS() \
-    do { if (!TestSupport::hdlToolsAvailable()) QSKIP("yosys, Graphviz dot or sv2v was not found in the working directory"); } while (false)
+// Skip message for a test that needs them: if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
+inline constexpr const char* MissingHdlTools = "yosys, Graphviz dot or sv2v was not found in the working directory";
 
 // The whole application window with shortcuts to the parts the tests poke at.
 struct App {

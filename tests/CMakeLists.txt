@@ -9,6 +9,7 @@ cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -44,7 +45,8 @@ option(BITSIM_TESTS_OFFSCREEN "Run the GUI tests without showing windows" ON)
 
 set(BITSIM_TESTS "")
 function(bitsim_add_test name)
-    add_executable(${name} ${name}.cpp TestSupport.h)
+    # The theme images (theme.qrc) go into each test program: in a static library they would need Q_INIT_RESOURCE
+    add_executable(${name} ${name}.cpp TestSupport.h ${BITSIM_APP_SOURCE_DIR}/theme/theme.qrc)
     set_target_properties(${name} PROPERTIES AUTOUIC OFF)
     target_link_libraries(${name} PRIVATE bitsim_under_test Qt6::Test)
     add_dependencies(${name} copy_yosys_bundle copy_graphviz_dot)

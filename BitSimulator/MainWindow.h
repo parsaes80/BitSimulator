@@ -52,7 +52,6 @@ private:
     Ui::BitSimulatorClass ui;
     PropertiesPanel* m_properties = nullptr;
     QFrame* m_propertiesFrame = nullptr;     // the floating box holding the panel
-    ThemeSheets m_themeSheets;               // the .ui style sheet in its dark and light versions
     ColorScheme m_colorScheme = ColorScheme::Dark;
     bool m_followSystemScheme = true;        // until the user picks a mode with the theme button
     QString m_compileError;                  // last message from the HDL compiler, shown if the compile fails

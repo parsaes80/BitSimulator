@@ -23,6 +23,8 @@
 #include <expected>
 #include <limits>
 
+using namespace Qt::StringLiterals;
+
 namespace {
 
 template <typename... Ts>
@@ -36,8 +38,8 @@ std::expected<std::uint64_t, QString> parseNumber(const QString& input)
     QString text = input.trimmed().toLower();
     text.remove(u'_');
     int base = 10;
-    if (text.startsWith(QStringLiteral("0x"))) { base = 16; text = text.mid(2); }
-    else if (text.startsWith(QStringLiteral("0b"))) { base = 2; text = text.mid(2); }
+    if (text.startsWith(u"0x"_s)) { base = 16; text = text.mid(2); }
+    else if (text.startsWith(u"0b"_s)) { base = 2; text = text.mid(2); }
 
     bool ok = false;
     const std::uint64_t value = text.toULongLong(&ok, base);
@@ -49,7 +51,7 @@ std::expected<std::uint64_t, QString> parseNumber(const QString& input)
 // A list of numbers separated by commas, semicolons, spaces or new lines.
 std::expected<QList<std::uint64_t>, QString> parseNumbers(const QString& text)
 {
-    static const QRegularExpression separators(QStringLiteral("[,;\\s]+"));
+    static const QRegularExpression separators(u"[,;\\s]+"_s);
     QList<std::uint64_t> values;
     for (const QString& part : text.split(separators, Qt::SkipEmptyParts)) {
         const auto value = parseNumber(part);
@@ -90,7 +92,7 @@ QString formatNumbers(const QList<std::uint64_t>& values)
     QStringList parts;
     parts.reserve(values.size());
     for (const std::uint64_t value : values) parts << QString::number(value);
-    return parts.join(QStringLiteral(", "));
+    return parts.join(u", "_s);
 }
 
 // Shows a number in a line edit unless the text there already means it (so typing "0x1F" is not rewritten)
@@ -106,7 +108,7 @@ QLabel* mutedLabel(const QString& text = {})
 {
     auto* label = new QLabel(text);
     label->setWordWrap(true);
-    label->setProperty("muted", true);     // colored by the QLabel[muted="true"] rule in BitSimulator.ui
+    label->setProperty("muted", true);     // colored by the QLabel[muted="true"] rule in Theme.cpp
     return label;
 }
 
@@ -147,7 +149,7 @@ struct Segmented {
 Segmented makeSegmented(const QList<QPair<int, QString>>& options)
 {
     auto* widget = new QWidget;
-    widget->setObjectName(QStringLiteral("segmented"));
+    widget->setObjectName(u"segmented"_s);
     auto* row = new QHBoxLayout(widget);
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(0);
@@ -173,12 +175,13 @@ void check(QButtonGroup* group, int id)
 
 // A QStackedWidget is normally as tall as its tallest page. Ignoring the size of the hidden
 // pages makes it exactly as tall as the page being shown, so what follows sits right below it.
-void showPage(QStackedWidget* stack, int index)
+void showPage(QStackedWidget* stack, QWidget* page)
 {
     for (int i = 0; i < stack->count(); i++) {
-        stack->widget(i)->setSizePolicy(QSizePolicy::Preferred, i == index ? QSizePolicy::Preferred : QSizePolicy::Ignored);
+        QWidget* widget = stack->widget(i);
+        widget->setSizePolicy(QSizePolicy::Preferred, widget == page ? QSizePolicy::Preferred : QSizePolicy::Ignored);
     }
-    stack->setCurrentIndex(index);
+    stack->setCurrentWidget(page);
 }
 
 } // namespace
@@ -228,14 +231,14 @@ void WaveformEditor::paintEvent(QPaintEvent*)
     if (!isEnabled()) painter.setOpacity(0.45);
 
     // The same colors as a wire on the canvas: a 1 is drawn like a wire carrying one
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     const QColor accent = theme.wireHigh;
     const QColor grid = theme.wireLow;
     QColor fill = accent;
     fill.setAlpha(45);
 
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), theme.background);
+    painter.fillRect(rect(), theme.canvas);
 
     for (int i = 0; i < shownSteps(); i++) {
         const int column = i % WaveColumns;
@@ -255,7 +258,7 @@ void WaveformEditor::paintEvent(QPaintEvent*)
         if (column > 0 && m_values[i - 1] != value) painter.drawLine(x, highY, x, lowY);   // rising or falling edge
 
         painter.setPen(value ? theme.componentText : theme.pin);
-        painter.drawText(QRect(x, lowY + 2, WaveCellWidth, WaveRowHeight - 25), Qt::AlignCenter, value ? QStringLiteral("1") : QStringLiteral("0"));
+        painter.drawText(QRect(x, lowY + 2, WaveCellWidth, WaveRowHeight - 25), Qt::AlignCenter, value ? u"1"_s : u"0"_s);
     }
 }
 
@@ -270,7 +273,7 @@ void WaveformEditor::mousePressEvent(QMouseEvent* event)
 
     m_values[index] = !m_values[index];
     update();
-    emit valuesEdited(m_values);
+    valuesEdited(m_values);
 }
 
 //===================== PropertiesPanel ========================
@@ -278,12 +281,12 @@ void WaveformEditor::mousePressEvent(QMouseEvent* event)
 PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     : QWidget(parent), m_scene(scene)
 {
-    setObjectName(QStringLiteral("propertiesPanel"));
+    setObjectName(u"propertiesPanel"_s);
     setMinimumWidth(160);
-    setAttribute(Qt::WA_StyledBackground);   // so the style sheet in BitSimulator.ui can paint the background
+    setAttribute(Qt::WA_StyledBackground);   // so the style sheet (Theme.cpp) can paint the background
 
     m_title = new QLabel;
-    m_title->setObjectName(QStringLiteral("propertiesTitle"));
+    m_title->setObjectName(u"propertiesTitle"_s);
     QFont titleFont = m_title->font();
     titleFont.setBold(true);
     titleFont.setPointSizeF(titleFont.pointSizeF() * 1.25);
@@ -301,7 +304,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     captionFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
     nextCaption->setFont(captionFont);
     m_nextTitle = new QLabel;
-    m_nextTitle->setObjectName(QStringLiteral("propertiesNextTitle"));
+    m_nextTitle->setObjectName(u"propertiesNextTitle"_s);
     QFont nextFont = m_nextTitle->font();
     nextFont.setBold(true);
     m_nextTitle->setFont(nextFont);
@@ -310,13 +313,13 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     m_placeHint = mutedLabel(tr("Middle-click an empty spot on the canvas to place it."));
 
     auto* separator = new QFrame;
-    separator->setObjectName(QStringLiteral("propertiesSeparator"));
+    separator->setObjectName(u"propertiesSeparator"_s);
     separator->setFrameShape(QFrame::HLine);
     separator->setFrameShadow(QFrame::Plain);
 
     // One page per alternative of ItemProps, added in the same order, so a page index equals props.index()
     m_pages = new QStackedWidget;
-    m_pages->setObjectName(QStringLiteral("propertiesPages"));
+    m_pages->setObjectName(u"propertiesPages"_s);
     addPage(itemKind<GateProps>, buildGatePage());
     addPage(itemKind<RegisterProps>, buildRegisterPage());
     addPage(itemKind<MuxProps>, buildMuxPage());
@@ -324,16 +327,16 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     addPage(itemKind<DisplayProps>, buildDisplayPage());
     addPage(itemKind<BlockProps>, buildBlockPage());
     m_info = mutedLabel();
-    m_infoPage = m_pages->addWidget(m_info);
+    m_pages->addWidget(m_info);
     m_info->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 
     m_message = new QLabel;
-    m_message->setObjectName(QStringLiteral("propertiesMessage"));
+    m_message->setObjectName(u"propertiesMessage"_s);
     m_message->setWordWrap(true);
     m_message->hide();
 
     m_lockNotice = new QLabel;
-    m_lockNotice->setObjectName(QStringLiteral("propertiesLock"));
+    m_lockNotice->setObjectName(u"propertiesLock"_s);
     m_lockNotice->setWordWrap(true);
     m_lockNotice->hide();
 
@@ -359,10 +362,8 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
 
 void PropertiesPanel::addPage(std::size_t kind, QWidget* page)
 {
-    const int index = m_pages->addWidget(page);
-    Q_ASSERT(index == static_cast<int>(kind));
-    Q_UNUSED(index);
-    Q_UNUSED(kind);
+    m_kindPages[kind] = page;
+    m_pages->addWidget(page);
 }
 
 void PropertiesPanel::showSimState(SimState state)
@@ -419,7 +420,7 @@ void PropertiesPanel::refresh()
         m_subtitle->setText(singleWire ? tr("Selected wire") : tr("Selection"));
         m_info->setText(singleWire ? tr("A wire has no properties. Press Delete to remove it.")
                                    : tr("Select a single component to edit it."));
-        showPage(m_pages, m_infoPage);
+        showPage(m_pages, m_info);
     }
 }
 
@@ -430,7 +431,7 @@ void PropertiesPanel::load(const ItemProps& props)
     m_shown = props;
     if (m_item) m_title->setText(itemTitle(props));     // a selected component is named in the header
     else m_nextTitle->setText(itemTitle(props));        // otherwise the header says "Nothing selected"
-    showPage(m_pages, static_cast<int>(props.index()));
+    showPage(m_pages, m_kindPages[props.index()]);
 
     std::visit(Overloaded{
         [this](const GateProps& p)     { loadGate(p); },
@@ -480,9 +481,9 @@ QWidget* PropertiesPanel::buildGatePage()
         m_gateType->addItem(gateTypeName(type), static_cast<int>(type));
     }
     m_gateTypeLabel = new QLabel(tr("Type"));
-    m_gateType->setObjectName(QStringLiteral("gateType"));
+    m_gateType->setObjectName(u"gateType"_s);
     m_gateInputs = makeSpin(ItemLimits::minGateInputs, ItemLimits::maxGateInputs);
-    m_gateInputs->setObjectName(QStringLiteral("gateInputs"));
+    m_gateInputs->setObjectName(u"gateInputs"_s);
 
     form->addRow(m_gateTypeLabel, m_gateType);
     form->addRow(tr("Inputs"), m_gateInputs);
@@ -530,7 +531,7 @@ QWidget* PropertiesPanel::buildRegisterPage()
     m_regType = type.group;
     m_regTrigger = trigger.group;
     m_regEnable = new QCheckBox(tr("Enable input"));
-    m_regEnable->setObjectName(QStringLiteral("registerEnable"));
+    m_regEnable->setObjectName(u"registerEnable"_s);
     m_regPins = mutedLabel();
 
     trigger.widget->setToolTip(tr("A flip-flop changes on the rising clock edge. A latch has no clock pin and follows its inputs."));
@@ -561,10 +562,10 @@ void PropertiesPanel::loadRegister(const RegisterProps& props)
     // Name the pins on the left edge in the order they are drawn
     QStringList pins;
     switch (props.type) {
-    case RType::SR: pins << QStringLiteral("S") << QStringLiteral("R"); break;
-    case RType::JK: pins << QStringLiteral("J") << QStringLiteral("K"); break;
-    case RType::D:  pins << QStringLiteral("D"); break;
-    case RType::T:  pins << QStringLiteral("T"); break;
+    case RType::SR: pins << u"S"_s << u"R"_s; break;
+    case RType::JK: pins << u"J"_s << u"K"_s; break;
+    case RType::D:  pins << u"D"_s; break;
+    case RType::T:  pins << u"T"_s; break;
     }
     if (props.type == RType::D || props.type == RType::T) {
         // Compiled Verilog can reset asynchronously, and to 1
@@ -574,7 +575,7 @@ void PropertiesPanel::loadRegister(const RegisterProps& props)
     }
     if (props.edgeTriggered) pins << tr("clock");
     if (props.hasEnable) pins << tr("enable");
-    m_regPins->setText(tr("Left pins, top to bottom: %1").arg(pins.join(QStringLiteral(", "))));
+    m_regPins->setText(tr("Left pins, top to bottom: %1").arg(pins.join(u", "_s)));
 }
 
 //===================== Multiplexer ========================
@@ -585,7 +586,7 @@ QWidget* PropertiesPanel::buildMuxPage()
     auto* form = makeForm(page);
 
     m_muxInputs = makeSpin(ItemLimits::minMuxInputs, ItemLimits::maxMuxInputs);
-    m_muxInputs->setObjectName(QStringLiteral("muxInputs"));
+    m_muxInputs->setObjectName(u"muxInputs"_s);
     m_muxInfo = mutedLabel();
 
     form->addRow(tr("Inputs"), m_muxInputs);
@@ -658,7 +659,7 @@ QString sourcePreview(const SourceProps& props)
     for (int step = 0; step < shownSteps; step++) {
         values << QString::number(sourceValueAt(props, std::uint64_t(step) * std::uint64_t(props.ticksPerStep)));
     }
-    return PropertiesPanel::tr("Steps: %1, ...").arg(values.join(QStringLiteral(", ")));
+    return PropertiesPanel::tr("Steps: %1, ...").arg(values.join(u", "_s));
 }
 
 } // namespace
@@ -674,18 +675,18 @@ QWidget* PropertiesPanel::buildSourcePage()
     auto* common = new QWidget;
     m_sourceForm = makeForm(common);
     m_sourceMode = new QComboBox;
-    m_sourceMode->setObjectName(QStringLiteral("sourceMode"));
+    m_sourceMode->setObjectName(u"sourceMode"_s);
     for (const SourceMode mode : allSourceModes) m_sourceMode->addItem(sourceModeName(mode), static_cast<int>(mode));
     m_sourceBits = makeSpin(1, SourceLimits::maxBits);
-    m_sourceBits->setObjectName(QStringLiteral("sourceBits"));
+    m_sourceBits->setObjectName(u"sourceBits"_s);
     m_sourceBits->setToolTip(tr("Output pins; each pin is one bit, lowest bit on top"));
     m_sourceEvery = makeSpin(1, SourceLimits::maxTicksPerStep);
-    m_sourceEvery->setObjectName(QStringLiteral("sourceEvery"));
+    m_sourceEvery->setObjectName(u"sourceEvery"_s);
     m_sourceEvery->setToolTip(tr("A new value every this many simulation ticks"));
     m_sourceForm->addRow(tr("Mode"), m_sourceMode);
     m_sourceForm->addRow(tr("Bits"), m_sourceBits);
     m_sourceRepeat = new QCheckBox(tr("Repeat"));
-    m_sourceRepeat->setObjectName(QStringLiteral("sourceRepeat"));
+    m_sourceRepeat->setObjectName(u"sourceRepeat"_s);
     m_sourceRepeat->setToolTip(tr("Start again after the last step. Off: stay on the last value, e.g. a reset pulse 1, 1, 0."));
     m_sourceForm->addRow(tr("Every"), m_sourceEvery);
     m_sourceForm->addRow(QString(), m_sourceRepeat);
@@ -697,9 +698,9 @@ QWidget* PropertiesPanel::buildSourcePage()
     const auto direction = makeSegmented({{0, tr("Up")}, {1, tr("Down")}});
     m_sourceDirection = direction.group;
     m_sourceStart = new QLineEdit;
-    m_sourceStart->setObjectName(QStringLiteral("sourceStart"));
+    m_sourceStart->setObjectName(u"sourceStart"_s);
     m_sourceStep = new QLineEdit;
-    m_sourceStep->setObjectName(QStringLiteral("sourceStep"));
+    m_sourceStep->setObjectName(u"sourceStep"_s);
     m_sequenceForm->addRow(tr("Direction"), direction.widget);
     m_sequenceForm->addRow(tr("Start"), m_sourceStart);
     m_sequenceForm->addRow(tr("Step"), m_sourceStep);
@@ -708,7 +709,7 @@ QWidget* PropertiesPanel::buildSourcePage()
     auto* randomPage = new QWidget;
     auto* randomForm = makeForm(randomPage);
     m_sourceSeed = makeSpin(0, std::numeric_limits<int>::max());
-    m_sourceSeed->setObjectName(QStringLiteral("sourceSeed"));
+    m_sourceSeed->setObjectName(u"sourceSeed"_s);
     randomForm->addRow(tr("Seed"), m_sourceSeed);
 
     // List
@@ -717,8 +718,8 @@ QWidget* PropertiesPanel::buildSourcePage()
     listLayout->setContentsMargins(0, 0, 0, 0);
     listLayout->setSpacing(4);
     m_sourceList = new QPlainTextEdit;
-    m_sourceList->setObjectName(QStringLiteral("sourceValues"));
-    m_sourceList->setPlaceholderText(QStringLiteral("2, 5"));
+    m_sourceList->setObjectName(u"sourceValues"_s);
+    m_sourceList->setPlaceholderText(u"2, 5"_s);
     m_sourceList->setTabChangesFocus(true);
     m_sourceList->setFixedHeight(96);
     m_sourceListCount = mutedLabel();
@@ -743,7 +744,7 @@ QWidget* PropertiesPanel::buildSourcePage()
     m_wavePinGroup->setExclusive(true);
     m_waveEditorLabel = mutedLabel();
     m_waveEditor = new WaveformEditor;
-    m_waveEditor->setObjectName(QStringLiteral("sourceWaveform"));
+    m_waveEditor->setObjectName(u"sourceWaveform"_s);
     waveLayout->addWidget(m_wavePinsScroll);
     waveLayout->addWidget(m_waveEditorLabel);
     waveLayout->addWidget(m_waveEditor);
@@ -752,14 +753,14 @@ QWidget* PropertiesPanel::buildSourcePage()
     auto* constantPage = new QWidget;
     auto* constantForm = makeForm(constantPage);
     m_sourceConstant = new QLineEdit;
-    m_sourceConstant->setObjectName(QStringLiteral("sourceConstant"));
+    m_sourceConstant->setObjectName(u"sourceConstant"_s);
     constantForm->addRow(tr("Value"), m_sourceConstant);
 
     m_sourcePages = {sequencePage, randomPage, listPage, wavePage, constantPage};   // in SourcePage order
     for (QWidget* settings : std::as_const(m_sourcePages)) layout->addWidget(settings);
 
     m_sourcePreview = mutedLabel();
-    m_sourcePreview->setObjectName(QStringLiteral("sourcePreview"));
+    m_sourcePreview->setObjectName(u"sourcePreview"_s);
     m_sourceInfo = mutedLabel();
     layout->addWidget(m_sourcePreview);
     layout->addWidget(m_sourceInfo);
@@ -829,14 +830,14 @@ void PropertiesPanel::setWavePinCount(int count)
         pinButton->setText(QString::number(pin));
         pinButton->setCheckable(true);
         pinButton->setFixedWidth(34);
-        pinButton->setObjectName(QStringLiteral("sourcePin%1").arg(pin));
-        pinButton->setProperty("wavePin", true);          // styled by the QToolButton[wavePin="true"] rule in BitSimulator.ui
+        pinButton->setObjectName(u"sourcePin%1"_s.arg(pin));
+        pinButton->setProperty("wavePin", true);          // styled by the QToolButton[wavePin="true"] rule in Theme.cpp
         pinButton->setToolTip(tr("Pin %1 (bit %1): edit its pattern with the steps below").arg(pin));
         m_wavePinGroup->addButton(pinButton, pin);
 
         auto* pattern = new QLineEdit;
-        pattern->setObjectName(QStringLiteral("sourcePattern%1").arg(pin));
-        pattern->setPlaceholderText(QStringLiteral("0101"));
+        pattern->setObjectName(u"sourcePattern%1"_s.arg(pin));
+        pattern->setPlaceholderText(u"0101"_s);
         connect(pattern, &QLineEdit::textEdited, this, [this, pin](const QString& text) {
             selectWavePin(pin);
             if (const auto wave = parseWaveform(text)) {
@@ -939,9 +940,9 @@ QWidget* PropertiesPanel::buildDisplayPage()
     auto* form = makeForm(page);
 
     m_displayInputs = makeSpin(ItemLimits::minDisplayInputs, ItemLimits::maxDisplayInputs);
-    m_displayInputs->setObjectName(QStringLiteral("displayInputs"));
+    m_displayInputs->setObjectName(u"displayInputs"_s);
     m_displayOutputs = makeSpin(ItemLimits::minDisplayOutputs, ItemLimits::maxDisplayOutputs);
-    m_displayOutputs->setObjectName(QStringLiteral("displayOutputs"));
+    m_displayOutputs->setObjectName(u"displayOutputs"_s);
 
     form->addRow(tr("Inputs"), m_displayInputs);
     form->addRow(tr("Outputs"), m_displayOutputs);
@@ -976,11 +977,11 @@ QWidget* PropertiesPanel::buildBlockPage()
         return label;
     };
     m_blockModule = wrapped();
-    m_blockModule->setObjectName(QStringLiteral("blockModule"));
+    m_blockModule->setObjectName(u"blockModule"_s);
     m_blockInputs = wrapped();
-    m_blockInputs->setObjectName(QStringLiteral("blockInputs"));
+    m_blockInputs->setObjectName(u"blockInputs"_s);
     m_blockOutputs = wrapped();
-    m_blockOutputs->setObjectName(QStringLiteral("blockOutputs"));
+    m_blockOutputs->setObjectName(u"blockOutputs"_s);
 
     form->addRow(tr("Module"), m_blockModule);
     form->addRow(tr("Inputs"), m_blockInputs);
@@ -995,10 +996,10 @@ void PropertiesPanel::loadBlock(const BlockProps& props)
 {
     QStringList inputs, outputs;
     for (const BlockPort& port : props.ports) {
-        const QString name = port.width > 1 ? QStringLiteral("%1[%2]").arg(port.name).arg(port.width) : port.name;
+        const QString name = port.width > 1 ? u"%1[%2]"_s.arg(port.name).arg(port.width) : port.name;
         (port.output ? outputs : inputs).append(name);
     }
     m_blockModule->setText(props.module);
-    m_blockInputs->setText(inputs.isEmpty() ? tr("none") : inputs.join(QStringLiteral(", ")));
-    m_blockOutputs->setText(outputs.isEmpty() ? tr("none") : outputs.join(QStringLiteral(", ")));
+    m_blockInputs->setText(inputs.isEmpty() ? tr("none") : inputs.join(u", "_s));
+    m_blockOutputs->setText(outputs.isEmpty() ? tr("none") : outputs.join(u", "_s));
 }

@@ -3,6 +3,8 @@
 #include <QPainterPath>
 #include "Items.h"
 
+using namespace Qt::StringLiterals;
+
 //===================== ToolbarButton ========================
 
 void ToolbarButton::paintEvent(QPaintEvent* event)
@@ -24,7 +26,7 @@ void ToolbarButton::fit(QPainter& painter, QSizeF size, QSizeF design)
 
 void ToolbarButton::drawLabel(QPainter& painter, const QRectF& rect, const QString& text, int pointSize, bool bold)
 {
-    painter.setPen(canvasTheme().componentText);
+    painter.setPen(currentTheme().componentText);
     QFont font = painter.font();
     font.setBold(bold);
     font.setPointSize(pointSize);
@@ -38,7 +40,7 @@ void GateButton::drawIcon(QPainter& painter, QSizeF)
 {
     // The canvas shape of the gate, with its name on it. It is sized from the whole button, not the
     // inset area the other pictures use: 70% of its width and 75% of its height, centred.
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     const QColor color = theme.gateColor(m_gateType);
     painter.setPen(QPen(color, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(theme.fillFor(color));
@@ -52,23 +54,23 @@ void GateButton::drawIcon(QPainter& painter, QSizeF)
 void SourceButton::drawIcon(QPainter& painter, QSizeF size)
 {
     fit(painter, size, {40, 30});
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     const QRectF body(-12, -10, 24, 20);
     painter.setPen(QPen(theme.source, 2));
     painter.setBrush(theme.fillFor(theme.source));
     painter.drawRoundedRect(body, 3, 3);
-    drawLabel(painter, body, QStringLiteral("1"), 12, true);   // a logic source
+    drawLabel(painter, body, u"1"_s, 12, true);   // a logic source
 }
 
 void RegisterButton::drawIcon(QPainter& painter, QSizeF size)
 {
     fit(painter, size, {40, 30});
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     const QRectF body(-10, -14, 20, 28);
     painter.setPen(QPen(theme.reg, 2));
     painter.setBrush(theme.fillFor(theme.reg));
     painter.drawRoundedRect(body, 3, 3);
-    drawLabel(painter, body, QStringLiteral("R"), 12, true);
+    drawLabel(painter, body, u"R"_s, 12, true);
 
     // The clock input's triangle at the bottom
     QPainterPath clock;
@@ -91,17 +93,17 @@ void MuxButton::drawIcon(QPainter& painter, QSizeF size)
     body.lineTo(halfWidth, halfHeight / 2);
     body.lineTo(-halfWidth, halfHeight);
     body.closeSubpath();
-    painter.setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.setBrush(canvasTheme().fillFor(canvasTheme().mux));
+    painter.setPen(QPen(currentTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(currentTheme().fillFor(currentTheme().mux));
     painter.drawPath(body);
-    drawLabel(painter, QRectF(-halfWidth, -halfHeight, size.width(), size.height()), QStringLiteral("MUX"));
+    drawLabel(painter, QRectF(-halfWidth, -halfHeight, size.width(), size.height()), u"MUX"_s);
 }
 
 void DisplayButton::drawIcon(QPainter& painter, QSizeF size)
 {
     // Casing outlined in the display's color, a screen as dark as the canvas, and a sample digit
     fit(painter, size, {40, 60});
-    const CanvasTheme& theme = canvasTheme();
+    const Theme& theme = currentTheme();
     const QRectF casing(-20, -30, 40, 60);
     painter.setPen(QPen(theme.display, 2));
     painter.setBrush(theme.fillFor(theme.display));
@@ -109,14 +111,14 @@ void DisplayButton::drawIcon(QPainter& painter, QSizeF size)
 
     const QRectF screen = casing.adjusted(5, 5, -5, -5);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(theme.background);
+    painter.setBrush(theme.canvas);
     painter.drawRoundedRect(screen, 2, 2);
 
     painter.setPen(QPen(theme.display, 2));
     QFont font = painter.font();
     font.setBold(true);
-    font.setFamily(QStringLiteral("Courier"));
+    font.setFamily(u"Courier"_s);
     font.setPointSize(16);
     painter.setFont(font);
-    painter.drawText(screen, Qt::AlignCenter, QStringLiteral("8"));
+    painter.drawText(screen, Qt::AlignCenter, u"8"_s);
 }

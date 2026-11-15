@@ -5,6 +5,8 @@
 #include "TestSupport.h"
 #include <QSignalSpy>
 
+using namespace Qt::StringLiterals;
+
 using namespace TestSupport;
 
 namespace {
@@ -153,7 +155,7 @@ private slots:
 
         const auto refused = scene.editComponent(gate, GateProps{GType::AND, 2});
         QVERIFY(!refused.has_value());
-        QVERIFY2(refused.error().contains(QStringLiteral("Input 4")), qPrintable(refused.error()));
+        QVERIFY2(refused.error().contains(u"Input 4"_s), qPrintable(refused.error()));
         QCOMPARE(gate->getInputPorts().size(), 4);                       // nothing changed
         QCOMPARE(gate->props(), ItemProps(GateProps{GType::AND, 4}));
 
@@ -213,9 +215,9 @@ private slots:
         QVERIFY(connectPorts(&scene, source->getOutputPorts()[1], reg->getReadEnablePort()));
 
         auto refused = scene.editComponent(reg, RegisterProps{RType::D, false, true});
-        QVERIFY(!refused.has_value() && refused.error().contains(QStringLiteral("clock")));
+        QVERIFY(!refused.has_value() && refused.error().contains(u"clock"_s));
         refused = scene.editComponent(reg, RegisterProps{RType::D, true, false});
-        QVERIFY(!refused.has_value() && refused.error().contains(QStringLiteral("enable")));
+        QVERIFY(!refused.has_value() && refused.error().contains(u"enable"_s));
         QVERIFY(reg->getClkPort() && reg->getReadEnablePort());
 
         // The type can always change: it does not touch any pin
@@ -244,7 +246,7 @@ private slots:
 
         // Becoming a waveform would leave one pin, but the second pin is wired
         const auto refused = scene.editComponent(source, SourceProps::waveform({true}));
-        QVERIFY(!refused.has_value() && refused.error().contains(QStringLiteral("Output 2")));
+        QVERIFY(!refused.has_value() && refused.error().contains(u"Output 2"_s));
         QCOMPARE(source->sourceProps().mode, SourceMode::List);
 
         QVERIFY(scene.editComponent(source, SourceProps::list({0}, 2)).has_value());   // down to the wired pin is fine
@@ -263,7 +265,7 @@ private slots:
         auto* mux = add<MuxItem>(scene, MuxProps{MType::MUX, 8});
         QVERIFY(connectPorts(&scene, source->getOutputPorts()[0], mux->getAddressPorts()[2]));
         const auto refused = scene.editComponent(mux, MuxProps{MType::MUX, 4});      // 4 inputs need only 2 select lines
-        QVERIFY(!refused.has_value() && refused.error().contains(QStringLiteral("Select line 3")));
+        QVERIFY(!refused.has_value() && refused.error().contains(u"Select line 3"_s));
         QVERIFY(scene.editComponent(mux, MuxProps{MType::MUX, 5}).has_value());      // 5 still needs 3
         QCOMPARE(mux->getInputPorts().size(), 5);
     }

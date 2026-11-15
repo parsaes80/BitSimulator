@@ -13,18 +13,18 @@
 #include <QRandomGenerator>
 #include <QStatusBar>
 
+using namespace Qt::StringLiterals;
+
 using namespace TestSupport;
 
 namespace {
 
-const QString goodVerilog = QStringLiteral(
-    "module top(input wire clk, input wire [1:0] a, input wire [1:0] b, output reg [1:0] r);\n"
+const QString goodVerilog = u"module top(input wire clk, input wire [1:0] a, input wire [1:0] b, output reg [1:0] r);\n"
     "always @(posedge clk) r <= a ^ b;\n"
-    "endmodule\n");
-const QString brokenVerilog = QStringLiteral(
-    "module top(input wire a, output wire y);\n"
+    "endmodule\n"_s;
+const QString brokenVerilog = u"module top(input wire a, output wire y);\n"
     "assign y = a &&& ;\n"
-    "endmodule\n");
+    "endmodule\n"_s;
 
 // clock -> NOT -> display. The clock has 16 steps so "continues" and "starts over" can be told apart.
 struct ClockCircuit {
@@ -68,25 +68,25 @@ private slots:
     void oneButtonSaysStartOrPause()
     {
         App app;
-        QVERIFY(app.window.findChild<QPushButton*>(QStringLiteral("pauseButton")) == nullptr);
-        QCOMPARE(app.start->text(), QStringLiteral("Start"));
+        QVERIFY(app.window.findChild<QPushButton*>(u"pauseButton"_s) == nullptr);
+        QCOMPARE(app.start->text(), u"Start"_s);
         QCOMPARE(app.scene->simState(), SimState::Stopped);
-        QCOMPARE(app.start->property("running").toBool(), false);         // the .ui style sheet colors it by this
+        QCOMPARE(app.start->property("running").toBool(), false);         // the style sheet colors it by this
 
         app.start->click();
         QCOMPARE(app.scene->simState(), SimState::Running);
-        QCOMPARE(app.start->text(), QStringLiteral("Pause"));
+        QCOMPARE(app.start->text(), u"Pause"_s);
         QCOMPARE(app.start->property("running").toBool(), true);          // another colour
 
         app.start->click();
         QCOMPARE(app.scene->simState(), SimState::Paused);
-        QCOMPARE(app.start->text(), QStringLiteral("Start"));
+        QCOMPARE(app.start->text(), u"Start"_s);
         QCOMPARE(app.start->property("running").toBool(), false);
-        QVERIFY(app.start->toolTip().contains(QStringLiteral("Continue")));
+        QVERIFY(app.start->toolTip().contains(u"Continue"_s));
 
         app.clear->click();
         QCOMPARE(app.scene->simState(), SimState::Stopped);
-        QVERIFY(app.start->toolTip().contains(QStringLiteral("first tick")));
+        QVERIFY(app.start->toolTip().contains(u"first tick"_s));
     }
 
     void pressingItManyTimesNeverGetsStuck()
@@ -96,7 +96,7 @@ private slots:
         for (int i = 0; i < 41; i++) {
             app.start->click();
             QTest::qWait(i % 5);
-            QCOMPARE(app.start->text() == QStringLiteral("Pause"), app.scene->simState() == SimState::Running);
+            QCOMPARE(app.start->text() == u"Pause"_s, app.scene->simState() == SimState::Running);
         }
         QCOMPARE(app.scene->simState(), SimState::Running);              // an odd number of presses
         QTRY_VERIFY(circuit.in() != circuit.notOut());
@@ -143,7 +143,7 @@ private slots:
         auto* viewport = app.canvas->viewport();
 
         QVERIFY(!app.pages->isEnabled());
-        QVERIFY(labelWith(app.panel, QStringLiteral("simulation is running")));
+        QVERIFY(labelWith(app.panel, u"simulation is running"_s));
 
         QTest::mouseClick(viewport, Qt::MiddleButton, {}, app.viewPos(app.centre + QPointF(0, -160)));
         QCOMPARE(app.scene->items().size(), before);                     // nothing placed
@@ -195,7 +195,7 @@ private slots:
         QCOMPARE(frozenIn, circuit.pattern[frozenStep]);
 
         QVERIFY(app.pages->isEnabled());                                 // editing is possible while paused
-        QVERIFY(labelWith(app.panel, QStringLiteral("simulation is paused")));
+        QVERIFY(labelWith(app.panel, u"simulation is paused"_s));
         circuit.inv->setPos(circuit.inv->pos() + QPointF(0, 20));        // moving is not an edit
         QCOMPARE(app.scene->simState(), SimState::Paused);
 
@@ -203,7 +203,7 @@ private slots:
         QTest::qWait(130);
         const int resumed = circuit.step();
         QVERIFY2(resumed > frozenStep && resumed <= frozenStep + 3,
-                 qPrintable(QStringLiteral("paused at step %1, 130 ms after Start it is at step %2 (a restart would be at 0-2)").arg(frozenStep).arg(resumed)));
+                 qPrintable(u"paused at step %1, 130 ms after Start it is at step %2 (a restart would be at 0-2)"_s.arg(frozenStep).arg(resumed)));
         QVERIFY(circuit.in() != circuit.notOut());
     }
 
@@ -222,8 +222,8 @@ private slots:
         app.pressDelete();                                               // an edit
         QVERIFY(!app.scene->items().contains(loose));
         QCOMPARE(app.scene->simState(), SimState::Stopped);
-        QCOMPARE(app.start->text(), QStringLiteral("Start"));
-        QVERIFY(!labelWith(app.panel, QStringLiteral("simulation is")));
+        QCOMPARE(app.start->text(), u"Start"_s);
+        QVERIFY(!labelWith(app.panel, u"simulation is"_s));
 
         // Nothing of the old run is left on the canvas
         QCOMPARE(circuit.step(), 0);
@@ -237,7 +237,7 @@ private slots:
         app.start->click();                                              // the next Start is a fresh run
         QTest::qWait(130);
         QCOMPARE(app.scene->simState(), SimState::Running);
-        QVERIFY2(circuit.step() <= 2, qPrintable(QStringLiteral("step %1").arg(circuit.step())));
+        QVERIFY2(circuit.step() <= 2, qPrintable(u"step %1"_s.arg(circuit.step())));
     }
 
     void aPropertyEditWhilePausedAlsoEndsTheRun()
@@ -266,7 +266,7 @@ private slots:
         app.clear->click();
         QCOMPARE(app.scene->simState(), SimState::Stopped);
         QVERIFY(app.scene->items().isEmpty());
-        QCOMPARE(app.start->text(), QStringLiteral("Start"));
+        QCOMPARE(app.start->text(), u"Start"_s);
         QVERIFY(app.pages->isEnabled());
 
         QTest::qWait(400);                                               // late results from the cleared run
@@ -330,14 +330,14 @@ private slots:
         slider->setValue(10000);                                         // 1 ms per tick
         int changes = 0, last = circuit.step();
         for (int i = 0; i < 40; i++) { QTest::qWait(5); if (circuit.step() != last) { changes++; last = circuit.step(); } }
-        QVERIFY2(changes >= 10, qPrintable(QStringLiteral("only %1 step changes seen in 200 ms at full speed").arg(changes)));
+        QVERIFY2(changes >= 10, qPrintable(u"only %1 step changes seen in 200 ms at full speed"_s.arg(changes)));
     }
 
     //===================== Compile ========================
 
     void compileStopsTheRunAndReplacesTheCircuit()
     {
-        REQUIRE_HDL_TOOLS();
+        if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
         App app;
         ClockCircuit circuit(app);
         app.start->click();
@@ -358,7 +358,7 @@ private slots:
         QVERIFY(!itemsOfType<WireItem>(app.scene).isEmpty());
         for (WireItem* wire : itemsOfType<WireItem>(app.scene)) QVERIFY(wire->isConnected());
         QCOMPARE(app.scene->simState(), SimState::Stopped);
-        QVERIFY(app.window.statusBar()->currentMessage().contains(QStringLiteral("Compiled")));
+        QVERIFY(app.window.statusBar()->currentMessage().contains(u"Compiled"_s));
 
         app.start->click();                                              // and the compiled circuit runs
         QTRY_VERIFY(std::ranges::any_of(itemsOfType<PortItem>(app.scene), [](PortItem* port) { return port->getValue(); }));
@@ -366,7 +366,7 @@ private slots:
 
     void compileDirListsChecksAndCompilesAFolder()
     {
-        REQUIRE_HDL_TOOLS();
+        if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
         // chip (the top) uses and2 from a subfolder; tb is a testbench that would otherwise be the top
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -385,7 +385,7 @@ private slots:
         App app;
         auto* tabs = child<QTabWidget>(&app.window, "tabWidget");
         auto* tab = child<QWidget>(&app.window, "CompileDirTab");
-        QCOMPARE(tabs->tabText(tabs->indexOf(tab)), QStringLiteral("Compile Dir"));
+        QCOMPARE(tabs->tabText(tabs->indexOf(tab)), u"Compile Dir"_s);
         auto* path = child<QLineEdit>(&app.window, "compileDirPath");
         auto* files = child<QListWidget>(&app.window, "compileFilesDisplayer");
         auto* count = child<QLabel>(&app.window, "compileDirCount");
@@ -393,18 +393,18 @@ private slots:
         QVERIFY(!compileDir->isEnabled());                              // nothing chosen yet
 
         path->setText(dir.path());
-        emit path->editingFinished();                                    // like pressing Enter
+        path->editingFinished();                                    // like pressing Enter
         QStringList listed;
         for (int row = 0; row < files->count(); row++) {
             listed << files->item(row)->text();
             QCOMPARE(files->item(row)->checkState(), Qt::Checked);
         }
         QCOMPARE(listed, (QStringList{QDir::toNativeSeparators("cells/and2.v"), "chip.sv", QDir::toNativeSeparators("tb/tb.v")}));
-        QCOMPARE(count->text(), QStringLiteral("3 of 3 files selected"));
+        QCOMPARE(count->text(), u"3 of 3 files selected"_s);
         QVERIFY(compileDir->isEnabled());
 
         files->item(2)->setCheckState(Qt::Unchecked);                    // leave the testbench out
-        QCOMPARE(count->text(), QStringLiteral("2 of 3 files selected"));
+        QCOMPARE(count->text(), u"2 of 3 files selected"_s);
 
         // A running simulation is stopped, both compile buttons wait, and the result is shown on the canvas
         ClockCircuit circuit(app);
@@ -415,33 +415,33 @@ private slots:
         QVERIFY(!compileDir->isEnabled() && !app.compile->isEnabled());
         QVERIFY(waitForCompile(app));
         QCoreApplication::processEvents();
-        QVERIFY2(app.window.statusBar()->currentMessage().contains(QStringLiteral("Compiled")), qPrintable(app.window.statusBar()->currentMessage()));
+        QVERIFY2(app.window.statusBar()->currentMessage().contains(u"Compiled"_s), qPrintable(app.window.statusBar()->currentMessage()));
         // and2, from another file, is a block in chip; its AND gate is inside it
         QCOMPARE(itemsOfType<GateItem>(app.scene).size(), 0);
         const QList<BlockItem*> blocks = itemsOfType<BlockItem>(app.scene);
         QCOMPARE(blocks.size(), 1);
-        QCOMPARE(blocks.first()->blockProps().module, QStringLiteral("and2"));
+        QCOMPARE(blocks.first()->blockProps().module, u"and2"_s);
         app.canvas->openBlock(blocks.first());
         QCOMPARE(itemsOfType<GateItem>(app.canvas->currentScene()).size(), 1);
         QCOMPARE(itemsOfType<GateItem>(app.canvas->currentScene()).first()->getGateType(), GType::AND);
         QVERIFY(!child<QFrame>(&app.window, "propertiesFrame")->isVisible());   // nothing to edit inside a block
         app.canvas->showLevel(0);
         QVERIFY(child<QFrame>(&app.window, "propertiesFrame")->isVisible());
-        QCOMPARE(tabs->currentWidget(), app.window.findChild<QWidget*>(QStringLiteral("CircuitTab")));
+        QCOMPARE(tabs->currentWidget(), app.window.findChild<QWidget*>(u"CircuitTab"_s));
         QVERIFY(compileDir->isEnabled());
 
         // Unchecking everything, or a folder that does not exist, leaves nothing to compile
         for (int row = 0; row < files->count(); row++) files->item(row)->setCheckState(Qt::Unchecked);
         QVERIFY(!compileDir->isEnabled());
         path->setText(dir.filePath("missing"));
-        emit path->editingFinished();
+        path->editingFinished();
         QCOMPARE(files->count(), 0);
-        QCOMPARE(count->text(), QStringLiteral("This folder does not exist."));
+        QCOMPARE(count->text(), u"This folder does not exist."_s);
     }
 
     void aFailedCompileKeepsTheCircuitAndShowsTheError()
     {
-        REQUIRE_HDL_TOOLS();
+        if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
         App app;
         ClockCircuit circuit(app);
         app.start->click();
@@ -455,11 +455,11 @@ private slots:
         QCOMPARE(app.scene->simState(), SimState::Stopped);              // the simulation was stopped all the same
         QCOMPARE(app.scene->items().size(), before);
         QVERIFY(app.scene->items().contains(circuit.inv));
-        QVERIFY(app.window.statusBar()->currentMessage().contains(QStringLiteral("failed")));
+        QVERIFY(app.window.statusBar()->currentMessage().contains(u"failed"_s));
 
-        auto* box = app.window.findChild<QMessageBox*>(QStringLiteral("compileErrorBox"));
+        auto* box = app.window.findChild<QMessageBox*>(u"compileErrorBox"_s);
         QVERIFY(box && box->isVisible());
-        QVERIFY2(box->informativeText().contains(QStringLiteral("Parse error")), qPrintable(box->informativeText()));
+        QVERIFY2(box->informativeText().contains(u"Parse error"_s), qPrintable(box->informativeText()));
         box->close();
 
         app.start->click();                                              // the kept circuit still works
@@ -468,7 +468,7 @@ private slots:
 
     void startWhileCompilingRunsTheOldCircuitUntilTheNewOneArrives()
     {
-        REQUIRE_HDL_TOOLS();
+        if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
         App app;
         ClockCircuit circuit(app);
         app.editor->setPlainText(goodVerilog);
@@ -484,7 +484,7 @@ private slots:
 
     void compilingTwiceGivesTheSameCircuit()
     {
-        REQUIRE_HDL_TOOLS();
+        if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
         App app;
         app.editor->setPlainText(goodVerilog);
         app.compile->click();
@@ -544,7 +544,7 @@ private slots:
 
             // Whatever happened, the button, the panel and the real state must agree
             const bool running = app.scene->simState() == SimState::Running;
-            QCOMPARE(app.start->text() == QStringLiteral("Pause"), running);
+            QCOMPARE(app.start->text() == u"Pause"_s, running);
             QCOMPARE(!app.pages->isEnabled(), running);
         }
         if (canCompile) QVERIFY(waitForCompile(app));

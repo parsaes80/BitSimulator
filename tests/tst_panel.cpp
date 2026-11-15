@@ -6,6 +6,8 @@
 #include <QScrollArea>
 #include <QScrollBar>
 
+using namespace Qt::StringLiterals;
+
 using namespace TestSupport;
 
 namespace {
@@ -47,10 +49,10 @@ private slots:
     void nothingSelectedSaysSoAndOffersTheNextComponent()
     {
         App app;
-        QCOMPARE(app.title(), QStringLiteral("Nothing selected"));
-        QCOMPARE(app.nextComponent(), QStringLiteral("AND gate"));
-        QVERIFY(labelWith(app.panel, QStringLiteral("NEXT COMPONENT")));
-        QVERIFY(labelWith(app.panel, QStringLiteral("Middle-click")));
+        QCOMPARE(app.title(), u"Nothing selected"_s);
+        QCOMPARE(app.nextComponent(), u"AND gate"_s);
+        QVERIFY(labelWith(app.panel, u"NEXT COMPONENT"_s));
+        QVERIFY(labelWith(app.panel, u"Middle-click"_s));
         // For a new gate the type comes from the toolbar, so the panel does not offer it
         QVERIFY(!app.editor_<QComboBox>("gateType")->isVisible());
         QCOMPARE(app.editor_<QSpinBox>("gateInputs")->value(), 2);
@@ -79,7 +81,7 @@ private slots:
         App app;
         app.tool(qPrintable(button))->click();
         QCOMPARE(app.nextComponent(), title);
-        QCOMPARE(app.title(), QStringLiteral("Nothing selected"));
+        QCOMPARE(app.title(), u"Nothing selected"_s);
 
         // ...and a middle click places exactly that
         QTest::mouseClick(app.canvas->viewport(), Qt::MiddleButton, {}, app.canvas->viewport()->rect().center());
@@ -120,15 +122,15 @@ private slots:
             QVERIFY(app.editor_<QCheckBox>("registerEnable")->isChecked());
         }
 
-        segment(app.panel, QStringLiteral("JK"))->click();
-        segment(app.panel, QStringLiteral("Latch"))->click();
+        segment(app.panel, u"JK"_s)->click();
+        segment(app.panel, u"Latch"_s)->click();
         QCOMPARE(std::get<RegisterProps>(app.scene->toolProps()), (RegisterProps{RType::JK, false, true}));
-        QCOMPARE(app.nextComponent(), QStringLiteral("JK latch"));
+        QCOMPARE(app.nextComponent(), u"JK latch"_s);
 
         app.tool("muxButton")->click();
         app.tool("regButton")->click();                                  // coming back, it is still a JK latch
-        QCOMPARE(app.nextComponent(), QStringLiteral("JK latch"));
-        QVERIFY(segment(app.panel, QStringLiteral("JK"))->isChecked() && segment(app.panel, QStringLiteral("Latch"))->isChecked());
+        QCOMPARE(app.nextComponent(), u"JK latch"_s);
+        QVERIFY(segment(app.panel, u"JK"_s)->isChecked() && segment(app.panel, u"Latch"_s)->isChecked());
     }
 
     void multiplexerToolShowsItsSelectLines()
@@ -136,9 +138,9 @@ private slots:
         App app;
         app.tool("muxButton")->click();
         setSpin(app.editor_<QSpinBox>("muxInputs"), 5);
-        QVERIFY(labelWith(app.panel, QStringLiteral("3 select lines")));
+        QVERIFY(labelWith(app.panel, u"3 select lines"_s));
         setSpin(app.editor_<QSpinBox>("muxInputs"), 2);
-        QVERIFY(labelWith(app.panel, QStringLiteral("1 select line ")));
+        QVERIFY(labelWith(app.panel, u"1 select line "_s));
     }
 
     //===================== A selected component ========================
@@ -150,17 +152,17 @@ private slots:
         auto* gate = add<GateItem>(app, GateProps{GType::NOR, 5});
         app.select(gate);
 
-        QCOMPARE(app.title(), QStringLiteral("NOR gate"));
-        QVERIFY(labelWith(app.panel, QStringLiteral("Selected component")));
+        QCOMPARE(app.title(), u"NOR gate"_s);
+        QVERIFY(labelWith(app.panel, u"Selected component"_s));
         QVERIFY(app.nextComponent().isEmpty());
-        QVERIFY(!labelWith(app.panel, QStringLiteral("Middle-click")));
+        QVERIFY(!labelWith(app.panel, u"Middle-click"_s));
         QVERIFY(app.editor_<QComboBox>("gateType")->isVisible());
-        QCOMPARE(app.editor_<QComboBox>("gateType")->currentText(), QStringLiteral("NOR"));
+        QCOMPARE(app.editor_<QComboBox>("gateType")->currentText(), u"NOR"_s);
         QCOMPARE(app.editor_<QSpinBox>("gateInputs")->value(), 5);
 
         app.scene->clearSelection();
         QCoreApplication::processEvents();
-        QCOMPARE(app.title(), QStringLiteral("Nothing selected"));
+        QCOMPARE(app.title(), u"Nothing selected"_s);
         QCOMPARE(app.editor_<QSpinBox>("gateInputs")->value(), 3);       // back to the tool default
     }
 
@@ -177,7 +179,7 @@ private slots:
 
         setSpin(inputs, 2);                                              // would remove the wired fourth input
         QCOMPARE(gate->getInputPorts().size(), 4);
-        QVERIFY2(app.message().contains(QStringLiteral("Input 4 is wired")), qPrintable(app.message()));
+        QVERIFY2(app.message().contains(u"Input 4 is wired"_s), qPrintable(app.message()));
         QCOMPARE(inputs->value(), 4);                                    // the editor snaps back
 
         setSpin(inputs, 6);
@@ -185,14 +187,14 @@ private slots:
         QVERIFY(app.message().isEmpty());                                // a successful edit clears the message
         QCOMPARE(wire->getEndPort(), gate->getInputPort(3));
 
-        choose(type, QStringLiteral("NOR"));
+        choose(type, u"NOR"_s);
         QCOMPARE(gate->getGateType(), GType::NOR);
-        QCOMPARE(app.title(), QStringLiteral("NOR gate"));
+        QCOMPARE(app.title(), u"NOR gate"_s);
 
-        choose(type, QStringLiteral("NOT"));                             // one input: refused while input 4 is wired
+        choose(type, u"NOT"_s);                             // one input: refused while input 4 is wired
         QCOMPARE(gate->getGateType(), GType::NOR);
         QVERIFY(!app.message().isEmpty());
-        QCOMPARE(type->currentText(), QStringLiteral("NOR"));
+        QCOMPARE(type->currentText(), u"NOR"_s);
     }
 
     void registerEditing()
@@ -202,31 +204,31 @@ private slots:
         auto* reg = add<RegisterItem>(app, RegisterProps{RType::D, true, true});
         QVERIFY(connectPorts(app.scene, source->getOutputPorts()[1], reg->getClkPort()));
         app.select(reg);
-        QCOMPARE(app.title(), QStringLiteral("D flip-flop"));
-        QVERIFY(labelWith(app.panel, QStringLiteral("D, reset, clock, enable")));
+        QCOMPARE(app.title(), u"D flip-flop"_s);
+        QVERIFY(labelWith(app.panel, u"D, reset, clock, enable"_s));
 
-        segment(app.panel, QStringLiteral("Latch"))->click();            // the clock pin is wired
+        segment(app.panel, u"Latch"_s)->click();            // the clock pin is wired
         QVERIFY(reg->getClkPort());
-        QVERIFY2(app.message().contains(QStringLiteral("clock pin is wired")), qPrintable(app.message()));
-        QVERIFY(segment(app.panel, QStringLiteral("Flip-flop"))->isChecked());
+        QVERIFY2(app.message().contains(u"clock pin is wired"_s), qPrintable(app.message()));
+        QVERIFY(segment(app.panel, u"Flip-flop"_s)->isChecked());
 
         app.editor_<QCheckBox>("registerEnable")->click();
         QVERIFY(!reg->getReadEnablePort());
         QVERIFY(app.message().isEmpty());
-        QVERIFY(labelWith(app.panel, QStringLiteral("D, reset, clock")) && !labelWith(app.panel, QStringLiteral("enable")));
+        QVERIFY(labelWith(app.panel, u"D, reset, clock"_s) && !labelWith(app.panel, u"enable"_s));
 
-        segment(app.panel, QStringLiteral("T"))->click();
+        segment(app.panel, u"T"_s)->click();
         QCOMPARE(reg->getRegType(), RType::T);
-        QCOMPARE(app.title(), QStringLiteral("T flip-flop"));
-        segment(app.panel, QStringLiteral("SR"))->click();
-        QVERIFY(labelWith(app.panel, QStringLiteral("S, R, clock")));
+        QCOMPARE(app.title(), u"T flip-flop"_s);
+        segment(app.panel, u"SR"_s)->click();
+        QVERIFY(labelWith(app.panel, u"S, R, clock"_s));
     }
 
     void opensOnTheCircuitTab()
     {
         // Designer saves whichever tab was showing; the app must start on the circuit regardless
         App app;
-        QCOMPARE(child<QTabWidget>(&app.window, "tabWidget")->currentWidget()->objectName(), QStringLiteral("CircuitTab"));
+        QCOMPARE(child<QTabWidget>(&app.window, "tabWidget")->currentWidget()->objectName(), u"CircuitTab"_s);
         QVERIFY(app.canvas->isVisible());
     }
 
@@ -273,47 +275,47 @@ private slots:
         App app;
         auto* source = add<SourceItem>(app, SourceProps::list({1, 2}, 2));
         app.select(source);
-        QCOMPARE(app.title(), QStringLiteral("List source"));
+        QCOMPARE(app.title(), u"List source"_s);
         auto* values = app.editor_<QPlainTextEdit>("sourceValues");
         auto* bits = app.editor_<QSpinBox>("sourceBits");
-        QCOMPARE(values->toPlainText(), QStringLiteral("1, 2"));
+        QCOMPARE(values->toPlainText(), u"1, 2"_s);
         QCOMPARE(bits->value(), 2);
 
-        typeText(values, QStringLiteral("7, 300"));
+        typeText(values, u"7, 300"_s);
         QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{7, 300}));
         QCOMPARE(source->getOutputPorts().size(), 9);                    // 300 needs 9 bits
         QCOMPARE(bits->value(), 9);
         QCOMPARE(bits->minimum(), 9);                                    // cannot go below what the values need
-        QCOMPARE(values->toPlainText(), QStringLiteral("7, 300"));       // the text being typed is not rewritten
+        QCOMPARE(values->toPlainText(), u"7, 300"_s);       // the text being typed is not rewritten
 
-        QTest::keyClicks(values, QStringLiteral(", x"));
-        QVERIFY2(app.message().contains(QStringLiteral("not a whole number")), qPrintable(app.message()));
+        QTest::keyClicks(values, u", x"_s);
+        QVERIFY2(app.message().contains(u"not a whole number"_s), qPrintable(app.message()));
         QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{7, 300}));   // last valid values kept
         for (int i = 0; i < 3; i++) QTest::keyClick(values, Qt::Key_Backspace);
         QVERIFY(app.message().isEmpty());
 
         // Commas, spaces and new lines separate values; 0x is hex and 0b binary
-        typeText(values, QStringLiteral("5 6\n0x1F;0b101"));
+        typeText(values, u"5 6\n0x1F;0b101"_s);
         QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{5, 6, 31, 5}));
-        QVERIFY(labelWith(app.panel, QStringLiteral("4 values")));
+        QVERIFY(labelWith(app.panel, u"4 values"_s));
 
         setSpin(bits, 12);                                               // more pins than needed is allowed
         QCOMPARE(source->getOutputPorts().size(), 12);
 
-        typeText(values, QStringLiteral("-3"));                          // negative numbers are not values
+        typeText(values, u"-3"_s);                          // negative numbers are not values
         QVERIFY(!app.message().isEmpty());
         QCOMPARE(source->sourceProps().values, (QList<std::uint64_t>{5, 6, 31, 5}));
 
-        typeText(values, QStringLiteral("18446744073709551615"));        // the largest 64-bit number
+        typeText(values, u"18446744073709551615"_s);        // the largest 64-bit number
         QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{~std::uint64_t{0}});
         QCOMPARE(source->getOutputPorts().size(), 64);
         QTest::keyClick(values, Qt::Key_6);                              // one digit more does not fit in 64 bits
-        QVERIFY2(app.message().contains(QStringLiteral("64 bits")), qPrintable(app.message()));
+        QVERIFY2(app.message().contains(u"64 bits"_s), qPrintable(app.message()));
         QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{~std::uint64_t{0}});
 
         values->selectAll();
         QTest::keyClick(values, Qt::Key_Delete);                         // an empty field
-        QVERIFY2(app.message().contains(QStringLiteral("at least one")), qPrintable(app.message()));
+        QVERIFY2(app.message().contains(u"at least one"_s), qPrintable(app.message()));
         QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{~std::uint64_t{0}});
     }
 
@@ -322,28 +324,28 @@ private slots:
         App app;
         auto* source = add<SourceItem>(app, SourceProps::counter(8));
         app.select(source);
-        QCOMPARE(app.title(), QStringLiteral("Counter source"));
+        QCOMPARE(app.title(), u"Counter source"_s);
         auto* start = app.editor_<QLineEdit>("sourceStart");
         auto* step = app.editor_<QLineEdit>("sourceStep");
         auto* every = app.editor_<QSpinBox>("sourceEvery");
         auto* preview = app.editor_<QLabel>("sourcePreview");
-        QCOMPARE(preview->text(), QStringLiteral("Steps: 0, 1, 2, 3, 4, 5, 6, 7, ..."));
+        QCOMPARE(preview->text(), u"Steps: 0, 1, 2, 3, 4, 5, 6, 7, ..."_s);
 
-        typeInto(start, QStringLiteral("250"));
-        typeInto(step, QStringLiteral("0x3"));
+        typeInto(start, u"250"_s);
+        typeInto(step, u"0x3"_s);
         setSpin(every, 2);
         QCOMPARE(source->sourceProps().start, std::uint64_t(250));
         QCOMPARE(source->sourceProps().step, std::uint64_t(3));
         QCOMPARE(source->sourceProps().ticksPerStep, 2);
-        QCOMPARE(step->text(), QStringLiteral("0x3"));                   // what was typed stays
-        QCOMPARE(preview->text(), QStringLiteral("Steps: 250, 253, 0, 3, 6, 9, 12, 15, ..."));   // wraps at 8 bits
+        QCOMPARE(step->text(), u"0x3"_s);                   // what was typed stays
+        QCOMPARE(preview->text(), u"Steps: 250, 253, 0, 3, 6, 9, 12, 15, ..."_s);   // wraps at 8 bits
 
-        segment(app.panel, QStringLiteral("Down"))->click();
+        segment(app.panel, u"Down"_s)->click();
         QVERIFY(source->sourceProps().countDown);
-        QCOMPARE(preview->text(), QStringLiteral("Steps: 250, 247, 244, 241, 238, 235, 232, 229, ..."));
+        QCOMPARE(preview->text(), u"Steps: 250, 247, 244, 241, 238, 235, 232, 229, ..."_s);
 
-        typeInto(start, QStringLiteral("12x"));
-        QVERIFY2(app.message().contains(QStringLiteral("not a whole number")), qPrintable(app.message()));
+        typeInto(start, u"12x"_s);
+        QVERIFY2(app.message().contains(u"not a whole number"_s), qPrintable(app.message()));
         QCOMPARE(source->sourceProps().start, std::uint64_t(12));        // what was valid on the way there
     }
 
@@ -360,17 +362,17 @@ private slots:
         const auto shown = [&app](QWidget* w) { return w->isVisibleTo(app.panel); };
         QVERIFY(shown(start) && shown(step) && shown(every));
 
-        choose(mode, QStringLiteral("Gray code"));
+        choose(mode, u"Gray code"_s);
         QCOMPARE(source->sourceProps().mode, SourceMode::GrayCode);
-        QCOMPARE(app.title(), QStringLiteral("Gray code source"));
+        QCOMPARE(app.title(), u"Gray code source"_s);
         QVERIFY(shown(start) && !shown(step));                           // Gray code always steps by one
-        QCOMPARE(preview->text(), QStringLiteral("Steps: 0, 1, 3, 2, 6, 7, 5, 4, ..."));
+        QCOMPARE(preview->text(), u"Steps: 0, 1, 3, 2, 6, 7, 5, 4, ..."_s);
 
-        choose(mode, QStringLiteral("Walking one"));
+        choose(mode, u"Walking one"_s);
         QVERIFY(!shown(start) && !shown(step));
-        QCOMPARE(preview->text(), QStringLiteral("Steps: 1, 2, 4, 8, 1, 2, 4, 8, ..."));
+        QCOMPARE(preview->text(), u"Steps: 1, 2, 4, 8, 1, 2, 4, 8, ..."_s);
 
-        choose(mode, QStringLiteral("Random"));
+        choose(mode, u"Random"_s);
         auto* seed = app.editor_<QSpinBox>("sourceSeed");
         QVERIFY(shown(seed));
         const QString firstNumbers = preview->text();
@@ -378,18 +380,18 @@ private slots:
         QCOMPARE(source->sourceProps().seed, std::uint32_t(99));
         QVERIFY(preview->text() != firstNumbers);
 
-        choose(mode, QStringLiteral("Constant"));
+        choose(mode, u"Constant"_s);
         auto* constant = app.editor_<QLineEdit>("sourceConstant");
         QVERIFY(shown(constant) && !shown(every));                       // a constant has no steps
-        typeInto(constant, QStringLiteral("0b1010_1010_1"));
+        typeInto(constant, u"0b1010_1010_1"_s);
         QCOMPARE(source->sourceProps().constant, std::uint64_t(0x155));
         QCOMPARE(source->getOutputPorts().size(), 9);                    // widened to fit
-        QCOMPARE(preview->text(), QStringLiteral("Outputs 341"));
+        QCOMPARE(preview->text(), u"Outputs 341"_s);
 
         // Every mode's settings are kept while another mode is shown
-        choose(mode, QStringLiteral("Random"));
+        choose(mode, u"Random"_s);
         QCOMPARE(seed->value(), 99);
-        choose(mode, QStringLiteral("Constant"));
+        choose(mode, u"Constant"_s);
         QCOMPARE(source->sourceProps().constant, std::uint64_t(0x155));
     }
 
@@ -403,12 +405,12 @@ private slots:
 
         repeat->click();                                                 // a pulse that stays 0 afterwards
         QVERIFY(!source->sourceProps().repeat);
-        QVERIFY(labelWith(app.panel, QStringLiteral("Steps: 1, 1, 0, 0, 0, 0, 0, 0")));
+        QVERIFY(labelWith(app.panel, u"Steps: 1, 1, 0, 0, 0, 0, 0, 0"_s));
 
         auto* mode = app.editor_<QComboBox>("sourceMode");
-        choose(mode, QStringLiteral("List"));
+        choose(mode, u"List"_s);
         QVERIFY(repeat->isVisible() && !repeat->isChecked());           // kept when switching modes
-        choose(mode, QStringLiteral("Counter"));
+        choose(mode, u"Counter"_s);
         QVERIFY(!repeat->isVisible());                                   // a counter wraps at its bits instead
     }
 
@@ -419,36 +421,36 @@ private slots:
         props.bits = 3;
         auto* source = add<SourceItem>(app, props);
         app.select(source);
-        QCOMPARE(app.title(), QStringLiteral("Waveform source"));
+        QCOMPARE(app.title(), u"Waveform source"_s);
         auto* waveform = app.editor_<WaveformEditor>("sourceWaveform");
         auto* pin1 = app.editor_<QLineEdit>("sourcePattern1");
-        QCOMPARE(app.editor_<QLineEdit>("sourcePattern0")->text(), QStringLiteral("01"));
-        QCOMPARE(pin1->text(), QStringLiteral("0"));                     // a new pin starts as a single 0
-        QVERIFY(app.panel->findChild<QLineEdit*>(QStringLiteral("sourcePattern3")) == nullptr);
+        QCOMPARE(app.editor_<QLineEdit>("sourcePattern0")->text(), u"01"_s);
+        QCOMPARE(pin1->text(), u"0"_s);                     // a new pin starts as a single 0
+        QVERIFY(app.panel->findChild<QLineEdit*>(u"sourcePattern3"_s) == nullptr);
 
-        typeInto(pin1, QStringLiteral("0011 0"));
+        typeInto(pin1, u"0011 0"_s);
         QCOMPARE(source->sourceProps().waves[1], (QList<bool>{0, 0, 1, 1, 0}));
-        QCOMPARE(pin1->text(), QStringLiteral("0011 0"));                // spaces the user typed are kept
+        QCOMPARE(pin1->text(), u"0011 0"_s);                // spaces the user typed are kept
         QCOMPARE(waveform->values(), (QList<bool>{0, 0, 1, 1, 0}));       // the click editor shows the pin being typed in
         QVERIFY(app.editor_<QToolButton>("sourcePin1")->isChecked());
 
         QTest::mouseClick(waveform, Qt::LeftButton, {}, QPoint(24 * 4 + 5, 10));   // fifth step
         QCOMPARE(source->sourceProps().waves[1], (QList<bool>{0, 0, 1, 1, 1}));
-        QCOMPARE(pin1->text(), QStringLiteral("00111"));
+        QCOMPARE(pin1->text(), u"00111"_s);
 
         app.editor_<QToolButton>("sourcePin0")->click();                 // the editor switches pins
         QCOMPARE(waveform->values(), (QList<bool>{0, 1}));
         QCOMPARE(sourceValueAt(source->sourceProps(), 4), std::uint64_t(0b010));   // pin 0 low, pin 1 high
 
         QTest::keyClick(pin1, Qt::Key_2);                                // not a bit
-        QVERIFY2(app.message().contains(QStringLiteral("only contain 0 and 1")), qPrintable(app.message()));
+        QVERIFY2(app.message().contains(u"only contain 0 and 1"_s), qPrintable(app.message()));
         QCOMPARE(source->sourceProps().waves[1].size(), 5);
 
         // Fewer pins removes rows; the patterns come back with the pins
         setSpin(app.editor_<QSpinBox>("sourceBits"), 1);
-        QVERIFY(app.panel->findChild<QLineEdit*>(QStringLiteral("sourcePattern1")) == nullptr);
+        QVERIFY(app.panel->findChild<QLineEdit*>(u"sourcePattern1"_s) == nullptr);
         setSpin(app.editor_<QSpinBox>("sourceBits"), 2);
-        QCOMPARE(app.editor_<QLineEdit>("sourcePattern1")->text(), QStringLiteral("00111"));
+        QCOMPARE(app.editor_<QLineEdit>("sourcePattern1")->text(), u"00111"_s);
     }
 
     void sourcePinsWithWiresCannotBeRemoved()
@@ -461,11 +463,11 @@ private slots:
 
         auto* bits = app.editor_<QSpinBox>("sourceBits");
         setSpin(bits, 1);
-        QVERIFY2(app.message().contains(QStringLiteral("Output 2 is wired")), qPrintable(app.message()));
+        QVERIFY2(app.message().contains(u"Output 2 is wired"_s), qPrintable(app.message()));
         QCOMPARE(source->getOutputPorts().size(), 2);
         QCOMPARE(bits->value(), 2);
 
-        choose(app.editor_<QComboBox>("sourceMode"), QStringLiteral("Waveform"));   // switching modes keeps the pins
+        choose(app.editor_<QComboBox>("sourceMode"), u"Waveform"_s);   // switching modes keeps the pins
         QCOMPARE(source->getOutputPorts().size(), 2);
         QVERIFY(app.message().isEmpty());
     }
@@ -483,7 +485,7 @@ private slots:
         QVERIFY(display->getOutputPorts().isEmpty());
 
         app.select(mux);
-        QCOMPARE(app.title(), QStringLiteral("Multiplexer"));
+        QCOMPARE(app.title(), u"Multiplexer"_s);
         setSpin(app.editor_<QSpinBox>("muxInputs"), 8);
         QCOMPARE(mux->getInputPorts().size(), 8);
         QCOMPARE(mux->getAddressPorts().size(), 3);
@@ -511,20 +513,20 @@ private slots:
 
         QTest::mouseClick(app.canvas->viewport(), Qt::LeftButton, {}, app.viewPos(source));
         QVERIFY(source->isSelected());                                   // a source used to open the overlay instead
-        QCOMPARE(app.title(), QStringLiteral("List source"));
+        QCOMPARE(app.title(), u"List source"_s);
 
         QTest::mouseClick(app.canvas->viewport(), Qt::LeftButton, {}, app.viewPos(gate));
         QVERIFY(gate->isSelected() && !source->isSelected());
-        QCOMPARE(app.title(), QStringLiteral("AND gate"));
+        QCOMPARE(app.title(), u"AND gate"_s);
 
         QTest::mouseClick(app.canvas->viewport(), Qt::LeftButton, {}, QPoint(30, app.canvas->viewport()->height() - 30));
         QVERIFY(app.scene->selectedItems().isEmpty());                   // a click on empty canvas
-        QCOMPARE(app.title(), QStringLiteral("Nothing selected"));
+        QCOMPARE(app.title(), u"Nothing selected"_s);
 
         app.select(gate);
         app.tool("muxButton")->click();                                  // picking a tool deselects too
         QVERIFY(app.scene->selectedItems().isEmpty());
-        QCOMPARE(app.nextComponent(), QStringLiteral("Multiplexer"));
+        QCOMPARE(app.nextComponent(), u"Multiplexer"_s);
     }
 
     void draggingEmptyCanvasPansWithoutDeselecting()
@@ -553,12 +555,12 @@ private slots:
 
         source->setSelected(true); gate->setSelected(true);
         QCoreApplication::processEvents();
-        QCOMPARE(app.title(), QStringLiteral("2 items selected"));
+        QCOMPARE(app.title(), u"2 items selected"_s);
         QVERIFY(app.nextComponent().isEmpty());
 
         app.select(wire);
-        QCOMPARE(app.title(), QStringLiteral("Wire"));
-        QVERIFY(labelWith(app.panel, QStringLiteral("no properties")));
+        QCOMPARE(app.title(), u"Wire"_s);
+        QVERIFY(labelWith(app.panel, u"no properties"_s));
     }
 
     void deleteKeyRemovesTheSelection()
@@ -572,11 +574,11 @@ private slots:
         QCOMPARE(gates.first()->props(), ItemProps(GateProps{GType::NAND, 3}));
 
         QTest::mouseClick(app.canvas->viewport(), Qt::LeftButton, {}, app.viewPos(gates.first()));
-        QCOMPARE(app.title(), QStringLiteral("NAND gate"));
+        QCOMPARE(app.title(), u"NAND gate"_s);
         app.pressDelete();
         QVERIFY(itemsOfType<GateItem>(app.scene).isEmpty());
-        QCOMPARE(app.title(), QStringLiteral("Nothing selected"));
-        QCOMPARE(app.nextComponent(), QStringLiteral("NAND gate"));
+        QCOMPARE(app.title(), u"Nothing selected"_s);
+        QCOMPARE(app.nextComponent(), u"NAND gate"_s);
 
         // Backspace works like Delete
         QTest::mouseClick(app.canvas->viewport(), Qt::MiddleButton, {}, app.canvas->viewport()->rect().center());
@@ -596,7 +598,7 @@ private slots:
         values->moveCursor(QTextCursor::End);
         QTest::keyClick(values, Qt::Key_Backspace);                      // deletes the "3", not the source
         QVERIFY(app.scene->items().contains(source));
-        QCOMPARE(values->toPlainText(), QStringLiteral("12, "));
+        QCOMPARE(values->toPlainText(), u"12, "_s);
         QCOMPARE(source->sourceProps().values, QList<std::uint64_t>{12});
     }
 
@@ -607,7 +609,7 @@ private slots:
         app.select(gate);
         app.clear->click();
         QCoreApplication::processEvents();
-        QCOMPARE(app.title(), QStringLiteral("Nothing selected"));
+        QCOMPARE(app.title(), u"Nothing selected"_s);
         setSpin(app.editor_<QSpinBox>("gateInputs"), 5);                 // must edit the tool, not the deleted gate
         QCOMPARE(std::get<GateProps>(app.scene->toolProps()).numInputs, 5);
     }

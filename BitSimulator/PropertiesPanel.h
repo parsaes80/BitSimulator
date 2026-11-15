@@ -3,6 +3,8 @@
 #include <QList>
 #include <QPointer>
 #include <QWidget>
+#include <array>
+#include <variant>
 #include "Items.h"
 
 class CircuitScene;
@@ -101,7 +103,7 @@ private:
     QLabel* m_nextTitle = nullptr;
     QLabel* m_placeHint = nullptr;
     QStackedWidget* m_pages = nullptr;
-    int m_infoPage = -1;
+    std::array<QWidget*, std::variant_size_v<ItemProps>> m_kindPages{};   // the editor page of each kind, by itemKind
     QLabel* m_info = nullptr;
     QLabel* m_message = nullptr;
     QLabel* m_lockNotice = nullptr;

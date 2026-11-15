@@ -13,6 +13,8 @@
 #include <cmath>
 #include <limits>
 
+using namespace Qt::StringLiterals;
+
 //===================== QGraphicsScene ========================
 
 CircuitScene::CircuitScene(QObject* parent)
@@ -23,8 +25,8 @@ CircuitScene::CircuitScene(QObject* parent)
 
 void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
 {
-    const CanvasTheme& theme = canvasTheme();
-    painter->fillRect(rect, theme.background);
+    const Theme& theme = currentTheme();
+    painter->fillRect(rect, theme.canvas);
 
     constexpr qreal DotSpacing = 20;     // scene units between two dots
     constexpr qreal MinDotGap = 12;      // screen pixels; zoomed out further, only every 2nd, 4th, ... dot is drawn
@@ -134,7 +136,7 @@ void CircuitScene::resetCircuit()
     m_wireBits.clear();
     m_registerNodes.clear();
     m_design = {};
-    emit designChanged();
+    designChanged();
 }
 
 //===================== Simulation state ========================
@@ -145,7 +147,7 @@ void CircuitScene::setSimState(SimState state)
     m_simState = state;
     sim_values_visible = (state != SimState::Stopped);
     update();
-    emit simStateChanged(state);
+    simStateChanged(state);
 }
 
 void CircuitScene::startOrResumeSim()
@@ -156,7 +158,7 @@ void CircuitScene::startOrResumeSim()
         // Nothing was edited since Pause (an edit would have ended the run), so just carry on
         cancelWireConnection();
         setSimState(SimState::Running);
-        emit setSimRunningSIG(true);
+        setSimRunningSIG(true);
         return;
     }
 
@@ -164,14 +166,14 @@ void CircuitScene::startOrResumeSim()
     ExportGraph graph = buildGraph();
     graph.runId = ++m_runId;
     setSimState(SimState::Running);
-    emit startSimSIG(graph);
+    startSimSIG(graph);
 }
 
 void CircuitScene::pauseSim()
 {
     if (m_simState != SimState::Running) return;
     setSimState(SimState::Paused);
-    emit setSimRunningSIG(false);
+    setSimRunningSIG(false);
 }
 
 void CircuitScene::stopSim()
@@ -179,7 +181,7 @@ void CircuitScene::stopSim()
     if (m_simState == SimState::Stopped) return;
 
     ++m_runId;                 // results of this run that are still on their way are now ignored
-    emit stopSimSIG();
+    stopSimSIG();
     m_wireMap.clear();
     m_displays.clear();
     m_sources.clear();
@@ -226,7 +228,7 @@ void CircuitScene::setToolProps(const ItemProps& props)
 {
     m_toolDefaults[props.index()] = props;
     m_activeTool = props.index();
-    emit toolChanged();
+    toolChanged();
 }
 
 void CircuitScene::selectTool(std::size_t kind)
@@ -234,7 +236,7 @@ void CircuitScene::selectTool(std::size_t kind)
     if (kind >= m_toolDefaults.size()) return;
     clearSelection();            // picking a tool means "I want to place something new"
     m_activeTool = kind;
-    emit toolChanged();
+    toolChanged();
 }
 
 void CircuitScene::selectGateTool(GType gateType)
@@ -283,7 +285,7 @@ void CircuitScene::startWireConnection(QPointF startPoint)
 
     m_connectingWire = true;
     m_currWire = new WireItem(m_wireStartPoint, m_wireStartPoint);
-    m_currWire->setPen(QPen(canvasTheme().drag, 2, Qt::DashLine));
+    m_currWire->setPen(QPen(currentTheme().drag, 2, Qt::DashLine));
     addItem(m_currWire);
 }
 
@@ -302,7 +304,7 @@ void CircuitScene::updateWireConnection(QPointF currentPoint)
         if (m_snapPort) m_snapPort->setHighlighted(true);
     }
 
-    m_currWire->setPen(m_snapPort ? QPen(canvasTheme().snap, 2.5, Qt::DashLine) : QPen(canvasTheme().drag, 2, Qt::DashLine));
+    m_currWire->setPen(m_snapPort ? QPen(currentTheme().snap, 2.5, Qt::DashLine) : QPen(currentTheme().drag, 2, Qt::DashLine));
     m_currWire->setEnds(m_wireStartPoint, m_snapPort ? m_snapPort->scenePos() : currentPoint);
 }
 
@@ -432,7 +434,7 @@ void CircuitScene::receiveResult(const SimResult& result)
     for (const auto& display : m_displays) {
         if (display) {display->updateValue();}   // QPointer is null if the display was deleted
     }
-    emit valuesChanged();
+    valuesChanged();
 }
 
 //===================== Compiled designs ========================
@@ -451,7 +453,7 @@ WireItem* CircuitScene::addWire(PortItem* from, PortItem* to)
     wire->setEndPort(to);
     from->addConnection(wire);
     to->addConnection(wire);
-    wire->setPen(QPen(canvasTheme().wire, 2));
+    wire->setPen(QPen(currentTheme().wire, 2));
     addItem(wire);
 
     for (QGraphicsObject* end : {from->getParent(), to->getParent()}) {
@@ -758,7 +760,7 @@ void CircuitScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
             auto* block = dynamic_cast<BlockItem*>(item);
             if (!block && item->parentItem()) block = dynamic_cast<BlockItem*>(item->parentItem());
             if (block) {
-                emit openBlock(block);
+                openBlock(block);
                 event->accept();
                 return;
             }
@@ -802,7 +804,7 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 
     m_breadcrumb = new QFrame(this);   // a child of the canvas, not its viewport, so panning does not move it
-    m_breadcrumb->setObjectName(QStringLiteral("blockBreadcrumb"));
+    m_breadcrumb->setObjectName(u"blockBreadcrumb"_s);
     auto* layout = new QHBoxLayout(m_breadcrumb);
     layout->setContentsMargins(4, 3, 4, 3);
     layout->setSpacing(2);
@@ -854,7 +856,7 @@ void CircuitCanvas::openBlock(BlockItem* block)
     }
     refreshBlockValues();
     updateBreadcrumb();
-    emit depthChanged(depth());
+    depthChanged(depth());
 }
 
 void CircuitCanvas::showLevel(int level)
@@ -872,7 +874,7 @@ void CircuitCanvas::showLevel(int level)
     centerOn(outermostClosed.outerCentre);
     refreshBlockValues();
     updateBreadcrumb();
-    emit depthChanged(depth());
+    depthChanged(depth());
 }
 
 void CircuitCanvas::showScene(CircuitScene* scene)
@@ -901,7 +903,7 @@ void CircuitCanvas::updateBreadcrumb()
 
     const QString top = m_scene->design().top.isEmpty() ? tr("Circuit") : m_scene->design().top;
     for (int level = 0; level <= depth(); level++) {
-        if (level > 0) layout->addWidget(new QLabel(QStringLiteral("\u203A"), m_breadcrumb));
+        if (level > 0) layout->addWidget(new QLabel(u"\u203A"_s, m_breadcrumb));
         auto* button = new QToolButton(m_breadcrumb);
         button->setText(level == 0 ? top : m_levels[level - 1].title);
         button->setAutoRaise(true);
@@ -923,13 +925,6 @@ void CircuitCanvas::resizeEvent(QResizeEvent* event)
 {
     QGraphicsView::resizeEvent(event);
     if (m_breadcrumb->isVisible()) m_breadcrumb->move(viewport()->geometry().topLeft() + QPoint(12, 12));
-}
-
-void CircuitCanvas::setThemeColor(QColor CanvasTheme::* field, const QColor& color)
-{
-    canvasTheme().*field = color;
-    m_scene->update();
-    for (const Level& level : std::as_const(m_levels)) level.scene->update();
 }
 
 void CircuitCanvas::keyPressEvent(QKeyEvent* event)

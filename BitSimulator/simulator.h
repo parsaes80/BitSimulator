@@ -10,7 +10,7 @@ public:
 
     // All of these run in the simulator's thread. The GUI reaches them through queued connections,
     // so they execute in the order the GUI asked for them and no state is shared between threads.
-public slots:
+public:
     void receiveCircuit(ExportGraph graph);   // replaces any previous circuit and starts running it
     void setRunning(bool running);            // pause (keeps all state) or continue
     void unloadCircuit();                     // stop and forget the circuit

@@ -1,10 +1,9 @@
 #pragma once
-// The components of a circuit: their properties, the canvas items that draw them, and the colors
-// they are drawn with.
+// The components of a circuit: their properties and the canvas items that draw them.
+// The colors they are drawn with are in Theme.h.
 //
 //   1. Component properties the editable settings of every kind of component
 //   2. Canvas items         the QGraphicsItems on the canvas
-//   3. Canvas colors        CanvasTheme, filled from the style sheet in BitSimulator.ui
 //
 // A source's properties (SourceProps) are in general.h: the simulator uses them too.
 
@@ -22,6 +21,7 @@
 #include <cstdint>
 #include <expected>
 #include <variant>
+#include "Theme.h"
 #include "general.h"
 
 //===================== 1. Component properties ========================
@@ -132,25 +132,27 @@ inline RegisterProps normalized(RegisterProps p) { return p; }
 
 inline QString gateTypeName(GType type)
 {
+    using namespace Qt::StringLiterals;
     switch (type) {
-    case GType::AND:  return QStringLiteral("AND");
-    case GType::OR:   return QStringLiteral("OR");
-    case GType::XOR:  return QStringLiteral("XOR");
-    case GType::NAND: return QStringLiteral("NAND");
-    case GType::NOR:  return QStringLiteral("NOR");
-    case GType::XNOR: return QStringLiteral("XNOR");
-    case GType::NOT:  return QStringLiteral("NOT");
+    case GType::AND:  return u"AND"_s;
+    case GType::OR:   return u"OR"_s;
+    case GType::XOR:  return u"XOR"_s;
+    case GType::NAND: return u"NAND"_s;
+    case GType::NOR:  return u"NOR"_s;
+    case GType::XNOR: return u"XNOR"_s;
+    case GType::NOT:  return u"NOT"_s;
     }
     return {};
 }
 
 inline QString registerTypeName(RType type)
 {
+    using namespace Qt::StringLiterals;
     switch (type) {
-    case RType::SR: return QStringLiteral("SR");
-    case RType::JK: return QStringLiteral("JK");
-    case RType::D:  return QStringLiteral("D");
-    case RType::T:  return QStringLiteral("T");
+    case RType::SR: return u"SR"_s;
+    case RType::JK: return u"JK"_s;
+    case RType::D:  return u"D"_s;
+    case RType::T:  return u"T"_s;
     }
     return {};
 }
@@ -347,7 +349,7 @@ public:
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
-public slots:
+public:
     void updateWirePosition();
 
 private:
@@ -489,68 +491,3 @@ private:
     QRectF m_rect;
     QList<PortItem*> m_pins;
 };
-
-//===================== 3. Canvas colors ========================
-
-// The colors the canvas, its components and the toolbar icons are painted with.
-//
-// Edit them in BitSimulator.ui, not here: the main window's style sheet sets every one of them
-// through the "CircuitCanvas { qproperty-... }" rule. The values below are only the fallback for
-// code that runs without that style sheet (the tests, for example), and match it.
-struct CanvasTheme {
-    QColor background{0x0a, 0x0e, 0x11};
-    QColor dot{0x1e, 0x28, 0x2e};            // the dot grid on the canvas
-
-    // Components: an outline in the component's own color, and a body tinted with it
-    QColor componentFill{0x14, 0x1b, 0x1f};  // the body before tinting
-    double componentTint = 0.5;              // 0 = plain body, 1 = body as strong as the outline
-    QColor componentText{0xc3, 0xce, 0xd4};
-    QColor andGate{0xe8, 0xb0, 0x5a};        // also NAND
-    QColor orGate{0x5f, 0xd3, 0xa5};         // also NOR
-    QColor xorGate{0xa7, 0x8b, 0xfa};        // also XNOR
-    QColor notGate{0xf2, 0x7c, 0x7c};
-    QColor mux{0xf5, 0x9e, 0x5b};
-    QColor reg{0x7a, 0xa2, 0xf7};
-    QColor source{0xef, 0x44, 0x44};
-    QColor display{0x67, 0xe8, 0xf9};
-    QColor block{0xf0, 0xab, 0xfc};          // submodule blocks and the module ports inside them
-
-    // Wires: one color while editing; while the simulation runs, a 1 lights up and a 0 dims
-    QColor wire{0xc3, 0xce, 0xd4};
-    QColor wireHigh{0x2d, 0xd4, 0xbf};
-    QColor wireLow{0x3b, 0x4a, 0x52};
-
-    // Pins, selection, and the wire being drawn
-    QColor pin{0x4a, 0x59, 0x60};            // nothing connected
-    QColor pinWired{0x14, 0xb8, 0xa6};
-    QColor selection{0x2d, 0xd4, 0xbf};
-    QColor drag{0x7a, 0x88, 0x90};           // a wire being dragged, not over a pin it can connect to
-    QColor snap{0xfd, 0xe6, 0x8a};           // ... over a pin it can connect to, and that pin
-
-    // The body of a component outlined in `outline`: the plain body moved `componentTint` of the way to it
-    QColor fillFor(const QColor& outline) const
-    {
-        const double t = std::clamp(componentTint, 0.0, 1.0);
-        const auto mix = [t](int from, int to) { return static_cast<int>(std::lround(from + (to - from) * t)); };
-        return QColor(mix(componentFill.red(), outline.red()), mix(componentFill.green(), outline.green()),
-                       mix(componentFill.blue(), outline.blue()));
-    }
-
-    QColor gateColor(GType type) const
-    {
-        switch (type) {
-        case GType::AND: case GType::NAND: return andGate;
-        case GType::OR:  case GType::NOR:  return orGate;
-        case GType::XOR: case GType::XNOR: return xorGate;
-        case GType::NOT: return notGate;
-        }
-        return componentText;
-    }
-};
-
-// The one theme everything paints with. CircuitCanvas's properties write into it.
-inline CanvasTheme& canvasTheme()
-{
-    static CanvasTheme theme;
-    return theme;
-}

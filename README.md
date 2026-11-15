@@ -110,11 +110,11 @@ BitSimulator starts in your system's light or dark setting and follows it while 
 
 # Changing the Colors
 
-All colors are in one style sheet in `BitSimulator/BitSimulator.ui`, written in dark-mode colors. In Qt Designer, select `BitSimulatorClass` and edit its `styleSheet` property; in a text editor, search for `BitSimulator theme`.
+`BitSimulator/BitSimulator.ui` holds only what Qt Designer can edit: the layout, sizes and texts. Everything else about the look is in code, in `BitSimulator/Theme.h` and `BitSimulator/Theme.cpp`.
 
-- The table at the top pairs every dark color with its light-mode color. Light mode is the same style sheet with each color swapped for its partner, so a color is defined once per mode.
-- To change a color, replace it in the rules (each color is always written the same way, so find and replace works) and in its table row. A color without a row looks the same in both modes, and the app prints a warning naming it.
-- The canvas, the components and the toolbar icons are drawn in code. They read their colors from the `CircuitCanvas { qproperty-... }` rule at the bottom, e.g. `qproperty-wireHighColor` for a wire carrying 1 and `qproperty-dotColor` for the dot grid. A component's inside is tinted with its outline color; `qproperty-componentTint` sets how strongly (0 = no tint, 0.5 = halfway, 1 = the outline color).
+- **Colors:** `makeTheme()` in `Theme.cpp` has one line per color, with its dark-mode and its light-mode value side by side, e.g. `t.andGate = pick(0xe8b05a, 0xc4891d);`. The names are the fields of `struct Theme` in `Theme.h`, which says what each one colors.
+- **Widget styles:** the style sheet in `Theme.cpp` (`SheetTemplate`) is written once for both modes. It names colors as `@name`, e.g. `@accent` for `Theme::accent`, and the app fills in the colors of the current mode. A style sheet may use only the colors listed in `SheetColors` next to it; the app warns about any other name, and the `tst_theme` test fails on one.
+- **Canvas, components and toolbar icons** are painted in code with `currentTheme()`, e.g. `wireHigh` for a wire carrying 1 and `dot` for the dot grid. A component's inside is tinted with its outline color; `componentTint` sets how strongly (0 = no tint, 0.5 = halfway, 1 = the outline color).
 - The arrow, check-mark, sun and moon images are in `BitSimulator/theme`.
 
 # Running the Tests

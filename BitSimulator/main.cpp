@@ -4,7 +4,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    applyBaseStyle(app);   // the colors come from BitSimulator.ui, see MainWindow::setColorScheme
+    applyBaseStyle(app);   // the colors are in Theme.cpp, see MainWindow::setColorScheme
 
     MainWindow window;
     window.show();

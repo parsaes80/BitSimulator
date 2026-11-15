@@ -8,6 +8,8 @@
 #include <numeric>
 #include "simulator.h"
 
+using namespace Qt::StringLiterals;
+
 namespace {
 
 // Runs a netlist and returns the first `ticks` results (fewer if the simulator stalls).
@@ -148,7 +150,7 @@ private slots:
                 QCOMPARE(bool(nets[i + 1]), bool(((tick % combinations) >> i) & 1));    // the inputs are what we fed in
             }
             if (bool(nets[out]) != gateOutput(gateType, inputs)) {
-                QFAIL(qPrintable(QStringLiteral("tick %1: inputs %2 gave %3").arg(tick).arg(tick % combinations, numInputs, 2, QLatin1Char('0')).arg(nets[out])));
+                QFAIL(qPrintable(u"tick %1: inputs %2 gave %3"_s.arg(tick).arg(tick % combinations, numInputs, 2, QLatin1Char('0')).arg(nets[out])));
             }
         }
     }
@@ -307,7 +309,7 @@ private slots:
             const bool a = nets[in1], b = nets[in2], clock = nets[clk], enable = nets[en];
 
             // The output pin shows what was stored before this tick
-            if (bool(nets[out]) != stored) QFAIL(qPrintable(QStringLiteral("tick %1: output pin shows %2 but %3 was stored").arg(tick).arg(nets[out]).arg(stored)));
+            if (bool(nets[out]) != stored) QFAIL(qPrintable(u"tick %1: output pin shows %2 but %3 was stored"_s.arg(tick).arg(nets[out]).arg(stored)));
 
             const bool before = stored;
             const bool enabled = !hasEnable || enable;
@@ -334,7 +336,7 @@ private slots:
             changes += (stored != before);
 
             if (bool(results[tick].registerValues[0]) != stored) {
-                QFAIL(qPrintable(QStringLiteral("tick %1 (in1=%2 in2=%3 clk=%4 en=%5): register holds %6, expected %7")
+                QFAIL(qPrintable(u"tick %1 (in1=%2 in2=%3 clk=%4 en=%5): register holds %6, expected %7"_s
                     .arg(tick).arg(a).arg(b).arg(clock).arg(enable).arg(bool(results[tick].registerValues[0])).arg(stored)));
             }
         }

@@ -77,6 +77,7 @@ struct NodePins {
 
 inline NodePins nodePins(const NetNode& node)
 {
+    using namespace Qt::StringLiterals;
     NodePins pins;
     const auto bitOf = [&node](const QString& name) {
         const NetPort* port = node.port(name);
@@ -92,17 +93,17 @@ inline NodePins nodePins(const NetNode& node)
 
     if (std::holds_alternative<GType>(node.type)) {
         pins.inputs = allBits(PortType::IN);                  // A, B
-        pins.outputs = {bitOf(QStringLiteral("Y"))};
+        pins.outputs = {bitOf(u"Y"_s)};
     } else if (std::holds_alternative<MType>(node.type)) {
-        pins.inputs = {bitOf(QStringLiteral("A")), bitOf(QStringLiteral("B"))};   // A when S = 0, B when S = 1
-        pins.select = {bitOf(QStringLiteral("S"))};
-        pins.outputs = {bitOf(QStringLiteral("Y"))};
+        pins.inputs = {bitOf(u"A"_s), bitOf(u"B"_s)};   // A when S = 0, B when S = 1
+        pins.select = {bitOf(u"S"_s)};
+        pins.outputs = {bitOf(u"Y"_s)};
     } else if (std::holds_alternative<FlipFlop>(node.type)) {
-        pins.inputs = {bitOf(QStringLiteral("D"))};
-        pins.clock = bitOf(QStringLiteral("C"));
-        pins.enable = bitOf(QStringLiteral("E"));
-        pins.input2 = bitOf(QStringLiteral("R"));
-        pins.outputs = {bitOf(QStringLiteral("Q"))};
+        pins.inputs = {bitOf(u"D"_s)};
+        pins.clock = bitOf(u"C"_s);
+        pins.enable = bitOf(u"E"_s);
+        pins.input2 = bitOf(u"R"_s);
+        pins.outputs = {bitOf(u"Q"_s)};
     } else {
         // Module ports, blocks and the constant: every bit of every port, ports in name order
         pins.inputs = allBits(PortType::IN);
@@ -139,7 +140,8 @@ inline const QList<int>& portBits(const NetNode& node)
 // "arst"), also active-low ("rst_n", "resetn", "rst_b"). Not "first" or "burst".
 inline bool isResetName(const QString& name)
 {
-    static const QRegularExpression reset(QStringLiteral("(^|_)[as]?(rst|reset)(n|_n|b|_b)?($|_)"),
+    using namespace Qt::StringLiterals;
+    static const QRegularExpression reset(u"(^|_)[as]?(rst|reset)(n|_n|b|_b)?($|_)"_s,
                                           QRegularExpression::CaseInsensitiveOption);
     return reset.match(name).hasMatch();
 }
@@ -205,7 +207,7 @@ class HDLCompiler : public QObject{
 public:
     explicit HDLCompiler(QObject* parent = nullptr) : QObject(parent) {}
 
-public slots:
+public:
     // Both find the top module automatically: the module no other module uses.
     // The HDL editor's text
     void receiveCode(const QString& code);

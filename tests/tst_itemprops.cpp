@@ -5,6 +5,8 @@
 #include <bit>
 #include "Items.h"
 
+using namespace Qt::StringLiterals;
+
 namespace {
 // The values a source outputs at ticks 0 .. count-1
 QList<std::uint64_t> sequence(const SourceProps& props, int count)
@@ -258,15 +260,15 @@ private slots:
 
     void titles()
     {
-        QCOMPARE(itemTitle(GateProps{GType::NAND, 2}), QStringLiteral("NAND gate"));
-        QCOMPARE(itemTitle(GateProps{GType::NOT, 1}), QStringLiteral("NOT gate"));
-        QCOMPARE(itemTitle(RegisterProps{RType::D, true, true}), QStringLiteral("D flip-flop"));
-        QCOMPARE(itemTitle(RegisterProps{RType::JK, false, false}), QStringLiteral("JK latch"));
-        QCOMPARE(itemTitle(MuxProps{}), QStringLiteral("Multiplexer"));
-        QCOMPARE(itemTitle(SourceProps::waveform({false})), QStringLiteral("Waveform source"));
-        QCOMPARE(itemTitle(SourceProps::list({1}, 1)), QStringLiteral("List source"));
-        QCOMPARE(itemTitle(SourceProps::counter(4)), QStringLiteral("Counter source"));
-        QCOMPARE(itemTitle(DisplayProps{}), QStringLiteral("Display"));
+        QCOMPARE(itemTitle(GateProps{GType::NAND, 2}), u"NAND gate"_s);
+        QCOMPARE(itemTitle(GateProps{GType::NOT, 1}), u"NOT gate"_s);
+        QCOMPARE(itemTitle(RegisterProps{RType::D, true, true}), u"D flip-flop"_s);
+        QCOMPARE(itemTitle(RegisterProps{RType::JK, false, false}), u"JK latch"_s);
+        QCOMPARE(itemTitle(MuxProps{}), u"Multiplexer"_s);
+        QCOMPARE(itemTitle(SourceProps::waveform({false})), u"Waveform source"_s);
+        QCOMPARE(itemTitle(SourceProps::list({1}, 1)), u"List source"_s);
+        QCOMPARE(itemTitle(SourceProps::counter(4)), u"Counter source"_s);
+        QCOMPARE(itemTitle(DisplayProps{}), u"Display"_s);
     }
 
     void kindsMatchTheVariantOrder()
