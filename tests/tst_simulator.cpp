@@ -88,6 +88,25 @@ const char* name(RType type)
 class TestSimulator : public QObject {
     Q_OBJECT
 private slots:
+    void asynchronousResetDoesNotWaitForTheClock()
+    {
+        // Net 1: a clock that never ticks, 2: D = 0, 3: reset, high at tick 2 only, 4: Q
+        for (const bool async : {true, false}) {
+            ExportGraph graph;
+            graph.numNets = 4;
+            graph.sources.emplace_back(std::vector<u32>{1}, SourceProps::waveform({false}));
+            graph.sources.emplace_back(std::vector<u32>{2}, SourceProps::waveform({false}));
+            graph.sources.emplace_back(std::vector<u32>{3}, SourceProps::waveform({false, false, true, false, false, false, false, false}));
+            graph.registers.emplace_back(RType::D, 2, 3, 4, 1, 0, async, true);   // resets to 1
+            const QList<SimResult> results = run(graph, 6);
+            QCOMPARE(results.size(), 6);
+            for (int tick = 0; tick < results.size(); tick++) {
+                // Asynchronous: 1 from the tick after the reset. Synchronous: waits for a clock edge, which never comes.
+                QCOMPARE(bool(results[tick].netValues[4]), async && tick >= 3);
+            }
+        }
+    }
+
     //===================== Gates ========================
 
     void gateTruthTables_data()

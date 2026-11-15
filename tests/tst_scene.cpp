@@ -3,6 +3,7 @@
 // simulator runs.
 
 #include "TestSupport.h"
+#include <QSignalSpy>
 
 using namespace TestSupport;
 
@@ -30,7 +31,8 @@ Item* add(CircuitScene& scene, const Props& props, QPointF position = {})
 
 u32 netOf(const PortItem* port)
 {
-    return port->getConnections().isEmpty() ? 0 : map.wire2net.at(port->getConnections().first());
+    const auto* scene = static_cast<const CircuitScene*>(port->scene());
+    return port->getConnections().isEmpty() ? 0 : scene->wireMap().wire2net.at(port->getConnections().first());
 }
 
 } // namespace
@@ -38,8 +40,41 @@ u32 netOf(const PortItem* port)
 class TestScene : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup() { map.clear(); }
+    void repaintsOnlyWhatChanges()
+    {
+        CircuitCanvas canvas;
+        canvas.resize(800, 600);
+        canvas.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        CircuitScene* scene = canvas.getScene();
+        auto* source = add<SourceItem>(*scene, SourceProps::counter(1), QPointF(79900, 50000));
+        auto* display = add<DisplayItem>(*scene, DisplayProps{1, 0}, QPointF(80100, 50000));
+        WireItem* wire = connectPorts(scene, source->getOutputPorts()[0], display->getInputPorts()[0]);
+        QVERIFY(wire);
+        canvas.centerOn(80000, 50000);
+        QTest::qWait(200);
 
+        // Nothing changes, so nothing is painted. (The scene used to repaint whenever it had
+        // repainted: hundreds of full repaints a second on an idle canvas.)
+        int paints = 0;
+        struct PaintCounter : QObject {
+            int* count = nullptr;
+            bool eventFilter(QObject*, QEvent* event) override { if (event->type() == QEvent::Paint) ++*count; return false; }
+        } counter;
+        counter.count = &paints;
+        canvas.viewport()->installEventFilter(&counter);
+        QTest::qWait(500);
+        QCOMPARE(paints, 0);
+
+        // A wire that changes value repaints itself, and only itself
+        QSignalSpy changed(scene, &QGraphicsScene::changed);
+        wire->setValue(true);
+        QTRY_VERIFY(!changed.isEmpty());
+        QRectF dirty;
+        for (const QRectF& rect : changed.first().first().value<QList<QRectF>>()) dirty |= rect;
+        QVERIFY(dirty.intersects(wire->sceneBoundingRect()));
+        QVERIFY(dirty.width() < 1000 && dirty.height() < 1000);
+    }
     //===================== Components and their pins ========================
 
     void componentsStartWithTheirProperties()
@@ -438,7 +473,7 @@ private slots:
 
         QCOMPARE(scene.simState(), endsRun ? SimState::Stopped : SimState::Paused);
         QCOMPARE(link.stopped, endsRun ? 1 : 0);
-        QCOMPARE(map.net2wire.empty(), endsRun);                         // the wire map belongs to the run
+        QCOMPARE(scene.wireMap().net2wire.empty(), endsRun);                         // the wire map belongs to the run
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 
@@ -456,7 +491,7 @@ private slots:
         QCOMPARE(scene.simState(), SimState::Stopped);
         QCOMPARE(link.stopped, 1);
         QVERIFY(scene.items().isEmpty());
-        QVERIFY(map.net2wire.empty() && map.wire2net.empty());
+        QVERIFY(scene.wireMap().net2wire.empty() && scene.wireMap().wire2net.empty());
 
         scene.resetCircuit();                                            // twice is fine
         QCOMPARE(link.stopped, 1);
@@ -523,7 +558,7 @@ private slots:
             for (const u32 net : gate.inIDs) QCOMPARE(net, u32(1));
             QCOMPARE(gate.outID, u32(0));                                // outputs not wired
         }
-        QCOMPARE(map.net2wire.at(1).size(), std::size_t(3));             // all three wires colour together
+        QCOMPARE(scene.wireMap().net2wire.at(1).size(), std::size_t(3));             // all three wires colour together
     }
 
     void aSourceDrivesOneNetPerPin()
@@ -611,6 +646,26 @@ private slots:
         QCOMPARE(netOf(gate2->getInputPort(0)), u32(0));
     }
 
+    void aChainOfDisplaysIsOneNet()
+    {
+        // source -> display A -> display B -> NOT. Wired in the order that used to give B's wire a
+        // net of its own: the display-to-display wire was numbered before the wire into A.
+        CircuitScene scene;
+        SimLink link(scene);
+        auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-300, 0});
+        auto* a = add<DisplayItem>(scene, DisplayProps{1, 1}, {-100, 0});
+        auto* b = add<DisplayItem>(scene, DisplayProps{1, 1}, {100, 0});
+        auto* gate = add<GateItem>(scene, GateProps{GType::NOT, 1}, {300, 0});
+        connectPorts(&scene, b->getOutputPorts()[0], gate->getInputPort(0));
+        connectPorts(&scene, a->getOutputPorts()[0], b->getInputPorts()[0]);
+        connectPorts(&scene, source->getOutputPorts()[0], a->getInputPorts()[0]);
+
+        scene.startOrResumeSim();
+        QCOMPARE(link.started.first().numNets, u32(1));
+        QCOMPARE(netOf(gate->getInputPort(0)), netOf(a->getInputPorts()[0]));
+        QCOMPARE(netOf(b->getInputPorts()[0]), netOf(a->getInputPorts()[0]));
+    }
+
     void aHalfDrawnWireIsLeftOutAndRemoved()
     {
         CircuitScene scene;
@@ -642,7 +697,7 @@ private slots:
         SimResult result;
         result.runId = graph.runId;
         result.netValues.assign(graph.numNets + 1, 0);
-        result.netValues[map.wire2net.at(w1)] = 1;                       // bit 1 high, bit 0 low: the display should read 2
+        result.netValues[scene.wireMap().wire2net.at(w1)] = 1;                       // bit 1 high, bit 0 low: the display should read 2
         result.sourceTick = 1;
         result.registerValues = {true};
         scene.receiveResult(result);
@@ -654,7 +709,7 @@ private slots:
         QVERIFY(reg->getValue());
 
         // The same result again changes nothing; a changed one updates only what differs
-        result.netValues[map.wire2net.at(w0)] = 1;
+        result.netValues[scene.wireMap().wire2net.at(w0)] = 1;
         scene.receiveResult(result);
         QCOMPARE(display->getValue(), 3);
     }

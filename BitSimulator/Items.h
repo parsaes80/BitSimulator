@@ -2,32 +2,19 @@
 // The components of a circuit: their properties, the canvas items that draw them, and the colors
 // they are drawn with.
 //
-//   1. Source properties   what a source outputs at each tick (the simulator uses these too)
-//   2. Component properties the editable settings of every kind of component
-//   3. Canvas items         the QGraphicsItems on the canvas
-//   4. Canvas colors        CanvasTheme, filled from the style sheet in BitSimulator.ui
+//   1. Component properties the editable settings of every kind of component
+//   2. Canvas items         the QGraphicsItems on the canvas
+//   3. Canvas colors        CanvasTheme, filled from the style sheet in BitSimulator.ui
 //
-// Include order with general.h: part 1 needs nothing from general.h and comes before including
-// it, because general.h includes this file in turn (its Source struct holds a SourceProps).
+// A source's properties (SourceProps) are in general.h: the simulator uses them too.
 
 #include <QCoreApplication>
 #include <QColor>
-#include <QDebug>
-#include <QDragEnterEvent>
-#include <QDropEvent>
 #include <QGraphicsItem>
-#include <QGraphicsLineItem>
-#include <QGraphicsRectItem>
-#include <QGraphicsScene>
-#include <QGraphicsSceneMouseEvent>
-#include <QGraphicsView>
-#include <QKeyEvent>
 #include <QList>
-#include <QMimeData>
 #include <QPainter>
 #include <QString>
 #include <QStyleOptionGraphicsItem>
-#include <QWheelEvent>
 #include <QWidget>
 #include <algorithm>
 #include <bit>
@@ -35,173 +22,9 @@
 #include <cstdint>
 #include <expected>
 #include <variant>
+#include "general.h"
 
-//===================== 1. Source properties ========================
-
-// What a source component drives, tick by tick.
-//
-// A source has `bits` output pins (lowest bit on the top pin) and a mode that decides which
-// number it outputs at each simulation tick. The value is a pure function of the tick number
-// (sourceValueAt), so the simulator and the canvas compute the same thing independently, and a
-// counter or random source needs no stored list however wide it is.
-
-enum class SourceMode : std::uint8_t {
-    Counter,      // start, start+step, start+2*step, ... (or downwards); wraps at the bit width
-    GrayCode,     // a counter in Gray code: one pin changes per step
-    WalkingOne,   // a single 1 moving across the pins: 0001, 0010, 0100, 1000, 0001, ...
-    Random,       // pseudo-random numbers over the full width; the same sequence on every run
-    List,         // a list of numbers, then it repeats
-    Waveforms,    // one 0/1 pattern per pin, each repeating on its own
-    Constant,     // always the same number
-};
-inline constexpr SourceMode allSourceModes[] = {
-    SourceMode::Counter, SourceMode::GrayCode, SourceMode::WalkingOne, SourceMode::Random,
-    SourceMode::List, SourceMode::Waveforms, SourceMode::Constant,
-};
-
-namespace SourceLimits {
-inline constexpr int maxBits = 64;
-inline constexpr int maxSteps = 65536;              // entries in a list, or steps in one pin's waveform
-inline constexpr int maxTicksPerStep = 1000000;
-}
-
-struct SourceProps {
-    SourceMode mode = SourceMode::Counter;
-    int bits = 3;                                   // output pins
-    int ticksPerStep = 1;                           // a new value every this many ticks (not for Constant)
-
-    // The settings of every mode are kept, so switching modes and back does not lose them
-    bool countDown = false;                         // Counter, Gray code; Walking one: from the top pin down
-    std::uint64_t start = 0;                        // Counter, Gray code
-    std::uint64_t step = 1;                         // Counter
-    std::uint32_t seed = 1;                         // Random
-    QList<std::uint64_t> values{2, 5};              // List
-    QList<QList<bool>> waves{{false, true}};        // Waveforms: one pattern per pin, lowest pin first
-    std::uint64_t constant = 0;                     // Constant
-
-    // Shorthands, mostly for tests and the HDL compiler
-    static SourceProps waveform(const QList<bool>& pattern)
-    {
-        SourceProps p;
-        p.mode = SourceMode::Waveforms;
-        p.bits = 1;
-        p.waves = {pattern};
-        return p;
-    }
-    static SourceProps list(const QList<std::uint64_t>& numbers, int bits)
-    {
-        SourceProps p;
-        p.mode = SourceMode::List;
-        p.values = numbers;
-        p.bits = bits;
-        return p;
-    }
-    static SourceProps counter(int bits, int ticksPerStep = 1)
-    {
-        SourceProps p;
-        p.mode = SourceMode::Counter;
-        p.bits = bits;
-        p.ticksPerStep = ticksPerStep;
-        return p;
-    }
-
-    bool operator==(const SourceProps&) const = default;
-};
-
-// All ones in the lowest `bits` bits.
-inline std::uint64_t sourceMask(int bits)
-{
-    return bits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << std::max(bits, 0)) - 1;
-}
-
-// Smallest number of pins that can show `value`.
-inline int bitsNeeded(std::uint64_t value)
-{
-    return std::max(1, static_cast<int>(std::bit_width(value)));
-}
-
-inline int bitsNeeded(const QList<std::uint64_t>& values)
-{
-    return values.isEmpty() ? 1 : bitsNeeded(*std::ranges::max_element(values));
-}
-
-// Mixes a 64-bit number into one that looks random (splitmix64). The same input always gives the same output.
-inline std::uint64_t sourceHash(std::uint64_t x)
-{
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
-
-// The number the source outputs at `tick` (0 is the first tick of a run). Bit i drives pin i.
-inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
-{
-    const std::uint64_t mask = sourceMask(p.bits);
-    const std::uint64_t n = tick / static_cast<std::uint64_t>(std::max(p.ticksPerStep, 1));   // which step
-
-    switch (p.mode) {
-    case SourceMode::Counter:
-        // Unsigned arithmetic wraps at 2^64; the mask then wraps it at the bit width
-        return (p.countDown ? p.start - n * p.step : p.start + n * p.step) & mask;
-    case SourceMode::GrayCode: {
-        const std::uint64_t count = (p.countDown ? p.start - n : p.start + n) & mask;
-        return (count ^ (count >> 1)) & mask;
-    }
-    case SourceMode::WalkingOne: {
-        const int bits = std::clamp(p.bits, 1, 64);
-        const int pin = static_cast<int>(n % static_cast<std::uint64_t>(bits));
-        return std::uint64_t{1} << (p.countDown ? bits - 1 - pin : pin);
-    }
-    case SourceMode::Random:
-        return sourceHash((std::uint64_t{p.seed} << 32) ^ sourceHash(n)) & mask;
-    case SourceMode::List:
-        if (p.values.isEmpty()) return 0;
-        return p.values[static_cast<qsizetype>(n % static_cast<std::uint64_t>(p.values.size()))] & mask;
-    case SourceMode::Waveforms: {
-        std::uint64_t value = 0;
-        const int pins = std::min<int>(std::min<int>(p.bits, 64), static_cast<int>(p.waves.size()));
-        for (int pin = 0; pin < pins; pin++) {
-            const QList<bool>& wave = p.waves[pin];
-            if (!wave.isEmpty() && wave[static_cast<qsizetype>(n % static_cast<std::uint64_t>(wave.size()))])
-                value |= std::uint64_t{1} << pin;
-        }
-        return value;
-    }
-    case SourceMode::Constant:
-        return p.constant & mask;
-    }
-    return 0;
-}
-
-// Brings the properties into a consistent state: limits, enough pins for a list or constant,
-// one waveform per pin.
-inline SourceProps normalized(SourceProps p)
-{
-    p.ticksPerStep = std::clamp(p.ticksPerStep, 1, SourceLimits::maxTicksPerStep);
-
-    if (p.values.isEmpty()) p.values.append(0);
-    if (p.values.size() > SourceLimits::maxSteps) p.values.resize(SourceLimits::maxSteps);
-
-    int bits = std::clamp(p.bits, 1, SourceLimits::maxBits);
-    if (p.mode == SourceMode::List) bits = std::max(bits, bitsNeeded(p.values));
-    if (p.mode == SourceMode::Constant) bits = std::max(bits, bitsNeeded(p.constant));
-    p.bits = bits;
-
-    // Waveforms: a pattern for every pin; patterns of pins that were removed are kept for when they come back
-    if (p.mode == SourceMode::Waveforms) {
-        while (p.waves.size() < p.bits) p.waves.append(QList<bool>{false});
-        for (QList<bool>& wave : p.waves) {
-            if (wave.isEmpty()) wave.append(false);
-            if (wave.size() > SourceLimits::maxSteps) wave.resize(SourceLimits::maxSteps);
-        }
-    }
-    return p;
-}
-
-#include "general.h"   // after part 1, see the note at the top
-
-//===================== 2. Component properties ========================
+//===================== 1. Component properties ========================
 
 // The editable properties of each kind of component.
 //
@@ -218,6 +41,11 @@ struct RegisterProps {
     RType type = RType::D;
     bool edgeTriggered = true;         // true: flip-flop with a clock pin, false: latch
     bool hasEnable = true;
+    // The reset input of a D or T flip-flop (its second pin): it sets the flip-flop to resetValue on the
+    // clock edge, or with asyncReset at once, without waiting for the clock. Compiled Verilog uses
+    // both kinds (e.g. "always @(posedge clk or posedge rst)" is asynchronous) and both values.
+    bool asyncReset = false;
+    bool resetValue = false;
     bool operator==(const RegisterProps&) const = default;
 };
 
@@ -233,7 +61,24 @@ struct DisplayProps {
     bool operator==(const DisplayProps&) const = default;
 };
 
-using ItemProps = std::variant<GateProps, RegisterProps, MuxProps, SourceProps, DisplayProps>;
+// One port of a block: its pins are consecutive, lowest bit first
+struct BlockPort {
+    QString name;
+    bool output = false;
+    int width = 1;
+    bool operator==(const BlockPort&) const = default;
+};
+
+// A submodule instance in a compiled design, drawn as one block. Double-clicking it opens the
+// module's contents; the block itself has nothing to edit.
+struct BlockProps {
+    QString instance;               // e.g. "alu"
+    QString module;                 // e.g. "ALU"
+    QList<BlockPort> ports;         // sorted by name; inputs on the left, outputs on the right
+    bool operator==(const BlockProps&) const = default;
+};
+
+using ItemProps = std::variant<GateProps, RegisterProps, MuxProps, SourceProps, DisplayProps, BlockProps>;
 
 // Position of T inside ItemProps; used instead of hard-coded page/tool numbers.
 namespace detail {
@@ -275,6 +120,8 @@ inline MuxProps normalized(MuxProps p)
     p.numInputs = std::max(p.numInputs, ItemLimits::minMuxInputs);
     return p;
 }
+inline BlockProps normalized(BlockProps p) { return p; }
+
 inline DisplayProps normalized(DisplayProps p)
 {
     p.numInputs = std::max(p.numInputs, ItemLimits::minDisplayInputs);
@@ -336,18 +183,34 @@ inline QString itemTitle(const ItemProps& props)
             return QCoreApplication::translate("ItemProps", "%1 source").arg(sourceModeName(p.mode));
         }
         QString operator()(const DisplayProps&) const { return QCoreApplication::translate("ItemProps", "Display"); }
+        QString operator()(const BlockProps& p) const {
+            return QCoreApplication::translate("ItemProps", "%1 (%2)").arg(p.instance, p.module);
+        }
     };
     return std::visit(Visitor{}, props);
 }
 
-//===================== 3. Canvas items ========================
+// The size of a component's body on the canvas (its selection outline not included), and of a port
+// tag inside a block. The HDL compiler gives these sizes to dot, so a layout leaves room for every
+// component as it is drawn. `name`: the port name a source or display of compiled code shows.
+QSizeF componentSize(const ItemProps& props, const QString& name = {});
+QSizeF terminalSize(const QString& name, int width);
+
+// A gate's symbol filling `body`, with the painter's pen and brush: the AND, OR, XOR or NOT shape,
+// and for NAND, NOR and XNOR a bubble just right of it. Used on the canvas and on the toolbar.
+void drawGateSymbol(QPainter* painter, GType type, const QRectF& body);
+
+//===================== 2. Canvas items ========================
+
+// True while the items draw simulation values (running or paused): wires and pins in their 0/1
+// colors, a 1-pin source lit when it outputs 1. Set by CircuitScene; only the GUI thread uses it.
+extern bool sim_values_visible;
 
 class WireItem;
-class GateItem;
 
 class PortItem : public QGraphicsEllipseItem{
 public:
-    PortItem(PortType portType, int pinIndex = 0, QGraphicsItem* parent = nullptr);
+    explicit PortItem(PortType portType, QGraphicsItem* parent = nullptr);
 
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
@@ -359,14 +222,13 @@ public:
     void removeConnection(WireItem* wire);
 
     QList<WireItem*> getConnections() const { return m_connections; }
-    QGraphicsObject* getParent() const { return dynamic_cast<QGraphicsObject*>(parentItem()); };
-    void setHighlighted(bool highlighted) {m_highlighted = highlighted;update();};
-    bool getValue() const { return m_value; };
-    void setValue(bool value) { m_value = value; };
+    QGraphicsObject* getParent() const { return dynamic_cast<QGraphicsObject*>(parentItem()); }
+    void setHighlighted(bool highlighted) { m_highlighted = highlighted; update(); }
+    bool getValue() const { return m_value; }
+    void setValue(bool value);              // repaints when the value changes
 
 private:
     bool m_value = false;
-    int m_pinIndex;
     bool m_highlighted = false;
     PortType m_portType;
     QList<WireItem*> m_connections;
@@ -420,18 +282,12 @@ public:
     EditResult setProps(const ItemProps& props) override;
     QList<PortItem*> ports() const override { return m_inputPorts + QList<PortItem*>{m_outputPort}; }
 
-    GType getGateType() const { return m_props.type; };
-    PortItem* getInputPort(int index) const { return m_inputPorts[index]; };
+    GType getGateType() const { return m_props.type; }
+    PortItem* getInputPort(int index) const { return m_inputPorts[index]; }
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     PortItem* getOutputPort() const { return m_outputPort; }
 
 private:
-    void drawGateShape(QPainter* painter);
-    void drawAndGate(QPainter* painter);
-    void drawOrGate(QPainter* painter);
-    void drawXorGate(QPainter* painter);
-    void drawNotGate(QPainter* painter);
-    void drawNotBubble(QPainter* painter);
     void layoutPorts();
 
     GateProps m_props;
@@ -449,7 +305,7 @@ public:
     EditResult setProps(const ItemProps& props) override;
     QList<PortItem*> ports() const override { return m_outputPorts; }
 
-    QList<PortItem*> getOutputPorts() const { return m_outputPorts; };
+    QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
     const SourceProps& sourceProps() const { return m_props; }
 
     // The tick whose value the source shows (the simulator reports it; 0 when not running)
@@ -457,10 +313,16 @@ public:
     void setTick(u64 tick);
     u64 value() const { return sourceValueAt(m_props, m_tick); }
 
+    // A source made for an input port of compiled code shows the port's name at its top, and is
+    // made wide enough for it. Placed by hand, it has none.
+    const QString& name() const { return m_name; }
+    void setName(const QString& name);
+
 private:
     void layoutPorts();
 
     SourceProps m_props;
+    QString m_name;
     u64 m_tick = 0;
     QList<PortItem*> m_outputPorts;
 };
@@ -472,7 +334,7 @@ public:
 
     QRectF boundingRect() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    QPainterPath shape() const override;
+    QPainterPath shape() const override;   // the path, widened so a click near it selects it
 
     void setStartPort(PortItem* port);
     void setEndPort(PortItem* port);
@@ -480,9 +342,8 @@ public:
     PortItem* getEndPort() const { return m_endPort; }
     bool isConnected() const { return m_startPort && m_endPort; }
 
-    void setStartPos(QPointF& pos) { localStartPos = pos;}
-    void setEndPos(QPointF& pos) { localEndPos = pos;}
-    void setValue(bool val) { m_value = val;}
+    void setEnds(QPointF start, QPointF end);   // a wire still being dragged: its two ends, in scene coordinates
+    void setValue(bool value);              // repaints when the value changes
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
@@ -493,6 +354,8 @@ private:
     bool m_value = false;
     PortItem* m_startPort = nullptr;
     PortItem* m_endPort = nullptr;
+    QPainterPath path() const;   // horizontal, vertical, horizontal between the two ends
+
     QPointF localStartPos;
     QPointF localEndPos;
     QPen m_pen;  //need pen because of outside access
@@ -508,13 +371,13 @@ public:
     EditResult setProps(const ItemProps& props) override;
     QList<PortItem*> ports() const override;
 
-    RType getRegType() const { return m_props.type; };
-    PortItem* getInputPort() const { return m_inputPortOne; };
-    PortItem* getInputPortTwo() const { return m_inputPortTwo; };
+    RType getRegType() const { return m_props.type; }
+    PortItem* getInputPort() const { return m_inputPortOne; }
+    PortItem* getInputPortTwo() const { return m_inputPortTwo; }
     PortItem* getOutputPort() const { return m_outputPort; }
     PortItem* getReadEnablePort() const { return m_readEnbPort; }
     PortItem* getClkPort() const { return m_clkPort; }
-    void setValue(bool value) { m_value = value;};
+    void setValue(bool value);              // repaints when the value changes
     bool getValue() const { return m_value; }
 
 private:
@@ -570,16 +433,64 @@ public:
     void updateValue();
     int getValue() const { return m_value; }     // the number currently shown
 
+    // A display made for an output port of compiled code shows the port's name (see SourceItem::name)
+    const QString& name() const { return m_name; }
+    void setName(const QString& name);
+
 private:
     void layoutPorts();
 
     DisplayProps m_props;
+    QString m_name;
     int m_value = 0;
     QList<PortItem*> m_inputPorts;
     QList<PortItem*> m_outputPorts;
 };
 
-//===================== 4. Canvas colors ========================
+// A submodule instance: a box with the instance and module name, input port pins on the left and
+// output port pins on the right, each port labelled. Double-click opens it (see CircuitScene).
+class BlockItem : public ComponentItem {
+public:
+    explicit BlockItem(const BlockProps& props, QGraphicsItem* parent = nullptr);
+
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    ItemProps props() const override { return m_props; }
+    EditResult setProps(const ItemProps& props) override;     // always refused
+    QList<PortItem*> ports() const override { return m_inputPorts + m_outputPorts; }
+
+    const BlockProps& blockProps() const { return m_props; }
+    QList<PortItem*> getInputPorts() const { return m_inputPorts; }
+    QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
+
+    static constexpr double PinSpacing = 12;
+
+private:
+    BlockProps m_props;
+    QList<PortItem*> m_inputPorts;
+    QList<PortItem*> m_outputPorts;
+};
+
+// A port of the module whose contents are shown (inside a block): an input port drives its bits
+// into the module from the left, an output port collects them on the right. Read-only.
+class TerminalItem : public QGraphicsObject {
+public:
+    TerminalItem(const QString& name, bool output, int width, QGraphicsItem* parent = nullptr);
+
+    QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); }
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+
+    QList<PortItem*> pins() const { return m_pins; }   // outputs for an input port, inputs for an output port
+    const QString& name() const { return m_name; }      // the module port's name
+
+private:
+    QString m_name;
+    bool m_output;
+    QRectF m_rect;
+    QList<PortItem*> m_pins;
+};
+
+//===================== 3. Canvas colors ========================
 
 // The colors the canvas, its components and the toolbar icons are painted with.
 //
@@ -602,6 +513,7 @@ struct CanvasTheme {
     QColor reg{0x7a, 0xa2, 0xf7};
     QColor source{0xef, 0x44, 0x44};
     QColor display{0x67, 0xe8, 0xf9};
+    QColor block{0xf0, 0xab, 0xfc};          // submodule blocks and the module ports inside them
 
     // Wires: one color while editing; while the simulation runs, a 1 lights up and a 0 dims
     QColor wire{0xc3, 0xce, 0xd4};

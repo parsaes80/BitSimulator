@@ -1,6 +1,14 @@
 #include "MainWindow.h"
 #include <QDebug>
+#include <QDir>
+#include <QDirIterator>
+#include <QElapsedTimer>
+#include <QFileDialog>
+#include <QFontMetricsF>
 #include <QFrame>
+#include <QListWidget>
+#include <QSet>
+#include <QSignalBlocker>
 #include <QScrollArea>
 #include <QVBoxLayout>
 #include <QMessageBox>
@@ -10,11 +18,6 @@
 #include "CircuitCanvas.h"
 #include "PropertiesPanel.h"
 #include "Toolbar.h"
-
-GlobalMap map;
-
-QGraphicsScene* scenePtr;
-MainWindow* mainMenuPtr;
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
@@ -68,7 +71,6 @@ void MainWindow::setup()
     ui.setupUi(this);
     // Always open on the circuit, whichever tab was showing when the .ui was last saved in Designer
     ui.tabWidget->setCurrentWidget(ui.CircuitTab);
-    mainMenuPtr = this;
     CircuitScene* scene = ui.camera->getScene();
 
     // Set the slider up before connecting it, so its initial value is not sent to a simulator
@@ -79,7 +81,6 @@ void MainWindow::setup()
     setupPropertiesPanel();
     setupColorScheme();
 
-    // Toolbar: each button makes its component the active tool
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
     ui.nandButton->setGateType(GType::NAND);
@@ -88,39 +89,73 @@ void MainWindow::setup()
     ui.xnorButton->setGateType(GType::XNOR);
     ui.notButton->setGateType(GType::NOT);
 
+    //----- Toolbar: a component button makes that component the next one placed -----
     for (GateButton* button : {ui.andButton, ui.orButton, ui.notButton, ui.nandButton,
                                ui.norButton, ui.xorButton, ui.xnorButton}) {
-        connect(button, &GateButton::gateTypeSelected, scene, &CircuitScene::selectGateTool);
+        connect(button, &QPushButton::clicked, scene, [scene, button] { scene->selectGateTool(button->getGateType()); });
     }
-    connect(ui.srcButton, &SourceButton::sourceSelected, scene, [scene] { scene->selectTool(itemKind<SourceProps>); });
-    connect(ui.regButton, &RegisterButton::RegSelected, scene, [scene] { scene->selectTool(itemKind<RegisterProps>); });
-    connect(ui.muxButton, &MuxButton::MuxSelected, scene, [scene] { scene->selectTool(itemKind<MuxProps>); });
-    connect(ui.displayButton, &DisplayButton::DisplaySelected, scene, [scene] { scene->selectTool(itemKind<DisplayProps>); });
+    connect(ui.srcButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<SourceProps>); });
+    connect(ui.regButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<RegisterProps>); });
+    connect(ui.muxButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<MuxProps>); });
+    connect(ui.displayButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<DisplayProps>); });
 
-    // Toolbar: simulation controls
+    //----- Toolbar: Start/Pause, Clear and the speed slider -----
     connect(ui.startButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
     connect(ui.clearButton, &QPushButton::clicked, this, &MainWindow::clearCircuit);
-    connect(ui.compileButton, &QPushButton::clicked, this, &MainWindow::compileHdl);
     connect(ui.slider, &QSlider::valueChanged, this, &MainWindow::updateTimerPeriod);
     connect(scene, &CircuitScene::simStateChanged, this, &MainWindow::showSimState);
     showSimState(scene->simState());
 
-    // Simulator and HDL compiler threads
-    connect(ui.hdlEditor,&TextEditor::sendCode,compiler,&HDLCompiler::receiveCode);
-    connect(scene,&CircuitScene::startSimSIG,simObj,&Simulator::receiveCircuit);
-    connect(scene,&CircuitScene::setSimRunningSIG,simObj,&Simulator::setRunning);
-    connect(scene,&CircuitScene::stopSimSIG,simObj,&Simulator::unloadCircuit);
-    connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
+    //----- HDL Editor tab: Compile sends the editor's text to the compiler -----
+    connect(ui.compileButton, &QPushButton::clicked, this, &MainWindow::compileHdl);
+    connect(this, &MainWindow::sendCodeToCompiler, compiler, &HDLCompiler::receiveCode);
+    setupHdlEditor();
+
+    //----- Compile Dir tab: choose a folder, check the files to use, compile them -----
+    connect(ui.selectPathButton, &QPushButton::clicked, this, &MainWindow::chooseCompileDir);
+    connect(ui.compileDirPath, &QLineEdit::editingFinished, this, [this] {
+        // Enter or leaving the field: list the folder that was typed (once, not on every keystroke)
+        if (ui.compileDirPath->text().trimmed() != m_scannedDir) scanCompileDir();
+    });
+    connect(ui.compileFilesDisplayer, &QListWidget::itemChanged, this, &MainWindow::updateCompileDirStatus);
+    connect(ui.compileDirButton, &QPushButton::clicked, this, &MainWindow::compileDir);
+    connect(this, &MainWindow::sendFilesToCompiler, compiler, &HDLCompiler::receiveFiles);
+    updateCompileDirStatus();
+
+    //----- HDL compiler thread: the compiled circuit goes to the canvas, the outcome to the window -----
     connect(compilerThread, &QThread::finished, compiler, &QObject::deleteLater);
-    connect(simThread, &QThread::started, simObj, &Simulator::SimController);
-    connect(simObj, &Simulator::sendResult,scene,&CircuitScene::receiveResult);
-    connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
-    connect(compiler, &HDLCompiler::sendGraph, scene, &CircuitScene::receiveGraph);
+    connect(compiler, &HDLCompiler::sendDesign, scene, &CircuitScene::receiveDesign);
+
+    //----- Blocks: the properties panel is for the circuit itself, so it hides inside a block -----
+    connect(ui.camera, &CircuitCanvas::depthChanged, this, [this](int depth) { m_propertiesFrame->setVisible(depth == 0); });
     connect(compiler, &HDLCompiler::error, this, [this](const QString& message) { m_compileError = message; });
     connect(compiler, &HDLCompiler::finished, this, &MainWindow::compileFinished);
 
+    //----- Simulator thread: the canvas starts, pauses and stops it; results come back to the canvas -----
+    connect(simThread, &QThread::started, simObj, &Simulator::SimController);
+    connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
+    connect(scene, &CircuitScene::startSimSIG, simObj, &Simulator::receiveCircuit);
+    connect(scene, &CircuitScene::setSimRunningSIG, simObj, &Simulator::setRunning);
+    connect(scene, &CircuitScene::stopSimSIG, simObj, &Simulator::unloadCircuit);
+    connect(simObj, &Simulator::sendResult, scene, &CircuitScene::receiveResult);
+    connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
+
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
+    qRegisterMetaType<NetDesign>("NetDesign");
+}
+
+void MainWindow::setupHdlEditor()
+{
+    // A monospace font, tabs four spaces wide, and no line wrapping
+    QFont font(QStringLiteral("Courier"));
+    font.setStyleHint(QFont::Monospace);
+    font.setFixedPitch(true);
+    font.setPointSize(12);
+    ui.hdlEditor->setFont(font);
+    ui.hdlEditor->setTabStopDistance(4 * QFontMetricsF(font).horizontalAdvance(u' '));
+    ui.hdlEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
+    ui.hdlEditor->setPlaceholderText(tr("Enter your Verilog code here..."));
 }
 
 void MainWindow::setupPropertiesPanel()
@@ -205,7 +240,7 @@ void MainWindow::updateTimerPeriod(int value) {
     double minInput = 1.0;      // Slider minimum
     double maxInput = 10000.0;  // Slider maximum
     double minOutput = 1.0;     // Fastest speed (1ms)
-    double maxOutput = 1000.0; // Slowest speed (10000ms)
+    double maxOutput = 1000.0;  // Slowest speed (1000ms)
 
     // Normalize input to [0, 1] range
     double normalizedInput = (value - minInput) / (maxInput - minInput);
@@ -251,24 +286,35 @@ void MainWindow::clearCircuit()
     ui.camera->getScene()->resetCircuit();   // stops the simulation, then empties the canvas
 }
 
-void MainWindow::compileHdl()
+void MainWindow::beginCompile(const QString& message)
 {
     // Stop first: the simulation must not be running when the compiled circuit replaces this one.
     // The current circuit stays on the canvas until the new one has compiled successfully.
     ui.camera->getScene()->stopSim();
 
     m_compileError.clear();
+    m_compiling = true;
     ui.compileButton->setEnabled(false);
-    statusBar()->showMessage(tr("Compiling..."));
-    ui.hdlEditor->onSendCode();
+    updateCompileDirStatus();
+    statusBar()->showMessage(message);
+}
+
+void MainWindow::compileHdl()
+{
+    beginCompile(tr("Compiling..."));
+    emit sendCodeToCompiler(ui.hdlEditor->toPlainText());
 }
 
 void MainWindow::compileFinished(bool ok)
 {
+    m_compiling = false;
     ui.compileButton->setEnabled(true);
+    updateCompileDirStatus();
 
     if (ok) {
         statusBar()->showMessage(tr("Compiled. The new circuit is on the canvas."), 6000);
+        // From the Compile Dir tab nothing of the result would be visible: show it
+        if (ui.tabWidget->currentWidget() == ui.CompileDirTab) ui.tabWidget->setCurrentWidget(ui.CircuitTab);
         return;
     }
 
@@ -285,8 +331,98 @@ void MainWindow::compileFinished(bool ok)
     box->open();        // not exec(): the window stays usable
 }
 
-void MainWindow::on_compileDirPath_textChanged()
-{
+//===================== Compile Dir tab ========================
 
+void MainWindow::chooseCompileDir()
+{
+    const QString current = ui.compileDirPath->text().trimmed();
+    const QString start = !current.isEmpty() && QDir(current).exists() ? current : QDir::homePath();
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Choose the folder with your Verilog files"), start);
+    if (dir.isEmpty()) return;      // cancelled
+
+    ui.compileDirPath->setText(QDir::toNativeSeparators(dir));
+    scanCompileDir();
+}
+
+void MainWindow::scanCompileDir()
+{
+    const QString path = ui.compileDirPath->text().trimmed();
+    m_scannedDir = path;
+    m_compileIncludeDirs.clear();
+    {
+        const QSignalBlocker blocker(ui.compileFilesDisplayer);   // filling the list is not a user's change
+        ui.compileFilesDisplayer->clear();
+    }
+    const QDir root(path);
+    if (path.isEmpty() || !root.exists()) {
+        updateCompileDirStatus();
+        return;
+    }
+
+    // Every Verilog and SystemVerilog file under the folder, and the folders holding them or
+    // their headers (searched for `include). Stops after a few seconds on a huge folder.
+    constexpr qint64 MaxScanMs = 3000;
+    QElapsedTimer timer;
+    timer.start();
+    QStringList sources;
+    QSet<QString> includeDirs;
+    QDirIterator it(root.absolutePath(), {QStringLiteral("*.v"), QStringLiteral("*.sv"), QStringLiteral("*.vh"), QStringLiteral("*.svh")},
+                    QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
+    bool stopped = false;
+    while (it.hasNext()) {
+        const QFileInfo file(it.next());
+        includeDirs.insert(file.absolutePath());
+        const QString suffix = file.suffix().toLower();
+        if (suffix == u"v" || suffix == u"sv") sources.append(file.absoluteFilePath());
+        if (timer.elapsed() > MaxScanMs) { stopped = true; break; }
+    }
+    std::ranges::sort(sources, [&root](const QString& a, const QString& b) {
+        return root.relativeFilePath(a).compare(root.relativeFilePath(b), Qt::CaseInsensitive) < 0;
+    });
+    m_compileIncludeDirs = QStringList(includeDirs.begin(), includeDirs.end());
+    m_compileIncludeDirs.sort();
+
+    {
+        const QSignalBlocker blocker(ui.compileFilesDisplayer);
+        for (const QString& file : std::as_const(sources)) {
+            auto* item = new QListWidgetItem(QDir::toNativeSeparators(root.relativeFilePath(file)), ui.compileFilesDisplayer);
+            item->setData(Qt::UserRole, file);
+            item->setToolTip(QDir::toNativeSeparators(file));
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Checked);
+        }
+    }
+    updateCompileDirStatus();
+    if (stopped) statusBar()->showMessage(tr("The folder is very large; only the files found in the first few seconds are listed."), 8000);
+}
+
+void MainWindow::updateCompileDirStatus()
+{
+    int checked = 0;
+    const int total = ui.compileFilesDisplayer->count();
+    for (int row = 0; row < total; row++) {
+        if (ui.compileFilesDisplayer->item(row)->checkState() == Qt::Checked) checked++;
+    }
+
+    QString text;
+    if (m_scannedDir.isEmpty()) text = tr("No folder chosen yet.");
+    else if (!QDir(m_scannedDir).exists()) text = tr("This folder does not exist.");
+    else if (total == 0) text = tr("No .v or .sv files in this folder.");
+    else text = tr("%1 of %2 files selected").arg(checked).arg(total);
+    ui.compileDirCount->setText(text);
+    ui.compileDirButton->setEnabled(checked > 0 && !m_compiling);
+}
+
+void MainWindow::compileDir()
+{
+    QStringList files;
+    for (int row = 0; row < ui.compileFilesDisplayer->count(); row++) {
+        const QListWidgetItem* item = ui.compileFilesDisplayer->item(row);
+        if (item->checkState() == Qt::Checked) files.append(item->data(Qt::UserRole).toString());
+    }
+    if (files.isEmpty()) return;
+
+    beginCompile(files.size() == 1 ? tr("Compiling 1 file...") : tr("Compiling %1 files...").arg(files.size()));
+    emit sendFilesToCompiler(files, m_compileIncludeDirs);
 }
 

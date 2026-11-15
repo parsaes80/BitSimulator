@@ -1,16 +1,13 @@
 #include "Items.h"
 #include <QFontMetricsF>
-#include <QMouseEvent>
-#include <qscrollbar.h>
+#include <QPainterPath>
 #include <algorithm>
 //===================== PortItem   ========================
 
-extern bool sim_values_visible;
+bool sim_values_visible = false;
 
-PortItem::PortItem(PortType portType, int pinIndex, QGraphicsItem* parent)
-    : QGraphicsEllipseItem(-4, -4, 8, 8, parent)
-    ,m_pinIndex(pinIndex)
-    , m_portType(portType)
+PortItem::PortItem(PortType portType, QGraphicsItem* parent)
+    : QGraphicsEllipseItem(-4, -4, 8, 8, parent), m_portType(portType)
 {
     setFlag(QGraphicsItem::ItemIsSelectable, false);
     setFlag(QGraphicsItem::ItemIsMovable, false);
@@ -34,6 +31,13 @@ void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     painter->setPen(QPen(ring, 1.5));
     painter->setBrush(fill);
     painter->drawEllipse(rect().adjusted(0.75, 0.75, -0.75, -0.75));
+}
+
+void PortItem::setValue(bool value)
+{
+    if (value == m_value) return;
+    m_value = value;
+    update();
 }
 
 bool PortItem::canConnectTo(PortItem* otherPort) const
@@ -107,14 +111,14 @@ void ComponentItem::resizePorts(QList<PortItem*>& ports, int count, PortType typ
         delete ports.takeLast();          // callers have checked that it has no wires
     }
     while (ports.size() < count) {
-        ports.append(new PortItem(type, ports.size(), this));
+        ports.append(new PortItem(type, this));
     }
 }
 
 void ComponentItem::setOptionalPort(PortItem*& port, bool wanted, PortType type)
 {
     if (wanted && !port) {
-        port = new PortItem(type, -1, this);
+        port = new PortItem(type, this);
     } else if (!wanted && port) {
         delete port;                      // callers have checked that it has no wires
         port = nullptr;
@@ -139,7 +143,7 @@ void ComponentItem::updateWires() const
 GateItem::GateItem(const GateProps& props, QGraphicsItem* parent)
     : ComponentItem(parent), m_props(normalized(props))
 {
-    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    m_outputPort = new PortItem(PortType::OUT, this);
     resizePorts(m_inputPorts, m_props.numInputs, PortType::IN);
     layoutPorts();
 }
@@ -159,148 +163,69 @@ ComponentItem::EditResult GateItem::setProps(const ItemProps& props)
     return {};
 }
 
-void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
+void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget*)
 {
-
     drawSelection(painter, option);
 
-    // Every gate shape below draws with this pen and brush: a dark body, outlined in the gate's color
+    // A dark body, outlined in the gate's color
+    const CanvasTheme& theme = canvasTheme();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setPen(QPen(canvasTheme().gateColor(m_props.type), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter->setBrush(canvasTheme().fillFor(canvasTheme().gateColor(m_props.type)));
-    drawGateShape(painter);
+    painter->setPen(QPen(theme.gateColor(m_props.type), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter->setBrush(theme.fillFor(theme.gateColor(m_props.type)));
+    drawGateSymbol(painter, m_props.type, m_rect);
 }
 
-void GateItem::drawGateShape(QPainter* painter)
+void drawGateSymbol(QPainter* painter, GType type, const QRectF& body)
 {
-    switch (m_props.type) {
+    const double halfWidth = body.width() / 2, halfHeight = body.height() / 2;
+    painter->save();
+    painter->translate(body.center());
+
+    QPainterPath shape;
+    shape.moveTo(-halfWidth, -halfHeight);
+    switch (type) {
     case GType::AND:
-        drawAndGate(painter);
+    case GType::NAND:
+        shape.lineTo(0, -halfHeight);
+        shape.arcTo(0, -halfHeight, halfWidth, body.height(), 90, -180);
+        shape.lineTo(-halfWidth, halfHeight);
         break;
     case GType::OR:
-        drawOrGate(painter);
-        break;
-    case GType::XOR:
-        drawXorGate(painter);
-        break;
-    case GType::NAND:
-        drawAndGate(painter);
-        drawNotBubble(painter);
-        break;
     case GType::NOR:
-        drawOrGate(painter);
-        drawNotBubble(painter);
-        break;
+    case GType::XOR:
     case GType::XNOR:
-        drawXorGate(painter);
-        drawNotBubble(painter);
+        shape.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
+        shape.lineTo(halfWidth / 2, halfHeight);
+        shape.quadTo(body.width() * 3 / 4, 0, halfWidth / 2, -halfHeight);
         break;
     case GType::NOT:
-        drawNotGate(painter);
+        shape.lineTo(-halfWidth, halfHeight);
+        shape.lineTo(halfWidth, 0);
         break;
     }
-}
+    shape.closeSubpath();
+    painter->drawPath(shape);
 
-void GateItem::drawAndGate(QPainter* painter)
-{
-    QPainterPath path;
-
-    double width = m_rect.width();
-    double height = m_rect.height();
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(0, -halfHeight);
-    path.arcTo(0, -halfHeight, halfWidth, height, 90, -180);
-    path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-}
-
-void GateItem::drawOrGate(QPainter* painter)
-{
-    QPainterPath path;
-    double width = m_rect.width();
-    double height = m_rect.height();
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth / 2, halfHeight);
-    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
-
-    path.lineTo(-halfWidth, -halfHeight);
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-}
-
-void GateItem::drawXorGate(QPainter* painter)
-{
-    QPainterPath path;
-    double width = m_rect.width();
-    double height = m_rect.height();
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth / 2, halfHeight);
-    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    QPainterPath extraLine;
-
-    painter->setBrush(Qt::NoBrush);
-    double offset = width * 0.1;
-    extraLine.moveTo(-halfWidth - offset, -halfHeight*0.9 );
-    extraLine.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight*0.9);
-    painter->drawPath(extraLine);
-}
-
-void GateItem::drawNotGate(QPainter* painter)
-{
-    QPainterPath path;
-    double width = m_rect.width();
-    double height = m_rect.height();
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(halfWidth , 0);
-    path.lineTo(-halfWidth, -halfHeight);
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-    
-}
-
-void GateItem::drawNotBubble(QPainter* painter)
-{
-    double width = m_rect.width();
-    double halfWidth = width / 2;
-    double bubbleSize = 10;
-    
-    // Draw centered at y=0 by offsetting y by -bubbleSize/2
-    painter->drawEllipse(halfWidth, -bubbleSize/2, bubbleSize, bubbleSize);
+    if (type == GType::XOR || type == GType::XNOR) {
+        // The second curve on the input side
+        const double offset = body.width() * 0.1;
+        QPainterPath curve;
+        curve.moveTo(-halfWidth - offset, -halfHeight * 0.9);
+        curve.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight * 0.9);
+        painter->strokePath(curve, painter->pen());
+    }
+    if (type == GType::NAND || type == GType::NOR || type == GType::XNOR) {
+        const double bubble = std::min(10.0, body.width() * 0.2);
+        painter->drawEllipse(QRectF(halfWidth, -bubble / 2, bubble, bubble));
+    }
+    painter->restore();
 }
 
 void GateItem::layoutPorts()
 {
     // The body grows with the number of inputs; a NOT gate has a fixed size
-    int x = -25;
-    int y = x - ((m_props.numInputs - 2) * 5) + 3;
-    int height = y * -2;
-    if (m_props.type == GType::NOT) {
-        y = -22;
-        height = 44;
-    }
-    m_rect = QRectF(x, y, 50, height);
+    const QSizeF size = componentSize(m_props);
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
 
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
@@ -325,32 +250,35 @@ void GateItem::layoutPorts()
 //===================== Wire Item   ========================
 
 WireItem::WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent)
-    : localStartPos(startpos), localEndPos(endpos), QGraphicsObject(parent), m_pen(QPen(canvasTheme().wire, 2))
+    : QGraphicsObject(parent), localStartPos(startpos), localEndPos(endpos), m_pen(QPen(canvasTheme().wire, 2))
 {
     setFlags(ItemIsSelectable);
 }
 
 QRectF WireItem::boundingRect() const
 {
-    // Handle case where positions aren't set yet
-    if (localStartPos.isNull() && localEndPos.isNull()) {
-        return QRectF(0, 0, 1, 1); 
-    }
-
-    qreal penWidth = m_pen.width();
-    qreal extra = penWidth / 2.0 + 5; // Small extra margin for selection
-
-    qreal left = qMin(localStartPos.x(), localEndPos.x());
-    qreal right = qMax(localStartPos.x(), localEndPos.x());
-    qreal top = qMin(localStartPos.y(), localEndPos.y());
-    qreal bottom = qMax(localStartPos.y(), localEndPos.y());
-
-    return QRectF(left - extra, top - extra,
-                  right - left + 2*extra,
-                  bottom - top + 2*extra);
+    const qreal extra = m_pen.widthF() / 2 + 5;   // room for the pen and the glow of a wire carrying 1
+    return QRectF(localStartPos, localEndPos).normalized().adjusted(-extra, -extra, extra, extra);
 }
 
-// Update WireItem methods
+QPainterPath WireItem::path() const
+{
+    // The vertical part sits halfway between the two ends
+    const qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
+    QPainterPath path(localStartPos);
+    path.lineTo(midX, localStartPos.y());
+    path.lineTo(midX, localEndPos.y());
+    path.lineTo(localEndPos);
+    return path;
+}
+
+QPainterPath WireItem::shape() const
+{
+    QPainterPathStroker stroker;
+    stroker.setWidth(10);   // a click this close to the wire selects it
+    return stroker.createStroke(path());
+}
+
 void WireItem::setStartPort(PortItem* port)
 {
     if (m_startPort) {
@@ -380,13 +308,7 @@ void WireItem::setEndPort(PortItem* port)
 
 void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    // Horizontal, vertical, horizontal: the vertical part sits halfway between the two ends
-    const qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
-    QPainterPath path(localStartPos);
-    path.lineTo(midX, localStartPos.y());
-    path.lineTo(midX, localEndPos.y());
-    path.lineTo(localEndPos);
-
+    const QPainterPath path = this->path();
     painter->setRenderHint(QPainter::Antialiasing);
 
     // A wire still being dragged keeps the pen the scene gave it
@@ -417,28 +339,20 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     painter->strokePath(path, pen);
 }
-QPainterPath WireItem::shape() const
+void WireItem::setValue(bool value)
 {
-    QPainterPath path;
-
-    if (localStartPos.isNull() && localEndPos.isNull()) {
-        return path;
-    }
-
-    qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
-
-    // Create a stroker to make a clickable area around the wire
-    QPainterPathStroker stroker;
-    stroker.setWidth(10); // 10 pixel click tolerance
-
-    // Draw the orthogonal path
-    path.moveTo(localStartPos);
-    path.lineTo(midX, localStartPos.y());
-    path.lineTo(midX, localEndPos.y());
-    path.lineTo(localEndPos);
-
-    return stroker.createStroke(path);
+    if (value == m_value) return;
+    m_value = value;
+    update();
 }
+
+void WireItem::setEnds(QPointF start, QPointF end)
+{
+    prepareGeometryChange();
+    localStartPos = mapFromScene(start);
+    localEndPos = mapFromScene(end);
+}
+
 void WireItem::updateWirePosition()
 {  
     prepareGeometryChange();   // the bounding rect follows the two ends
@@ -451,6 +365,35 @@ void WireItem::updateWirePosition()
     localStartPos = mapFromScene(startPos);
     localEndPos = mapFromScene(endPos);
     
+}
+
+//===================== Port names ========================
+
+namespace {
+// The name of a module port on a source or display, in a strip across the top of it
+constexpr double NameHeight = 16;
+QFont nameFont()
+{
+    QFont font;
+    font.setPointSizeF(8);
+    font.setBold(true);
+    return font;
+}
+double nameWidth(const QString& name)
+{
+    return name.isEmpty() ? 0 : QFontMetricsF(nameFont()).horizontalAdvance(name) + 12;
+}
+void drawName(QPainter* painter, const QRectF& rect, const QString& name, const QColor& text, const QColor& line)
+{
+    if (name.isEmpty()) return;
+    painter->save();
+    painter->setFont(nameFont());
+    painter->setPen(text);
+    painter->drawText(QRectF(rect.left(), rect.top() + 1, rect.width(), NameHeight - 1), Qt::AlignCenter, name);
+    painter->setPen(QPen(line, 1));
+    painter->drawLine(QPointF(rect.left() + 3, rect.top() + NameHeight), QPointF(rect.right() - 3, rect.top() + NameHeight));
+    painter->restore();
+}
 }
 
 //===================== SourceItem ========================
@@ -497,15 +440,17 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     painter->setBrush(lit ? theme.wireHigh : theme.fillFor(theme.source));
     painter->drawRoundedRect(m_rect, 3, 3);
     painter->setPen(lit ? theme.background : theme.componentText);
+    drawName(painter, m_rect, m_name, lit ? theme.background : theme.componentText, lit ? theme.background : theme.source);
 
     // A wide source is a tall, narrow box: run a number that does not fit across it along its length,
     // and shrink the font if it does not fit that way either
-    QRectF box = m_rect;
+    const QRectF body = m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0);
+    QRectF box = body;
     painter->save();
     if (QFontMetricsF(font).horizontalAdvance(text) > box.width() - 4 && box.height() > box.width()) {
         painter->translate(box.center());
         painter->rotate(-90);
-        box = QRectF(-m_rect.height() / 2, -m_rect.width() / 2, m_rect.height(), m_rect.width());
+        box = QRectF(-body.height() / 2, -body.width() / 2, body.height(), body.width());
     }
     const qreal needed = QFontMetricsF(font).horizontalAdvance(text);
     if (needed > box.width() - 4) {
@@ -514,6 +459,13 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     }
     painter->drawText(box, Qt::AlignCenter, text);
     painter->restore();
+}
+
+void SourceItem::setName(const QString& name)
+{
+    prepareGeometryChange();
+    m_name = name;
+    layoutPorts();
 }
 
 void SourceItem::setTick(u64 tick)
@@ -526,15 +478,15 @@ void SourceItem::setTick(u64 tick)
 
 void SourceItem::layoutPorts()
 {
-    int x = -15;
-    int y = x - ((m_props.bits - 1) * 5);
-    int height = y * -2;
-    m_rect = QRectF(x, y, 30, height);
+    // The body holds the value and the pins; a name strip goes on top of it
+    const QSizeF size = componentSize(m_props, m_name);
+    const double header = m_name.isEmpty() ? 0 : NameHeight;
+    const double bodyHeight = size.height() - header;
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
 
     double halfWidth = m_rect.width() / 2;
-    double halfHeight = m_rect.height() / 2;
-    double diffHeight = m_rect.height() / (m_outputPorts.size() + 1);
-    double currHeight = -halfHeight;
+    double diffHeight = bodyHeight / (m_outputPorts.size() + 1);
+    double currHeight = m_rect.top() + header;
 
     for (PortItem* outputPort : std::as_const(m_outputPorts)) {
         currHeight += diffHeight;
@@ -550,11 +502,12 @@ void SourceItem::layoutPorts()
 RegisterItem::RegisterItem(const RegisterProps& props, QGraphicsItem* parent)
     : ComponentItem(parent), m_props(normalized(props))
 {
-    m_rect = QRectF(-20, -30, 40, 60);
+    const QSizeF size = componentSize(m_props);
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
 
-    m_inputPortOne = new PortItem(PortType::IN, 0, this);
-    m_inputPortTwo = new PortItem(PortType::IN, 1, this);
-    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    m_inputPortOne = new PortItem(PortType::IN, this);
+    m_inputPortTwo = new PortItem(PortType::IN, this);
+    m_outputPort = new PortItem(PortType::OUT, this);
     layoutPorts();
 }
 
@@ -578,6 +531,13 @@ ComponentItem::EditResult RegisterItem::setProps(const ItemProps& props)
     m_props = next;
     layoutPorts();
     return {};
+}
+
+void RegisterItem::setValue(bool value)
+{
+    if (value == m_value) return;
+    m_value = value;
+    update();
 }
 
 void RegisterItem::layoutPorts()
@@ -625,9 +585,10 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 MuxItem::MuxItem(const MuxProps& props, QGraphicsItem* parent)
     : ComponentItem(parent), m_props(normalized(props))
 {
-    m_rect = QRectF(-20, -30, 40, 60);
+    const QSizeF size = componentSize(m_props);
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
 
-    m_outputPort = new PortItem(PortType::OUT, -1, this);
+    m_outputPort = new PortItem(PortType::OUT, this);
     resizePorts(m_inputDataPorts, m_props.numInputs, PortType::IN);
     resizePorts(m_inputAddressPorts, muxSelectLines(m_props.numInputs), PortType::IN);
     layoutPorts();
@@ -737,8 +698,11 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     painter->setBrush(theme.fillFor(theme.display));
     painter->drawRoundedRect(m_rect, 4, 4);
 
+    drawName(painter, m_rect, m_name, theme.componentText, theme.display);
+
     // The screen: as dark as the canvas
-    QRectF displayArea = m_rect.adjusted(5, 5, -5, -5);
+    const QRectF body = m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0);
+    QRectF displayArea = body.adjusted(5, 5, -5, -5);
     painter->setPen(Qt::NoPen);
     painter->setBrush(theme.background);
     painter->drawRoundedRect(displayArea, 2, 2);
@@ -754,7 +718,8 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     QString displayText = QString::number(m_value);
     painter->drawText(displayArea, Qt::AlignCenter, displayText);
 
-    // Add small "DISPLAY" label at the bottom
+    // A small "DISPLAY" label at the bottom, unless the display has a name
+    if (!m_name.isEmpty()) return;
     QFont labelFont = painter->font();
     labelFont.setBold(false);
     labelFont.setPointSize(6);
@@ -764,27 +729,33 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     painter->drawText(labelRect, Qt::AlignCenter, "DISPLAY");
 }
 
+void DisplayItem::setName(const QString& name)
+{
+    prepareGeometryChange();
+    m_name = name;
+    layoutPorts();
+}
+
 void DisplayItem::layoutPorts()
 {
-    int bitWidth = std::max(m_props.numInputs, m_props.numOutputs);
-    int x = -23;
-    int y = x - (bitWidth * 4);
-    int height = y * -2;
-    int width = x * -2;
-    m_rect = QRectF(x, y, width, height);
+    // The body holds the screen and the pins; a name strip goes on top of it
+    const QSizeF size = componentSize(m_props, m_name);
+    const double header = m_name.isEmpty() ? 0 : NameHeight;
+    const double bodyHeight = size.height() - header;
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
 
     double halfWidth = m_rect.width() / 2;
-    double halfHeight = m_rect.height() / 2;
+    const double bodyTop = m_rect.top() + header;
 
-    double diffHeight = m_rect.height() / (m_inputPorts.size() + 1);
-    double currHeight = -halfHeight;
+    double diffHeight = bodyHeight / (m_inputPorts.size() + 1);
+    double currHeight = bodyTop;
     for (PortItem* inputPort : std::as_const(m_inputPorts)) {
         currHeight += diffHeight;
         inputPort->setPos(-halfWidth, currHeight);
     }
 
-    diffHeight = m_rect.height() / (m_outputPorts.size() + 1);
-    currHeight = -halfHeight;
+    diffHeight = bodyHeight / (m_outputPorts.size() + 1);
+    currHeight = bodyTop;
     for (PortItem* outputPort : std::as_const(m_outputPorts)) {
         currHeight += diffHeight;
         outputPort->setPos(halfWidth, currHeight);
@@ -796,12 +767,169 @@ void DisplayItem::layoutPorts()
 
 void DisplayItem::updateValue()
 {
+    // The top pin is bit 0
     int value = 0;
-    for(int i = m_inputPorts.size() - 1; i >= 0; i--) {
-        value = value << 1;  // Shift first
-        if (m_inputPorts[i]->getValue()) {
-            value |= 1;  // Set the least significant bit
-        }
+    for (qsizetype i = m_inputPorts.size() - 1; i >= 0; i--) value = (value << 1) | int(m_inputPorts[i]->getValue());
+    if (value == m_value) return;
+    m_value = value;
+    update();
+}
+
+//===================== BlockItem ========================
+
+namespace {
+constexpr double BlockWidth = 150, BlockHeader = 36;
+
+QString portLabel(const BlockPort& port)
+{
+    return port.width > 1 ? QStringLiteral("%1[%2]").arg(port.name).arg(port.width) : port.name;
+}
+}
+
+BlockItem::BlockItem(const BlockProps& props, QGraphicsItem* parent)
+    : ComponentItem(parent), m_props(props)
+{
+    int inputs = 0, outputs = 0;
+    for (const BlockPort& port : m_props.ports) (port.output ? outputs : inputs) += port.width;
+    const QSizeF size = componentSize(m_props);
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
+
+    resizePorts(m_inputPorts, inputs, PortType::IN);
+    resizePorts(m_outputPorts, outputs, PortType::OUT);
+    const double firstRow = m_rect.top() + BlockHeader + PinSpacing / 2;
+    for (int i = 0; i < inputs; i++) m_inputPorts[i]->setPos(m_rect.left(), firstRow + i * PinSpacing);
+    for (int i = 0; i < outputs; i++) m_outputPorts[i]->setPos(m_rect.right(), firstRow + i * PinSpacing);
+}
+
+ComponentItem::EditResult BlockItem::setProps(const ItemProps&)
+{
+    return std::unexpected(tr("A block shows a compiled module. Change the Verilog and compile again to change it."));
+}
+
+void BlockItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget*)
+{
+    drawSelection(painter, option);
+    const CanvasTheme& theme = canvasTheme();
+    painter->setRenderHint(QPainter::Antialiasing);
+
+    painter->setPen(QPen(theme.block, 2));
+    painter->setBrush(theme.fillFor(theme.block));
+    painter->drawRoundedRect(m_rect, 6, 6);
+
+    // Instance name, and the module it is an instance of
+    QFont font = painter->font();
+    font.setBold(true);
+    font.setPointSizeF(9);
+    painter->setFont(font);
+    painter->setPen(theme.componentText);
+    const QRectF header = m_rect.adjusted(6, 4, -6, 0);
+    painter->drawText(QRectF(header.left(), header.top(), header.width(), 16), Qt::AlignCenter, m_props.instance);
+    font.setBold(false);
+    font.setPointSizeF(7.5);
+    painter->setFont(font);
+    painter->setPen(theme.pin);
+    painter->drawText(QRectF(header.left(), header.top() + 15, header.width(), 13), Qt::AlignCenter, m_props.module);
+
+    // Port names next to their first pin
+    font.setPointSizeF(7);
+    painter->setFont(font);
+    painter->setPen(theme.componentText);
+    int inputRow = 0, outputRow = 0;
+    const double firstRow = m_rect.top() + BlockHeader + PinSpacing / 2;
+    for (const BlockPort& port : m_props.ports) {
+        int& row = port.output ? outputRow : inputRow;
+        const double y = firstRow + row * PinSpacing;
+        const QRectF label(m_rect.left() + 8, y - PinSpacing / 2, m_rect.width() - 16, PinSpacing);
+        painter->drawText(label, (port.output ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter, portLabel(port));
+        row += port.width;
     }
-    m_value = value;  // Store the calculated value
+}
+
+//===================== TerminalItem ========================
+
+TerminalItem::TerminalItem(const QString& name, bool output, int width, QGraphicsItem* parent)
+    : QGraphicsObject(parent), m_name(name), m_output(output)
+{
+    const int pins = std::max(width, 1);
+    const QSizeF size = terminalSize(name, width);
+    m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
+    const double firstRow = m_rect.top() + 5 + BlockItem::PinSpacing / 2;
+    for (int i = 0; i < pins; i++) {
+        auto* pin = new PortItem(output ? PortType::IN : PortType::OUT, this);
+        pin->setPos(output ? m_rect.left() : m_rect.right(), firstRow + i * BlockItem::PinSpacing);
+        m_pins.append(pin);
+    }
+}
+
+void TerminalItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
+{
+    const CanvasTheme& theme = canvasTheme();
+    painter->setRenderHint(QPainter::Antialiasing);
+
+    // A tag pointing the way signals flow, left to right: input ports sit on the left of the
+    // module's contents, output ports on the right
+    const QRectF r = m_rect;
+    const double tip = std::min(14.0, r.height() / 2);
+    QPainterPath shape;
+    shape.moveTo(r.left(), r.top());
+    shape.lineTo(r.right() - tip, r.top());
+    shape.lineTo(r.right(), r.center().y());
+    shape.lineTo(r.right() - tip, r.bottom());
+    shape.lineTo(r.left(), r.bottom());
+    shape.closeSubpath();
+    painter->setPen(QPen(theme.block, 1.5));
+    painter->setBrush(theme.fillFor(theme.block));
+    painter->drawPath(shape);
+
+    QFont font = painter->font();
+    font.setPointSizeF(8);
+    painter->setFont(font);
+    painter->setPen(theme.componentText);
+    const QString label = m_pins.size() > 1 ? QStringLiteral("%1[%2]").arg(m_name).arg(m_pins.size()) : m_name;
+    painter->drawText(r.adjusted(6, 0, -tip, 0), Qt::AlignCenter, label);
+}
+
+//===================== Sizes ========================
+
+QSizeF componentSize(const ItemProps& props, const QString& name)
+{
+    const double header = name.isEmpty() ? 0 : NameHeight;
+    struct Visitor {
+        double named;     // width the name needs (0 without one)
+        double header;    // height of the name strip
+        QSizeF operator()(const GateProps& p) const
+        {
+            const GateProps gate = normalized(p);
+            return {50, gate.type == GType::NOT ? 44.0 : 44.0 + (gate.numInputs - 2) * 10.0};
+        }
+        QSizeF operator()(const RegisterProps&) const { return {40, 60}; }
+        QSizeF operator()(const MuxProps&) const { return {40, 60}; }
+        QSizeF operator()(const SourceProps& p) const
+        {
+            return {std::max(30.0, named), 30.0 + (normalized(p).bits - 1) * 10.0 + header};
+        }
+        QSizeF operator()(const DisplayProps& p) const
+        {
+            const DisplayProps display = normalized(p);
+            return {std::max(46.0, named), 46.0 + std::max(display.numInputs, display.numOutputs) * 8.0 + header};
+        }
+        QSizeF operator()(const BlockProps& p) const
+        {
+            int inputs = 0, outputs = 0;
+            for (const BlockPort& port : p.ports) (port.output ? outputs : inputs) += port.width;
+            return {BlockWidth, BlockHeader + std::max({inputs, outputs, 1}) * BlockItem::PinSpacing + 8};
+        }
+    };
+    return std::visit(Visitor{nameWidth(name), header}, props);
+}
+
+QSizeF terminalSize(const QString& name, int width)
+{
+    const int pins = std::max(width, 1);
+    const double height = pins * BlockItem::PinSpacing + 10;
+    QFont font;
+    font.setPointSizeF(8);
+    const QString label = pins > 1 ? QStringLiteral("%1[%2]").arg(name).arg(pins) : name;
+    const double tip = std::min(14.0, height / 2);
+    return {std::max(90.0, QFontMetricsF(font).horizontalAdvance(label) + tip + 16), height};
 }

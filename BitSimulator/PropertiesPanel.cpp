@@ -322,6 +322,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     addPage(itemKind<MuxProps>, buildMuxPage());
     addPage(itemKind<SourceProps>, buildSourcePage());
     addPage(itemKind<DisplayProps>, buildDisplayPage());
+    addPage(itemKind<BlockProps>, buildBlockPage());
     m_info = mutedLabel();
     m_infoPage = m_pages->addWidget(m_info);
     m_info->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -404,7 +405,12 @@ void PropertiesPanel::refresh()
         load(m_scene->toolProps());
     } else if (selected.size() == 1 && components.size() == 1) {
         m_item = components.first();
-        m_subtitle->setText(tr("Selected component"));
+        // A source or display of compiled code stands for one of the design's ports: name it
+        const auto* source = dynamic_cast<SourceItem*>(m_item.data());
+        const auto* display = dynamic_cast<DisplayItem*>(m_item.data());
+        if (source && !source->name().isEmpty()) m_subtitle->setText(tr("Input “%1” of the design").arg(source->name()));
+        else if (display && !display->name().isEmpty()) m_subtitle->setText(tr("Output “%1” of the design").arg(display->name()));
+        else m_subtitle->setText(tr("Selected component"));
         load(m_item->props());
     } else {
         m_item = nullptr;
@@ -432,6 +438,7 @@ void PropertiesPanel::load(const ItemProps& props)
         [this](const MuxProps& p)      { loadMux(p); },
         [this](const SourceProps& p)   { loadSource(p); },
         [this](const DisplayProps& p)  { loadDisplay(p); },
+        [this](const BlockProps& p)    { loadBlock(p); },
     }, props);
 }
 
@@ -556,8 +563,14 @@ void PropertiesPanel::loadRegister(const RegisterProps& props)
     switch (props.type) {
     case RType::SR: pins << QStringLiteral("S") << QStringLiteral("R"); break;
     case RType::JK: pins << QStringLiteral("J") << QStringLiteral("K"); break;
-    case RType::D:  pins << QStringLiteral("D") << tr("reset"); break;
-    case RType::T:  pins << QStringLiteral("T") << tr("reset"); break;
+    case RType::D:  pins << QStringLiteral("D"); break;
+    case RType::T:  pins << QStringLiteral("T"); break;
+    }
+    if (props.type == RType::D || props.type == RType::T) {
+        // Compiled Verilog can reset asynchronously, and to 1
+        QString reset = props.asyncReset ? tr("asynchronous reset") : tr("reset");
+        if (props.resetValue) reset += tr(" to 1");
+        pins << reset;
     }
     if (props.edgeTriggered) pins << tr("clock");
     if (props.hasEnable) pins << tr("enable");
@@ -938,4 +951,45 @@ void PropertiesPanel::loadDisplay(const DisplayProps& props)
 {
     showValue(m_displayInputs, props.numInputs);
     showValue(m_displayOutputs, props.numOutputs);
+}
+
+//===================== Block ========================
+
+QWidget* PropertiesPanel::buildBlockPage()
+{
+    auto* page = new QWidget;
+    auto* form = makeForm(page);
+
+    const auto wrapped = [] {
+        auto* label = new QLabel;
+        label->setWordWrap(true);
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        return label;
+    };
+    m_blockModule = wrapped();
+    m_blockModule->setObjectName(QStringLiteral("blockModule"));
+    m_blockInputs = wrapped();
+    m_blockInputs->setObjectName(QStringLiteral("blockInputs"));
+    m_blockOutputs = wrapped();
+    m_blockOutputs->setObjectName(QStringLiteral("blockOutputs"));
+
+    form->addRow(tr("Module"), m_blockModule);
+    form->addRow(tr("Inputs"), m_blockInputs);
+    form->addRow(tr("Outputs"), m_blockOutputs);
+    form->addRow(mutedLabel(tr("A submodule of the compiled design. Double-click it to see inside; "
+                               "Esc or the path at the top left goes back. Its inside can be viewed "
+                               "and simulated, not edited.")));
+    return page;
+}
+
+void PropertiesPanel::loadBlock(const BlockProps& props)
+{
+    QStringList inputs, outputs;
+    for (const BlockPort& port : props.ports) {
+        const QString name = port.width > 1 ? QStringLiteral("%1[%2]").arg(port.name).arg(port.width) : port.name;
+        (port.output ? outputs : inputs).append(name);
+    }
+    m_blockModule->setText(props.module);
+    m_blockInputs->setText(inputs.isEmpty() ? tr("none") : inputs.join(QStringLiteral(", ")));
+    m_blockOutputs->setText(outputs.isEmpty() ? tr("none") : outputs.join(QStringLiteral(", ")));
 }

@@ -1,23 +1,12 @@
 #pragma once
+#include <QFrame>
 #include <QGraphicsScene>
 #include <QGraphicsView>
-#include <QGraphicsItem>
-#include <QGraphicsRectItem>
-#include <QGraphicsLineItem>
-#include <QPainter>
-#include <QStyleOptionGraphicsItem>
-#include <QWidget>
-#include <QGraphicsSceneMouseEvent>
-#include <QWheelEvent>
-#include <QDragEnterEvent>
-#include <QDropEvent>
-#include <QMimeData>
-#include <QDebug>
-#include <array>
-#include <variant>
-#include <vector>
 #include <QPointer>
-#include "general.h"
+#include <array>
+#include <functional>
+#include <unordered_map>
+#include <vector>
 #include "Items.h"
 #include "hdlcompiler.h"
 
@@ -25,6 +14,21 @@
 // Running: live values; the circuit is read-only.
 // Paused:  values frozen on screen. The circuit can be edited, but any edit ends the paused run.
 enum class SimState { Stopped, Running, Paused };
+
+// For one simulation run: which simulator net each wire carries, and which flip-flop on the canvas
+// each simulator register is, to put the run's values back on the canvas
+struct WireMap {
+    std::unordered_map<u32, std::vector<WireItem*>> net2wire;   // a net can be on many wires
+    std::unordered_map<WireItem*, u32> wire2net;
+    std::vector<RegisterItem*> registers;                       // index = the simulator's register index
+
+    void clear()
+    {
+        net2wire.clear();
+        wire2net.clear();
+        registers.clear();
+    }
+};
 
 class CircuitScene : public QGraphicsScene {
     Q_OBJECT
@@ -53,12 +57,33 @@ public:
     // The active tool: what a middle click places next, and with which properties.
     // Each kind of component remembers its own defaults while another tool is active.
     const ItemProps& toolProps() const { return m_toolDefaults[m_activeTool]; }
+
+    //----- Compiled designs and their blocks -----
+
+    // The compiled design on the canvas (empty for a drawn circuit). The canvas shows its top module;
+    // each submodule instance is a block, opened in a read-only scene of its own.
+    const NetDesign& design() const { return m_design; }
+    // The nets of the current run (empty while stopped)
+    const WireMap& wireMap() const { return m_wireMap; }
+    // Builds a module of `design` as components and wires. topLevel: the module's ports become sources
+    // and displays, and everything can be edited and simulated. Otherwise they become port terminals,
+    // for a read-only view of the inside of a block.
+    void buildModule(const NetDesign& design, const QString& moduleName, bool topLevel);
+    // A scene showing the inside of a block: nothing in it can be edited or moved
+    void setReadOnly(bool readOnly) { m_readOnly = readOnly; }
+    bool isReadOnly() const { return m_readOnly; }
+
+    // While a run is shown: the values of the instance at `path` (e.g. "core/alu"), for a read-only
+    // scene showing it (`view`). Its wires and flip-flops take the values the run gives them.
+    void showInstanceValues(const QString& path, CircuitScene* view) const;
+    void clearValues() { resetValues(); }
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;   // the canvas color and a dot grid
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;   // opens a block
 public slots:
     void startOrResumeSim();   // Stopped: build the circuit and run it from tick 0. Paused: continue.
     void pauseSim();           // freeze; values stay on screen
@@ -68,7 +93,7 @@ public slots:
     void selectTool(std::size_t kind);           // kind = itemKind<...>; keeps that tool's defaults
     void selectGateTool(GType gateType);
     void receiveResult(const SimResult& result);
-    void receiveGraph(QHash<QString,Node> graph);
+    void receiveDesign(const NetDesign& design);   // a compiled design replaces the circuit
 signals:
     // To the simulator (queued across threads, so they arrive in this order)
     void startSimSIG(ExportGraph graph);
@@ -77,33 +102,54 @@ signals:
 
     void simStateChanged(SimState state);
     void toolChanged();
+    void openBlock(BlockItem* block);  // a block was double-clicked
+    void designChanged();              // a new design, or the circuit was cleared: the view returns to the top
+    void valuesChanged();              // a run's result was applied (block views follow it)
 private:
-    ExportGraph buildGraph();          // numbers the nets and fills the global wire map
+    ExportGraph buildGraph();          // numbers the nets and fills the wire map
+    WireItem* addWire(PortItem* from, PortItem* to);
+    // Adds the contents of every block to `graph` (see BlockExpander); pinNet gives the net on a block pin
+    void expandBlocks(ExportGraph& graph, const QList<BlockItem*>& blocks, const std::function<u32(PortItem*)>& pinNet);
     void setSimState(SimState state);
     void circuitEdited();              // call after every structural change
     void cancelWireConnection();       // drop a wire that is still being dragged
     void resetValues();                // clear the values the last run left on the items
 
-    void clearHighlights();
-    PortItem* getPortFromItem(QGraphicsObject* item, PortType type);
+    void clearHighlights();            // of the pins a dragged wire starts at and snaps to
 
     SimState m_simState = SimState::Stopped;
     u32 m_runId = 0;                   // bumped for every new run and every stop; older results are ignored
 
-    bool m_connectingWire;
+    // A wire being dragged with the right mouse button
+    bool m_connectingWire = false;
     QPointF m_wireStartPoint;
     WireItem* m_currWire = nullptr;
     PortItem* m_currWireStartPort = nullptr;
+    PortItem* m_snapPort = nullptr;    // the pin it would connect to if released now
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
+    WireMap m_wireMap;                 // filled by buildGraph, cleared when the run ends
+
     // One entry per alternative of ItemProps, in the same order (m_toolDefaults[i].index() == i)
-    std::array<ItemProps, itemKindCount> m_toolDefaults{GateProps{}, RegisterProps{}, MuxProps{}, SourceProps{}, DisplayProps{}};
+    std::array<ItemProps, itemKindCount> m_toolDefaults{GateProps{}, RegisterProps{}, MuxProps{}, SourceProps{}, DisplayProps{}, BlockProps{}};
     std::size_t m_activeTool = itemKind<GateProps>;
 
     // Cached per simulation run (rebuilt in startSim) so receiveResult avoids scanning items()
     QList<QPointer<DisplayItem>> m_displays;
     QList<QPointer<SourceItem>> m_sources;   // they show their value at the tick the simulator reports
     std::vector<u8> m_lastNetValues; // last applied net values; only changed nets are pushed to wires
+    std::vector<bool> m_lastRegisterValues;
+
+    // Compiled designs
+    NetDesign m_design;
+    bool m_readOnly = false;
+    // Per simulation run, for every block instance path ("core", "core/alu"): which simulator net
+    // each bit of its module became, and which simulator register each of its flip-flops is
+    QHash<QString, QHash<int, u32>> m_instanceNets;
+    QHash<QString, QHash<QString, u32>> m_instanceRegisters;
+    // In a scene built from a module: the module bit of every wire, and the node of every flip-flop
+    QHash<WireItem*, int> m_wireBits;
+    QHash<RegisterItem*, QString> m_registerNodes;
 };
 
 class CircuitCanvas : public QGraphicsView {
@@ -124,6 +170,7 @@ class CircuitCanvas : public QGraphicsView {
     Q_PROPERTY(QColor registerColor READ registerColor WRITE setRegisterColor)
     Q_PROPERTY(QColor sourceColor READ sourceColor WRITE setSourceColor)
     Q_PROPERTY(QColor displayColor READ displayColor WRITE setDisplayColor)
+    Q_PROPERTY(QColor blockColor READ blockColor WRITE setBlockColor)
     Q_PROPERTY(QColor wireColor READ wireColor WRITE setWireColor)
     Q_PROPERTY(QColor wireHighColor READ wireHighColor WRITE setWireHighColor)
     Q_PROPERTY(QColor wireLowColor READ wireLowColor WRITE setWireLowColor)
@@ -134,8 +181,19 @@ class CircuitCanvas : public QGraphicsView {
     Q_PROPERTY(QColor snapColor READ snapColor WRITE setSnapColor)
 public:
     explicit CircuitCanvas(QWidget* parent = nullptr);
-    void clearCanvas() {m_scene->resetCircuit();};
-    CircuitScene* getScene() const { return m_scene; }
+    CircuitScene* getScene() const { return m_scene; }   // the circuit itself (the top level)
+
+    //----- Blocks: the inside of a block is shown on this canvas in place of the circuit -----
+
+    // The scene on screen: the circuit, or the inside of the innermost opened block
+    CircuitScene* currentScene() const;
+    int depth() const { return int(m_levels.size()); }   // opened blocks; 0 = the circuit is shown
+    QString currentPath() const;                         // e.g. "core/alu"; empty at the top
+    void openBlock(BlockItem* block);                    // shows its inside (a block of the scene on screen)
+    void showLevel(int depth);                           // goes back out to that level (0 = the circuit)
+signals:
+    void depthChanged(int depth);
+public:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -143,8 +201,22 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
+    // An opened block: a read-only scene with the inside of its module
+    struct Level {
+        CircuitScene* scene = nullptr;
+        QString path;                 // instance path from the top, e.g. "core/alu"
+        QString title;                // e.g. "alu (ALU)"
+        QTransform outerTransform;    // the zoom and position of the level outside it, to go back to
+        QPointF outerCentre;
+    };
+    void showScene(CircuitScene* scene);
+    void updateBreadcrumb();
+    void refreshBlockValues();
+    QPointF viewCentre() const { return mapToScene(viewport()->rect().center()); }
+
     void setThemeColor(QColor CanvasTheme::* field, const QColor& color);
     QColor canvasColor() const { return canvasTheme().background; }
     void setCanvasColor(const QColor& color) { setThemeColor(&CanvasTheme::background, color); }
@@ -172,6 +244,8 @@ private:
     void setSourceColor(const QColor& color) { setThemeColor(&CanvasTheme::source, color); }
     QColor displayColor() const { return canvasTheme().display; }
     void setDisplayColor(const QColor& color) { setThemeColor(&CanvasTheme::display, color); }
+    QColor blockColor() const { return canvasTheme().block; }
+    void setBlockColor(const QColor& color) { setThemeColor(&CanvasTheme::block, color); }
     QColor wireColor() const { return canvasTheme().wire; }
     void setWireColor(const QColor& color) { setThemeColor(&CanvasTheme::wire, color); }
     QColor wireHighColor() const { return canvasTheme().wireHigh; }
@@ -190,9 +264,10 @@ private:
     void setSnapColor(const QColor& color) { setThemeColor(&CanvasTheme::snap, color); }
 
     CircuitScene* m_scene;
-    bool m_ctrlPressed = false;
-    bool m_shiftPressed = false;
-    bool m_middleMousePressed = false;
+    QList<Level> m_levels;            // opened blocks, outermost first
+    QFrame* m_breadcrumb = nullptr;   // "top > core (RISCV) > alu (ALU)" over the top-left corner
+    // Dragging empty canvas with the left button pans it
+    bool m_panning = false;
     QPoint m_lastPanPoint;
     QPoint m_panStartPoint;   // to tell a click on empty canvas (deselect) from a drag (pan)
 };

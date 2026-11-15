@@ -1,499 +1,488 @@
 #include "hdlcompiler.h"
-#include <QFont>
-#include <QFontMetrics>
-#include <QProcess>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QFile>
-#include <QTextStream>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
-#include <QJsonParseError>
-#include <QRegularExpression>
+#include <optional>
+#include <QProcess>
+#include <QSet>
+#include <QTextStream>
+#include <limits>
+#include <memory>
 
-//===================== HDLCompiler ========================
+// A compile, in the order it happens: receiveCode / receiveFiles -> compile (sv2v, yosys, reading
+// the netlist) -> layoutDesign (dot) -> sendDesign. The helpers in the namespace below read yosys's
+// netlist and build what dot lays out.
 
-bool HDLCompiler::compile(const QString& hdlCode) {
+namespace {
 
-    QFile file("code.v");  
-    QProcess *Process = new QProcess(this);
+// One module of yosys's JSON netlist as nodes: its ports, its cells (gates, multiplexers, flip-flops)
+// and its submodule instances (blocks). Cell types the canvas has no component for go to `skipped`.
+NetModule readModule(const QString& name, const QJsonObject& module, const QSet<QString>& moduleNames, QStringList& skipped)
+{
+    // A yosys bit is a net number from 2 up, or a constant: "1" is NetBit::One; "0", "x" and "z" are NetBit::Zero
+    const auto bitsOf = [](const QJsonValue& value) {
+        QList<int> bits;
+        for (const QJsonValue& bit : value.toArray()) {
+            bits.append(bit.isDouble() ? bit.toInt() : bit.toString() == QLatin1String("1") ? NetBit::One : NetBit::Zero);
+        }
+        return bits;
+    };
+    static const QHash<QString, GType> gates{
+        {QStringLiteral("$_NOT_"), GType::NOT},   {QStringLiteral("$_AND_"), GType::AND},
+        {QStringLiteral("$_OR_"), GType::OR},     {QStringLiteral("$_XOR_"), GType::XOR},
+        {QStringLiteral("$_NAND_"), GType::NAND}, {QStringLiteral("$_NOR_"), GType::NOR},
+        {QStringLiteral("$_XNOR_"), GType::XNOR},
+    };
 
-    // Write HDL code to file
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        qDebug() << "Failed to open file for writing:" << file.errorString();
-        emit error("Failed to create file: " + file.errorString());
-        Process->deleteLater();
-        return false;
+    // The flip-flops dfflegalize leaves (see compile), e.g. $_DFFE_PP1P_: enable, asynchronous reset to 1
+    const auto flipFlopOf = [](const QString& type) -> std::optional<FlipFlop> {
+        const auto resetTo = [&type](QLatin1String prefix) { return type.size() > prefix.size() && type[prefix.size()] == u'1'; };
+        if (type == QLatin1String("$_DLATCH_P_")) return FlipFlop{true, FlipFlop::Reset::None, false};
+        if (type == QLatin1String("$_DFF_P_") || type == QLatin1String("$_DFFE_PP_")) return FlipFlop{};
+        if (type.startsWith(QLatin1String("$_DFF_PP"))) return FlipFlop{false, FlipFlop::Reset::Async, resetTo(QLatin1String("$_DFF_PP"))};
+        if (type.startsWith(QLatin1String("$_DFFE_PP"))) return FlipFlop{false, FlipFlop::Reset::Async, resetTo(QLatin1String("$_DFFE_PP"))};
+        if (type.startsWith(QLatin1String("$_SDFFCE_PP"))) return FlipFlop{false, FlipFlop::Reset::Sync, resetTo(QLatin1String("$_SDFFCE_PP"))};
+        return std::nullopt;
+    };
+
+    NetModule result;
+    result.name = name;
+    bool usesOne = false;
+
+    // The module's ports: an input port drives its bits into the module, an output port reads them
+    const QJsonObject ports = module[QLatin1String("ports")].toObject();
+    for (auto it = ports.begin(); it != ports.end(); ++it) {
+        const QJsonObject port = it.value().toObject();
+        const bool input = port[QLatin1String("direction")].toString() != QLatin1String("output");   // inout counts as input
+        NetNode node;
+        node.id = it.key();
+        node.type = input ? IOType::IN : IOType::OUT;
+        node.ports.append(NetPort{it.key(), input ? PortType::OUT : PortType::IN, bitsOf(port[QLatin1String("bits")])});
+        usesOne |= !input && node.ports.first().bits.contains(NetBit::One);
+        result.nodes.append(node);
     }
-    QString testHdlCode=R"(module top (
-    input  wire       clk,
-    input  wire [7:0] a,
-    input  wire [7:0] b,
-    output reg  [15:0] result
-    );
 
-    always @(posedge clk) begin
-            result <= a * b;
-    end
+    // Cells: gates, muxes, flip-flops and instances of other modules
+    const QJsonObject cells = module[QLatin1String("cells")].toObject();
+    for (auto it = cells.begin(); it != cells.end(); ++it) {
+        const QJsonObject cell = it.value().toObject();
+        const QString cellType = cell[QLatin1String("type")].toString();
+        NetNode node;
+        node.id = it.key();
+        if (moduleNames.contains(cellType)) node.type = ModuleRef{cellType};
+        else if (const auto gate = gates.constFind(cellType); gate != gates.constEnd()) node.type = *gate;
+        else if (cellType == QLatin1String("$_MUX_")) node.type = MType::MUX;
+        else if (const auto flipFlop = flipFlopOf(cellType)) node.type = *flipFlop;
+        else {
+            skipped.append(cellType);
+            continue;
+        }
 
-    endmodule)";
+        const QJsonObject connections = cell[QLatin1String("connections")].toObject();
+        const QJsonObject directions = cell[QLatin1String("port_directions")].toObject();
+        for (auto conn = connections.begin(); conn != connections.end(); ++conn) {
+            const bool output = directions[conn.key()].toString() == QLatin1String("output");
+            NetPort port{conn.key(), output ? PortType::OUT : PortType::IN, bitsOf(conn.value())};
+            usesOne |= !output && port.bits.contains(NetBit::One);
+            node.ports.append(port);
+        }
+        std::ranges::sort(node.ports, {}, &NetPort::name);
+        result.nodes.append(node);
+    }
 
-    qDebug() << "Created file:" << file.fileName();
-    QTextStream out(&file);
-    out << hdlCode;
-    file.close();
-    qDebug() << "HDL code written to file";
+    // Inputs tied to 1 are wired to one constant-1 node
+    if (usesOne) {
+        NetNode one;
+        one.id = QStringLiteral("$const1");
+        one.type = ConstOne{};
+        one.ports.append(NetPort{QStringLiteral("Y"), PortType::OUT, {NetBit::One}});
+        result.nodes.append(one);
+    }
+    return result;
+}
 
-    // Run Yosys synthesis
-    auto startTime = std::chrono::high_resolution_clock::now();
+// For every bit: the node and output pin that drive it
+QHash<int, std::pair<int, int>> driversOf(const NetModule& module)
+{
+    QHash<int, std::pair<int, int>> drivers;
+    for (int n = 0; n < module.nodes.size(); n++) {
+        const QList<int> outputs = nodePins(module.nodes[n]).outputs;
+        for (int pin = 0; pin < outputs.size(); pin++) {
+            if (outputs[pin] == NetBit::One || outputs[pin] >= 2) drivers.insert(outputs[pin], {n, pin});
+        }
+    }
+    return drivers;
+}
 
+// Every input pin of a node, as the bits it reads (gate inputs, mux data and select, register pins, ...)
+QList<int> inputBitsOf(const NetNode& node)
+{
+    const NodePins pins = nodePins(node);
+    QList<int> bits = pins.inputs + pins.select;
+    if (std::holds_alternative<FlipFlop>(node.type)) bits << pins.clock << pins.enable;
+    return bits;
+}
+
+// The graph dot lays out: one record per node with its input pins on the left and output pins on the
+// right, at least as big as its component is drawn, and an edge from each driving pin to every pin it drives
+QString dotGraphOf(const NetModule& module, bool topLevel)
+{
+    // A module port is drawn with its name on it, so dot makes room for the name. In a record label
+    // {, }, |, <, >, quotes, backslashes and spaces have a meaning and are escaped.
+    const auto label = [](const NetNode& node) {
+        if (!std::holds_alternative<IOType>(node.type) || node.id.isEmpty()) return QStringLiteral("x");
+        QString escaped;
+        for (const QChar c : node.id) {
+            if (QStringLiteral("{}|<>\"\\ ").contains(c)) escaped += u'\\';
+            escaped += c;
+        }
+        return escaped;
+    };
+
+    QString text;
+    QTextStream out(&text);
+    out << "digraph m {\nrankdir=LR;\nnode [shape=record, fontsize=10, height=0.4];\n";
+    for (int n = 0; n < module.nodes.size(); n++) {
+        const NetNode& node = module.nodes[n];
+        const int inputs = static_cast<int>(inputBitsOf(node).size());
+        const int outputs = static_cast<int>(nodePins(node).outputs.size());
+        out << "n" << n << " [label=\"";
+        if (inputs > 0) {
+            out << "{";
+            for (int i = 0; i < inputs; i++) out << (i ? "|" : "") << "<i" << i << ">";
+            out << "}|";
+        }
+        out << label(node);
+        if (outputs > 0) {
+            out << "|{";
+            for (int o = 0; o < outputs; o++) out << (o ? "|" : "") << "<o" << o << ">";
+            out << "}";
+        }
+        const QSizeF size = nodeSize(node, topLevel);   // in inches; canvas units are points
+        out << "\", width=" << size.width() / 72.0 << ", height=" << size.height() / 72.0 << "];\n";
+    }
+    const auto drivers = driversOf(module);
+    for (int n = 0; n < module.nodes.size(); n++) {
+        const QList<int> inputs = inputBitsOf(module.nodes[n]);
+        for (int pin = 0; pin < inputs.size(); pin++) {
+            const auto driver = drivers.constFind(inputs[pin]);
+            if (driver == drivers.constEnd()) continue;
+            out << "n" << driver->first << ":o" << driver->second << " -> n" << n << ":i" << pin << ";\n";
+        }
+    }
+    out << "}\n";
+    return text;
+}
+
+// When even a fast dot takes too long: one column per logic level, inputs on the left, outputs on the
+// right. A node's level is one more than the highest level of the nodes driving it; module inputs and
+// the constant are level 0 and outputs get a last column of their own; flip-flop and block outputs
+// start new paths, so feedback loops end. Each column is as wide as its widest component, and
+// components are stacked by their real heights.
+void layoutInColumns(NetModule& module, bool topLevel)
+{
+    const int count = static_cast<int>(module.nodes.size());
+    if (count == 0) return;
+
+    const auto drivers = driversOf(module);
+    const auto startsPaths = [](const NetNode& node) {
+        return std::holds_alternative<FlipFlop>(node.type) || std::holds_alternative<ModuleRef>(node.type)
+            || std::holds_alternative<ConstOne>(node.type) || isModulePort(node, IOType::IN);
+    };
+    QList<int> level(count, 0);
+    for (int pass = 0; pass < 200; pass++) {
+        bool changed = false;
+        for (int n = 0; n < count; n++) {
+            const NetNode& node = module.nodes[n];
+            int highest = -1;
+            for (const int bit : inputBitsOf(node)) {
+                const auto driver = drivers.constFind(bit);
+                if (driver == drivers.constEnd()) continue;
+                highest = std::max(highest, startsPaths(module.nodes[driver->first]) ? 0 : level[driver->first]);
+            }
+            const bool firstColumn = std::holds_alternative<ConstOne>(node.type) || isModulePort(node, IOType::IN);
+            const int next = firstColumn ? 0 : highest + 1;
+            if (next != level[n]) {
+                level[n] = next;
+                changed = true;
+            }
+        }
+        if (!changed) break;
+    }
+    const int last = *std::ranges::max_element(level) + 1;
+    for (int n = 0; n < count; n++) {
+        if (isModulePort(module.nodes[n], IOType::OUT)) level[n] = last;
+    }
+
+    constexpr double Gap = 40;
+    const int columns = last + 1;
+    QList<double> columnWidth(columns, 0), columnFilled(columns, 0), columnX(columns, 0);
+    QList<QSizeF> size(count);
+    for (int n = 0; n < count; n++) {
+        size[n] = nodeSize(module.nodes[n], topLevel);
+        columnWidth[level[n]] = std::max(columnWidth[level[n]], size[n].width());
+    }
+    for (int c = 1; c < columns; c++) columnX[c] = columnX[c - 1] + (columnWidth[c - 1] + columnWidth[c]) / 2 + Gap;
+    for (int n = 0; n < count; n++) {
+        double& filled = columnFilled[level[n]];
+        module.nodes[n].position = QPointF(columnX[level[n]], filled + size[n].height() / 2);
+        filled += size[n].height() + Gap / 2;
+    }
+}
+
+// The scene is 160000 x 100000 units; a module's drawing is centred in it
+void centreInScene(NetModule& module)
+{
+    if (module.nodes.isEmpty()) return;
+    double minX = std::numeric_limits<double>::max(), maxX = std::numeric_limits<double>::lowest();
+    double minY = minX, maxY = maxX;
+    for (const NetNode& node : module.nodes) {
+        minX = std::min(minX, node.position.x()); maxX = std::max(maxX, node.position.x());
+        minY = std::min(minY, node.position.y()); maxY = std::max(maxY, node.position.y());
+    }
+    const QPointF shift(80000 - (minX + maxX) / 2, 50000 - (minY + maxY) / 2);
+    for (NetNode& node : module.nodes) node.position += shift;
+}
+
+} // namespace
+
+//===================== Compiling ========================
+
+void HDLCompiler::receiveCode(const QString& code)
+{
+    // The editor's text goes through the same steps as a folder's files, as code.v
+    emit finished(writeTextFile(QStringLiteral("code.v"), code) && compile({QStringLiteral("code.v")}, {}));
+}
+
+void HDLCompiler::receiveFiles(const QStringList& files, const QStringList& includeDirs)
+{
+    if (files.isEmpty()) {
+        emit error(QStringLiteral("No Verilog files were chosen."));
+        emit finished(false);
+        return;
+    }
+    emit finished(compile(files, includeDirs));
+}
+
+bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDirs)
+{
+    // 1. sv2v turns the files into one plain Verilog file, converted.v. Yosys's own reader supports only
+    //    part of SystemVerilog (for example no "import pkg::*"); sv2v handles packages, imports, enums,
+    //    structs and `include files, in whatever order the files come.
+    QStringList sv2vArguments;
+    for (const QString& dir : includeDirs) sv2vArguments << QStringLiteral("--incdir=") + dir;
+    sv2vArguments << QStringLiteral("--write=converted.v") << files;
+    if (!runTool(QStringLiteral("sv2v"), sv2vPath, sv2vArguments, 60000)) return false;
+
+    // 2. Yosys synthesizes it to gates. The top module is found automatically (the module no other
+    //    module uses), and the hierarchy is kept: each submodule instance becomes a block.
+    //    dfflegalize turns yosys's many kinds of flip-flop into the few the simulator has (see FlipFlop):
+    //    inverters make every clock rising-edge and every enable and reset active-high, extra logic
+    //    handles a reset that only acts while enabled, and a flip-flop that powers up as 1 is stored
+    //    inverted, so all power up as 0. One with both an asynchronous set and reset cannot be turned
+    //    into these; yosys then stops with an error that says so.
+    const QString script = QStringLiteral(
+        "read_verilog converted.v\n"
+        "synth -auto-top -noalumacc\n"
+        "dfflegalize -cell $_DFF_P_ 0 -cell $_DFFE_PP_ 0 -cell $_DFF_PP?_ 0 -cell $_DFFE_PP?P_ 0 -cell $_SDFFCE_PP?P_ 0 -cell $_DLATCH_P_ 0\n"
+        "abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX\n"
+        "opt_clean\n"
+        "write_json code_netlist.json\n");
+    if (!writeTextFile(QStringLiteral("compile.ys"), script)) return false;
 #ifdef Q_OS_WIN
-    Process->start(yosysScript);   // same yosys command, kept in script.bat
+    // script.bat sets up the OSS CAD Suite, then runs "yosys -s compile.ys"
+    if (!runTool(QStringLiteral("Yosys"), yosysScript, {}, 100000)) return false;
 #else
-    QStringList arguments;
-    arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; write_json code_netlist.json; show -format dot -prefix code_graph";
-    //makes images too
-    // arguments << "-p" << "read_verilog -sv code.v; synth -top top -noalumacc; "
-    //                      "abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX; "
-    //                      "write_json code_netlist.json; "
-    //                      "show -format svg -viewer none -prefix code_graph";
-
-    Process->start(yosysPath, arguments);
+    if (!runTool(QStringLiteral("Yosys"), yosysPath, {QStringLiteral("-s"), QStringLiteral("compile.ys")}, 100000)) return false;
 #endif
 
-    if (!Process->waitForFinished(100000)) {
-        qDebug() << "Process timeout or failed to start";
-        emit error("Yosys did not run: " + Process->errorString());
-        Process->deleteLater();
+    // 3. Read yosys's netlist, every module of it
+    QFile netlist(QStringLiteral("code_netlist.json"));
+    if (!netlist.open(QIODevice::ReadOnly)) {
+        emit error("Could not open the netlist yosys wrote: " + netlist.errorString());
         return false;
     }
-
-    if (Process->exitCode() != 0) {
-        // The error output can only be read once, so keep it for both the log and the message
-        const QString yosysErrors = QString::fromLocal8Bit(Process->readAllStandardError()).trimmed();
-        qDebug() << "Yosys compilation failed";
-        qDebug() << "Error:" << yosysErrors;
-        emit error(yosysErrors);
-        Process->deleteLater();
-        return false;
-    }
-
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-    qDebug() << "Yosys execution time: " << duration.count() << " ms";
-
-    QStringList dotArgs;
-
-    dotArgs
-        << "-Tdot" //dot output
-        << "-Kdot" // dot layout engine
-        << "-Grankdir=LR" // Left to right
-        << "code_graph.dot"
-        << "-o"
-        << "code_graph_positioned.dot";
-
-    startTime = std::chrono::high_resolution_clock::now();
-    Process->start(dotPath, dotArgs);
-
-
-    if (!Process->waitForFinished(100000)) {
-        qDebug() << "Dot process timeout";
-        Process->deleteLater();
-        emit success();
-        return false;
-    }
-
-    endTime = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-    qDebug() << "Dot execution time: " << duration.count() << " ms";
-    if (Process->exitCode() != 0) {
-        qDebug() << "Dot layout failed:" << Process->readAllStandardError();
-        Process->deleteLater();
-        emit success();
-        return false;
-    }
-
-    Process->deleteLater();
-    qDebug() << "Graph layout computed";
-
-    if(!parseDotFile("code_graph_positioned.dot")) return false;
-    if(!processJsonFile("code_netlist.json")) return false;
-
-    emit sendGraph(m_components);
-    return true;
-}
-
-bool HDLCompiler::parseDotFile(const QString& filePath) {
-    QFile file(filePath);
-
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return false;
-    }
-
-    QTextStream in(&file);
-    QStringList lines;
-
-    while (!in.atEnd()) {
-        lines.append(in.readLine());
-    }
-    file.close();
-
-    // first pass remove tab and slash
-    for (int i = 0; i < lines.size() - 1; ++i) {
-        QString& currLine = lines[i];
-        QString& nextLine = lines[i + 1];
-
-        while(nextLine.startsWith("\t")){nextLine.removeFirst();};
-        if (currLine.endsWith("\\")) {
-            currLine.removeLast();
-            currLine.append(nextLine);
-            lines.removeAt(i+1);
-            while(lines[i + 1].startsWith("\t")){nextLine.removeFirst();};
-        }
-    }
-    double minX = std::numeric_limits<double>::max();
-    double minY = std::numeric_limits<double>::max();
-    double maxX = std::numeric_limits<double>::lowest();
-    double maxY = std::numeric_limits<double>::lowest();
-
-    //second pass extract nodes and graph size
-    for (int i = 0; i < lines.size() - 1; ++i) {
-        QString& currLine = lines[i];
-
-        if (currLine.contains("\t")){
-            QStringList firstLine = currLine.split("\t");
-            QString& firstLineStart = firstLine[0];
-            if(!firstLineStart.contains("->") && !firstLineStart.startsWith('x')){ //skip edges and bitslice and junction
-                Node node;
-                node.id = firstLineStart;
-                for(int j=i+1;!lines[j].contains("\t") && j< lines.size();j++){ // lines of a signle node
-                    QString currNodeLine = lines[j];
-                    if(currNodeLine.startsWith("label=")){
-                        // Extract numeric ID from label like: label="{{<p128> C|<p129> D}|$317\n$_DFF_P_|{<p131> Q}}",
-                        QRegularExpression labelRe(R"(\$(\d+))");
-                        QRegularExpressionMatch labelMatch = labelRe.match(currNodeLine);
-                        if (labelMatch.hasMatch()) {
-                            node.id = labelMatch.captured(1);
-                        } else {
-                            node.id = currNodeLine.split('=')[1].removeLast();
-                        }
-                    }
-                    if(currNodeLine.startsWith("pos=")){\
-                        QString posLine = currNodeLine;
-
-                        // Extract the value between quotes
-                        int firstQuote = posLine.indexOf('"');
-                        int lastQuote = posLine.lastIndexOf('"');
-                        QString posValue = posLine.mid(firstQuote + 1, lastQuote - firstQuote - 1);
-
-                        QStringList coords = posValue.split(',');
-                        if (coords.size() == 2) {
-                            double x = coords[0].toDouble();
-                            double y = coords[1].toDouble();
-
-                            minX = std::min(minX, x);
-                            minY = std::min(minY, y);
-                            maxX = std::max(maxX, x);
-                            maxY = std::max(maxY, y);
-
-                            node.position.setX(x);
-                            node.position.setY(y); 
-
-                            qDebug() << node.id<< " :" << x << "," << y;
-                        }
-                    }
-                }
-                m_componentsPos[node.id]=node;
-            }
-        }
-    }
-
-    double graphCenterX = (minX + maxX) / 2.0;
-    double graphCenterY = (minY + maxY) / 2.0;
-
-    // CircuitScene dimentions
-    const double sceneWidth = 160000.0;
-    const double sceneHeight = 100000.0;
-    const double sceneCenterX = sceneWidth / 2.0;
-    const double sceneCenterY = sceneHeight / 2.0;
-
-    qDebug() << "Graph bounds: (" << minX << "," << minY << ") to (" << maxX << "," << maxY << ")";
-    qDebug() << "Graph center:" << graphCenterX << "," << graphCenterY;
-
-    // Transform all node positions
-    for (auto it = m_componentsPos.begin(); it != m_componentsPos.end(); ++it) {
-        Node& node = it.value();
-        double x = node.position.x();
-        double y = node.position.y();
-
-        // Flip Y coordinate (Graphviz origin is bottom-left, Qt is top-left)
-        y = maxY - y;
-
-        // Translate to center the graph in the scene
-        x = x - graphCenterX + sceneCenterX;
-        y = y - graphCenterY + sceneCenterY;
-
-        node.position.setX(x);
-        node.position.setY(y);
-
-        qDebug() << "Transformed position for" << node.id << ":" << x << "," << y;
-    }
-    return true;
-}
-
-bool HDLCompiler::processJsonFile(const QString& filePath) {
-    QFile file(filePath);
-    
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        qDebug() << "Failed to open JSON file:" << file.errorString();
-        emit error("Failed to open JSON file: " + file.errorString());
-        return false;
-    }
-
-    QByteArray jsonData = file.readAll();
-    file.close();
-
     QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(jsonData, &parseError);
-
+    const QJsonDocument document = QJsonDocument::fromJson(netlist.readAll(), &parseError);
+    const QJsonObject modules = document.object()[QLatin1String("modules")].toObject();
     if (parseError.error != QJsonParseError::NoError) {
-        qDebug() << "JSON parse error:" << parseError.errorString();
-        emit error("JSON parse error: " + parseError.errorString());
+        emit error("The netlist yosys wrote could not be read: " + parseError.errorString());
+        return false;
+    }
+    if (modules.isEmpty()) {
+        emit error(QStringLiteral("The design has no modules."));
         return false;
     }
 
-    if (!doc.isObject()) {
-        qDebug() << "JSON root is not an object";
-        emit error("Invalid JSON structure: root is not an object");
-        return false;
+    NetDesign design;
+    const QStringList names = modules.keys();
+    const QSet<QString> moduleNames(names.begin(), names.end());
+    QStringList skipped;
+    for (auto it = modules.begin(); it != modules.end(); ++it) {
+        const QJsonObject module = it.value().toObject();
+        design.modules.insert(it.key(), readModule(it.key(), module, moduleNames, skipped));
+        if (module[QLatin1String("attributes")].toObject().contains(QLatin1String("top"))) design.top = it.key();
+    }
+    if (design.top.isEmpty()) design.top = names.first();
+    if (!skipped.isEmpty()) {
+        skipped.removeDuplicates();
+        qDebug() << "Cell types the canvas has no component for, left out:" << skipped;
     }
 
-    QJsonObject root = doc.object();
-    
-    // Parse modules
-    if (!root.contains("modules") || !root["modules"].isObject()) {
-        qDebug() << "No modules found in JSON";
-        emit error("No modules found in JSON");
-        return false;
-    }
-
-    QJsonObject modules = root["modules"].toObject();
-    
-    // Process each module
-    for (auto moduleIt = modules.begin(); moduleIt != modules.end(); ++moduleIt) {
-        QString moduleName = moduleIt.key();
-        QJsonObject module = moduleIt.value().toObject();
-        
-        qDebug() << "\n=== Processing Module:" << moduleName << "===";
-        
-        // First pass: Build bit-to-net mapping from netnames  NOT NEEDED FOR NOW
-        if (module.contains("netnames") && module["netnames"].isObject()) {
-            QJsonObject netnames = module["netnames"].toObject();
-            
-            for (auto netIt = netnames.begin(); netIt != netnames.end(); ++netIt) {
-                QString netName = netIt.key();
-                QJsonObject netData = netIt.value().toObject();
-                
-                // Only add to mapping if hide_name is 1
-                bool hideNames = netData["hide_name"].toInt() == 1;
-                if (!hideNames && netData.contains("bits") && netData["bits"].isArray()) {
-                    QJsonArray bits = netData["bits"].toArray();
-                    for (const QJsonValue& bitVal : std::as_const(bits)) {
-                        int bitNum = bitVal.toInt();
-                        m_bitToNet[bitNum] = netName;
-                    }
-                }
-            }
-            qDebug() << "Built bit-to-net mapping:" << m_bitToNet.size() << "bits";
-        }
-        
-        // Second pass: Create nodes for module ports (I/O)
-        if (module.contains("ports") && module["ports"].isObject()) {
-            QJsonObject ports = module["ports"].toObject();
-            
-            for (auto portIt = ports.begin(); portIt != ports.end(); ++portIt) {
-                QString portName = portIt.key();
-                QJsonObject portData = portIt.value().toObject();
-                
-                QString direction = portData["direction"].toString();
-                QJsonArray bits = portData["bits"].toArray();
-                
-                // Create an I/O node for each module port
-                Node ioNode;
-                ioNode.id = portName;
-                
-                
-                if (direction == "input") {
-                    ioNode.type = IOType::IN;
-                } else if (direction == "output") {
-                    ioNode.type = IOType::OUT;
-                }
-
-                ioNode.position = m_componentsPos[portName].position;
-
-                // Create a port for this I/O
-                Port ioPort;
-                ioPort.parent = nullptr; 
-                ioPort.name = portName;
-                ioPort.type = (direction == "input") ? PortType::OUT : PortType::IN; 
-                
-                // Store bit connections
-                for (const QJsonValue& bitVal : std::as_const(bits)) {
-                    ioPort.connections.append(bitVal.toInt());
-                }
-                
-                ioNode.ports[portName] = ioPort;
-                
-                m_components[portName] = ioNode;
-                qDebug() << "Created I/O node:" << portName << "direction:" << direction << "bits:" << bits;
-            }
-        }
-        
-        // Third pass: Process cells 
-        if (module.contains("cells") && module["cells"].isObject()) {
-            QJsonObject cells = module["cells"].toObject();
-            qDebug() << "\nProcessing" << cells.size() << "cells...";
-            
-            for (auto cellIt = cells.begin(); cellIt != cells.end(); ++cellIt) {
-                QString cellName = cellIt.key();
-                QJsonObject cellData = cellIt.value().toObject();
-                
-                QString cellType = cellData["type"].toString();
-                
-                // Extract numeric ID from cell name 
-                QString cellId = cellName;
-                QRegularExpression re(R"(\$(\d+)(?!.*\$\d))"); // Last number in the string
-                QRegularExpressionMatch match = re.match(cellName);
-                if (match.hasMatch()) {
-                    cellId = match.captured(1);
-                }
-                
-                Node node;
-                node.id = cellId;
-                // Determine node type based on cell type
-                if (cellType.contains("DFF")) {
-                    node.type = RType::D; 
-                    if (cellType.contains("SDFF")) {
-                        node.HasReset = true;
-                    }
-                } else if (cellType == "$_NOT_") {
-                    node.type = GType::NOT;
-                } else if (cellType == "$_AND_") {
-                    node.type = GType::AND;
-                } else if (cellType == "$_OR_") {
-                    node.type = GType::OR;
-                } else if (cellType == "$_XOR_") {
-                    node.type = GType::XOR;
-                } else if (cellType == "$_NAND_") {
-                    node.type = GType::NAND;
-                } else if (cellType == "$_NOR_") {
-                    node.type = GType::NOR;
-                } else if (cellType == "$_XNOR_") {
-                    node.type = GType::XNOR;
-                } else if (cellType == "$_MUX_") {
-                    node.type = MType::MUX;
-                } else {
-                    // Unknown type - use a generic marker
-                    qDebug() << "Warning: Unknown cell type:" << cellType;
-                    continue; // Skip unknown types 
-                }
-                
-                // Copy position from dot file
-                if (m_componentsPos.contains(cellId)) {
-                    node.position = m_componentsPos[cellId].position;
-                }
-                
-                // Process connections to create ports
-                if (cellData.contains("connections") && cellData["connections"].isObject()) {
-                    QJsonObject connections = cellData["connections"].toObject();
-                    QJsonObject portDirs = cellData["port_directions"].toObject();
-                    
-                    for (auto connIt = connections.begin(); connIt != connections.end(); ++connIt) {
-                        QString portName = connIt.key();
-                        QJsonArray bitArray = connIt.value().toArray();
-                        
-                        Port port;
-                        port.parent = nullptr; 
-                        port.name = portName;
-                        
-                        // Determine port direction
-                        QString direction = portDirs[portName].toString();
-                        if (direction == "input") {
-                            port.type = PortType::IN;
-                        } else if (direction == "output") {
-                            port.type = PortType::OUT;
-                        }
-                        
-                        // Store bit numbers as connections
-                        for (const QJsonValue& bitVal : std::as_const(bitArray)) {
-                            port.connections.append(bitVal.toInt());
-                        }
-                        
-                        node.ports[portName] = port;
-                    }
-                }
-                
-                m_components[cellId] = node;
-                qDebug() << "Created node:" << cellId << "type:" << cellType << "ports:" << node.ports.size();
-            }
-        }
-    }
-    
-    // Update parent pointers in all ports
-    for (auto it = m_components.begin(); it != m_components.end(); ++it) {
-        for (auto portIt = it.value().ports.begin(); portIt != it.value().ports.end(); ++portIt) {
-            portIt.value().parent = &it.value();
-        }
-    }
-    
-    qDebug() << "\n=== JSON processing complete ===";
-    qDebug() << "Total components:" << m_components.size();
-    qDebug() << "Total nets:" << m_bitToNet.size();
+    // 4. Lay every module out, and hand the design to the canvas
+    if (!layoutDesign(design)) return false;
+    emit sendDesign(design);
     return true;
 }
 
-void HDLCompiler::receiveCode(const QString& hdlCode) {
-    // Each compile starts from nothing. Without this, components of the previous design
-    // that the new one does not happen to overwrite stay in the result.
-    m_components.clear();
-    m_componentsPos.clear();
-    m_bitToNet.clear();
+// Every module gets its own dot process, and all of them start at once; then they are waited for
+// together, against one deadline. A module whose dot runs out of time gets the next faster layout in
+// a second round (again all at once): full dot, then fast dot, then columns by logic level.
+bool HDLCompiler::layoutDesign(NetDesign& design)
+{
+    const auto cellsOf = [](const NetModule& module) {   // what yosys made: gates, muxes, flip-flops, blocks
+        return std::ranges::count_if(module.nodes, [](const NetNode& node) {
+            return !std::holds_alternative<IOType>(node.type) && !std::holds_alternative<ConstOne>(node.type);
+        });
+    };
+    struct Job {
+        NetModule* module = nullptr;
+        bool topLevel = false;           // the top module's ports are sources and displays, not port tags
+        bool fast = false;
+        QString graphFile, layoutFile;   // dot reads one and writes the other (a file: a pipe could fill up and stall it)
+        std::unique_ptr<QProcess> dot;
+        qint64 finishedMs = -1;          // when it finished, from the start of its round; -1 while running
+    };
+    std::vector<Job> jobs;
+    jobs.reserve(design.modules.size());
+    for (NetModule& module : design.modules) {
+        Job& job = jobs.emplace_back();
+        job.module = &module;
+        job.topLevel = (module.name == design.top);
+        job.fast = cellsOf(module) >= FastDotCells;
+        job.graphFile = QStringLiteral("module_%1.dot").arg(jobs.size() - 1);
+        job.layoutFile = QStringLiteral("module_%1.plain").arg(jobs.size() - 1);
+        if (!writeTextFile(job.graphFile, dotGraphOf(module, job.topLevel))) return false;
+    }
 
-    const bool ok = compile(hdlCode);
-    emit finished(ok);
+    constexpr int PollMs = 20;   // how often the waiting checks on each dot
+    std::vector<Job*> round;
+    for (Job& job : jobs) round.push_back(&job);
+    while (!round.empty()) {
+        for (Job* job : round) {
+            QStringList arguments{QStringLiteral("-Tplain"), QStringLiteral("-o"), job->layoutFile, job->graphFile};
+            // Fast: dot's two slowest steps stop early. Crossing reduction (mclimit) does fewer passes and
+            // the positioning (nslimit) fewer improvement steps, so the layout is a little less tidy.
+            if (job->fast) arguments << QStringLiteral("-Gnslimit=0.1") << QStringLiteral("-Gmclimit=0.1");
+            QFile::remove(job->layoutFile);   // never read a layout left by an earlier compile
+            job->dot = std::make_unique<QProcess>();
+            job->finishedMs = -1;
+            job->dot->start(dotPath, arguments);
+        }
+
+        // Wait until every dot has finished or the time is up; note when each one finished
+        QElapsedTimer clock;
+        clock.start();
+        for (bool waiting = true; waiting && clock.elapsed() < DotTimeoutMs;) {
+            waiting = false;
+            for (Job* job : round) {
+                if (job->finishedMs >= 0) continue;
+                if (job->dot->state() == QProcess::NotRunning || job->dot->waitForFinished(PollMs)) job->finishedMs = clock.elapsed();
+                else waiting = true;
+            }
+        }
+        for (Job* job : round) {   // stop the ones that ran out of time first, so none outlives a failure below
+            if (job->finishedMs >= 0) continue;
+            job->dot->kill();
+            job->dot->waitForFinished();
+        }
+
+        std::vector<Job*> next;
+        for (Job* job : round) {
+            NetModule& module = *job->module;
+            const QString name = QStringLiteral("dot%1 for %2 (%3 cells)")
+                                     .arg(job->fast ? QStringLiteral(" (fast)") : QString(), module.name).arg(cellsOf(module));
+            if (job->finishedMs < 0) {
+                if (!job->fast) {
+                    qDebug() << name << "ran out of time; trying a fast dot";
+                    job->fast = true;
+                    next.push_back(job);
+                } else {
+                    qDebug() << name << "ran out of time; placing it in columns";
+                    layoutInColumns(module, job->topLevel);
+                    centreInScene(module);
+                }
+                continue;
+            }
+            if (!checkFinished(*job->dot, name)) return false;
+            qDebug() << name << "took" << job->finishedMs << "ms";
+
+            // -Tplain: "node <name> <x> <y> ..." in inches, y upwards. The canvas uses points, y downwards.
+            QFile layout(job->layoutFile);
+            if (!layout.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                emit error("Could not read the layout of " + module.name + ": " + layout.errorString());
+                return false;
+            }
+            for (const QString& line : QString::fromUtf8(layout.readAll()).split(u'\n')) {
+                const QStringList parts = line.split(u' ', Qt::SkipEmptyParts);
+                if (parts.size() < 4 || parts[0] != QLatin1String("node") || !parts[1].startsWith(u'n')) continue;
+                bool ok = false;
+                const int n = parts[1].mid(1).toInt(&ok);
+                if (!ok || n < 0 || n >= module.nodes.size()) continue;
+                module.nodes[n].position = QPointF(parts[2].toDouble() * 72.0, -parts[3].toDouble() * 72.0);
+            }
+            centreInScene(module);
+        }
+        round = std::move(next);
+    }
+    return true;
 }
 
-//===================== TextEditor ========================
+//===================== Running the tools ========================
 
-TextEditor::TextEditor(QWidget *parent) : QPlainTextEdit(parent) {
-    // Set monospace font for code
-    QFont font("Courier");
-    font.setStyleHint(QFont::Monospace);
-    font.setFixedPitch(true);
-    font.setPointSize(12);
-    setFont(font);
-
-    // Set tab width (4 spaces)
-    QFontMetrics metrics(font);
-    setTabStopDistance(4 * metrics.horizontalAdvance(' '));
-
-    setLineWrapMode(QPlainTextEdit::NoWrap);
-
-    setPlaceholderText("Enter your Verilog code here...");
+// Runs a tool and waits for it; false (after error() said why) if it failed or ran out of time
+bool HDLCompiler::runTool(const QString& name, const QString& program, const QStringList& arguments, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    QProcess process;
+    process.start(program, arguments);
+    if (!process.waitForFinished(timeoutMs) && process.state() != QProcess::NotRunning) {
+        process.kill();
+        process.waitForFinished();
+        emit error(QStringLiteral("%1 took longer than %2 seconds and was stopped.").arg(name).arg(timeoutMs / 1000));
+        return false;
+    }
+    if (!checkFinished(process, name)) return false;
+    qDebug() << name << "took" << timer.elapsed() << "ms";
+    return true;
 }
 
-TextEditor::TextEditor(const QString &text, QWidget *parent) : QPlainTextEdit(text, parent) {
-    // Set monospace font for code
-    QFont font("Courier");
-    font.setStyleHint(QFont::Monospace);
-    font.setFixedPitch(true);
-    font.setPointSize(10);
-    setFont(font);
+bool HDLCompiler::checkFinished(QProcess& process, const QString& name)
+{
+    if (process.error() == QProcess::FailedToStart) {
+        emit error(name + " did not run: " + process.errorString());
+        return false;
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        // The tools write their own messages (with file and line) to their error output
+        const QString message = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+        emit error(message.isEmpty() ? name + " failed with exit code " + QString::number(process.exitCode()) : message);
+        return false;
+    }
+    return true;
+}
 
-    // Set tab width (4 spaces)
-    QFontMetrics metrics(font);
-    setTabStopDistance(4 * metrics.horizontalAdvance(' '));
-
-    setLineWrapMode(QPlainTextEdit::NoWrap);
+bool HDLCompiler::writeTextFile(const QString& fileName, const QString& text)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        emit error("Could not write " + fileName + ": " + file.errorString());
+        return false;
+    }
+    file.write(text.toUtf8());
+    return true;
 }

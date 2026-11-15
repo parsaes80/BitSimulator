@@ -1,90 +1,68 @@
 #pragma once
-#include <QAbstractButton>
-#include <QPainterPath>
 #include <QPushButton>
-#include <QPainter>
 #include "general.h"
 
-class GateButton : public QPushButton{
-    Q_OBJECT  
+class QPainter;
+
+// The component buttons of the toolbar. Each draws a small picture of its component in the
+// component's canvas colors; clicking one makes that component the next one placed (MainWindow
+// connects their clicked signals). They are promoted widgets in BitSimulator.ui.
+class ToolbarButton : public QPushButton {
+    Q_OBJECT
 public:
-    GateButton(GType gateType, QWidget* parent = nullptr);
-    GateButton(QWidget* parent = nullptr);
-    GType getGateType() const { return m_gateType; };
-    void setGateType(GType gateType) { m_gateType = gateType; };
+    using QPushButton::QPushButton;
 
 protected:
-    void paintEvent(QPaintEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;   // the button, then its picture over the middle
+    // Draws the picture with the origin at the button's centre; `size` is the room for it
+    virtual void drawIcon(QPainter& painter, QSizeF size) = 0;
+    // Scales the painter so a picture drawn `design` units big fills `size`
+    static void fit(QPainter& painter, QSizeF size, QSizeF design);
+    static void drawLabel(QPainter& painter, const QRectF& rect, const QString& text, int pointSize = 8, bool bold = false);
+};
 
-public slots:
-    void onButtonClicked() { emit gateTypeSelected(m_gateType); };
-signals:
-    void gateTypeSelected(GType gateType);
+class GateButton : public ToolbarButton {
+    Q_OBJECT
+public:
+    using ToolbarButton::ToolbarButton;
+    GType getGateType() const { return m_gateType; }
+    void setGateType(GType gateType) { m_gateType = gateType; update(); }
+
+protected:
+    void drawIcon(QPainter& painter, QSizeF size) override;
+
 private:
-    void drawGateSymbol(QPainter* painter, double width, double height);
-    void drawANDGate(QPainter* painter, double width, double height);
-    void drawORGate(QPainter* painter, double width, double height);
-    void drawXORGate(QPainter* painter, double width, double height);
-    void drawNOTGate(QPainter* painter, double width, double height);
-    void drawNOTBubble(QPainter* painter, double width, double height);
-    void drawNANDGate(QPainter* painter, double width, double height);
-    void drawNORGate(QPainter* painter, double width, double height);
-    void drawXNORGate(QPainter* painter, double width, double height);
-    GType m_gateType;
+    GType m_gateType = GType::AND;
 };
 
-class SourceButton : public QPushButton{
+class SourceButton : public ToolbarButton {
     Q_OBJECT
 public:
-    SourceButton(QWidget* parent = nullptr);
-
+    using ToolbarButton::ToolbarButton;
 protected:
-    void paintEvent(QPaintEvent* event) override;
-
-public slots:
-    void onButtonClicked() { emit sourceSelected(); };
-signals:
-    void sourceSelected();
+    void drawIcon(QPainter& painter, QSizeF size) override;
 };
 
-class RegisterButton : public QPushButton{
+class RegisterButton : public ToolbarButton {
     Q_OBJECT
 public:
-    RegisterButton(QWidget* parent = nullptr);
-
+    using ToolbarButton::ToolbarButton;
 protected:
-    void paintEvent(QPaintEvent* event) override;
-
-public slots:
-    void onButtonClicked() { emit RegSelected(); };
-signals:
-    void RegSelected();
+    void drawIcon(QPainter& painter, QSizeF size) override;
 };
 
-class MuxButton : public QPushButton{
+class MuxButton : public ToolbarButton {
     Q_OBJECT
 public:
-    MuxButton(QWidget* parent = nullptr);
-
+    using ToolbarButton::ToolbarButton;
 protected:
-    void paintEvent(QPaintEvent* event) override;
-
-public slots:
-    void onButtonClicked() { emit MuxSelected(); };
-signals:
-    void MuxSelected();
+    void drawIcon(QPainter& painter, QSizeF size) override;
 };
 
-class DisplayButton : public QPushButton{
+class DisplayButton : public ToolbarButton {
     Q_OBJECT
 public:
-    DisplayButton(QWidget* parent = nullptr);
-
+    using ToolbarButton::ToolbarButton;
 protected:
-    void paintEvent(QPaintEvent* event) override;
-
-public slots:
-    void onButtonClicked() { emit DisplaySelected(); };
-signals:
-    void DisplaySelected();
+    void drawIcon(QPainter& painter, QSizeF size) override;
 };

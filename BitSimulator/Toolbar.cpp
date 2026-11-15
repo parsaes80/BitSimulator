@@ -1,505 +1,120 @@
 #include "Toolbar.h"
-#include "Items.h"
-#include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QTextEdit>
+#include "Items.h"
 
-GateButton::GateButton(GType gateType, QWidget* parent)
-    : QPushButton(parent)
-    , m_gateType(gateType)
+//===================== ToolbarButton ========================
+
+void ToolbarButton::paintEvent(QPaintEvent* event)
 {
-    setText("");
-    setCheckable(false); 
-    
-    connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
-}
-GateButton::GateButton(QWidget* parent): QPushButton(parent)
-{
-    setText("");   
-    setCheckable(false); 
-    connect(this, &QPushButton::clicked, this, &GateButton::onButtonClicked);
-}
-void GateButton::paintEvent(QPaintEvent* event)
-{
-    // Draw button background first
     QPushButton::paintEvent(event);
 
-    // Draw gate symbol on top
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-
-    QRect buttonRect = rect();
-    double gateWidth = buttonRect.width() * 0.7;
-    double gateHeight = buttonRect.height() * 0.75;
-    
-    // Center the gate in the button
-    QRectF gateRect(
-        (buttonRect.width() - gateWidth) / 2,
-        (buttonRect.height() - gateHeight) / 2,
-        gateWidth,
-        gateHeight
-    );
-    
-    painter.translate(gateRect.center());
-    painter.scale(1.0, 1.0);  
-
-    drawGateSymbol(&painter, gateWidth, gateHeight);
+    const QRectF area = QRectF(rect()).adjusted(8, 8, -8, -8);
+    painter.translate(area.center());
+    drawIcon(painter, area.size());
 }
 
-void GateButton::drawGateSymbol(QPainter* painter, double width, double height)
+void ToolbarButton::fit(QPainter& painter, QSizeF size, QSizeF design)
 {
-    // Outlined in the gate's color with a body tinted with it, as on the canvas. The draw functions below keep this pen and brush.
-    painter->setPen(QPen(canvasTheme().gateColor(m_gateType), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter->setBrush(canvasTheme().fillFor(canvasTheme().gateColor(m_gateType)));
-    
-    switch (m_gateType) {
-    case GType::AND:
-        drawANDGate(painter, width, height);
-        break;
-    case GType::OR:
-        drawORGate(painter, width, height);
-        break;
-    case GType::XOR:
-        drawXORGate(painter, width, height);
-        break;
-    case GType::NAND:
-        drawNANDGate(painter, width, height);
-        drawNOTBubble(painter, width, height);
-        break;
-    case GType::NOR:
-        drawNORGate(painter, width, height);
-        drawNOTBubble(painter, width, height);
-        break;
-    case GType::XNOR:
-        drawXNORGate(painter, width, height);
-        drawNOTBubble(painter, width, height);
-        break;
-    case GType::NOT:
-        drawNOTGate(painter, width, height);
-        break;
-    }
-}
-
-void GateButton::drawANDGate(QPainter* painter, double width, double height)
-{  
-    QPainterPath path;
-    
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(0, -halfHeight);
-    path.arcTo(0, -halfHeight, halfWidth, height, 90, -180);
-    path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    // Draw "AND" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-    
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "AND");
-}
-
-void GateButton::drawNANDGate(QPainter* painter, double width, double height)
-{
-    QPainterPath path;
-
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(0, -halfHeight);
-    path.arcTo(0, -halfHeight, halfWidth, height, 90, -180);
-    path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    // Draw "AND" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "NAND");
-}
-void GateButton::drawORGate(QPainter* painter, double width, double height)
-{
-
-    QPainterPath path;
-    
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-    
-    path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth / 2, halfHeight);
-    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    // Draw "OR" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "OR");
-}
-
-void GateButton::drawNORGate(QPainter* painter, double width, double height)
-{
-
-    QPainterPath path;
-
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth / 2, halfHeight);
-    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    // Draw "OR" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "NOR");
-}
-void GateButton::drawXORGate(QPainter* painter, double width, double height)
-{
-
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    QPainterPath path;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth / 2, halfHeight);
-    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    QPainterPath extraLine;
-
-    painter->setBrush(Qt::NoBrush);
-    double offset = width * 0.1;
-    extraLine.moveTo(-halfWidth - offset, -halfHeight*0.9 );
-    extraLine.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight*0.9);
-    painter->drawPath(extraLine);
-
-    // Draw "XOR" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "XOR");
-}
-void GateButton::drawXNORGate(QPainter* painter, double width, double height)
-{
-
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    QPainterPath path;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.quadTo(-halfWidth / 2, 0, -halfWidth, halfHeight);
-    path.lineTo(halfWidth / 2, halfHeight);
-    path.quadTo(width * 3 / 4, 0, halfWidth / 2, -halfHeight);
-    path.lineTo(-halfWidth, -halfHeight);
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    QPainterPath extraLine;
-
-    painter->setBrush(Qt::NoBrush);
-    double offset = width * 0.1;
-    extraLine.moveTo(-halfWidth - offset, -halfHeight*0.9 );
-    extraLine.quadTo(-halfWidth * 0.6, 0, -halfWidth - offset, halfHeight*0.9);
-    painter->drawPath(extraLine);
-
-    // Draw "XNOR" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "XNOR");
-}
-void GateButton::drawNOTGate(QPainter* painter, double width, double height)
-{
-    QPainterPath path;
-
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-
-    path.moveTo(-halfWidth, -halfHeight);
-    path.lineTo(-halfWidth, halfHeight);
-    path.lineTo(halfWidth , 0);
-    path.lineTo(-halfWidth, -halfHeight);
-    painter->fillPath(path, painter->brush());
-    painter->drawPath(path);
-
-    // Draw "NOT" text on top
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(canvasTheme().componentText);
-    QFont font = painter->font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
-    painter->setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth*4/3, -halfHeight, width, height);
-    painter->drawText(textRect, Qt::AlignCenter, "NOT");
-}
-
-void GateButton::drawNOTBubble(QPainter* painter, double width, double height)
-{
-    painter->setPen(QPen(canvasTheme().gateColor(m_gateType), 2));
-    painter->setBrush(canvasTheme().fillFor(canvasTheme().gateColor(m_gateType)));
-    double bubbleRadius = width * 0.08;  // Bubble size relative to width
-    double QuarterWidth = width / 4;
-    
-    painter->drawEllipse(QRectF(QuarterWidth + 3*bubbleRadius, -bubbleRadius, bubbleRadius * 2, bubbleRadius * 2));
-}
-
-//===================== SourceButton ========================
-
-SourceButton::SourceButton(QWidget* parent) : QPushButton(parent)
-{
-    setText("");  
-    setCheckable(false); 
-
-    connect(this, &QPushButton::clicked, this, &SourceButton::onButtonClicked);
-}
-
-void SourceButton::paintEvent(QPaintEvent* event)
-{
-    // Draw button background first
-    QPushButton::paintEvent(event);
-
-    // Draw source symbol on top
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    // Center the drawing area
-    QRect drawRect = rect().adjusted(8, 8, -8, -8);
-    painter.translate(drawRect.center());
-
-    // Scale to fit button
-    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
+    const double scale = std::min(size.width() / design.width(), size.height() / design.height());
     painter.scale(scale, scale);
-
-    const CanvasTheme& theme = canvasTheme();
-    painter.setPen(QPen(theme.source, 2));
-    painter.setBrush(theme.fillFor(theme.source));
-    QRectF sourceRect(-12, -10, 24, 20);
-    painter.drawRoundedRect(sourceRect, 3, 3);
-
-    // "1": it is a logic source
-    painter.setPen(theme.componentText);
-    QFont font = painter.font();
-    font.setBold(true);
-    font.setPointSize(12);
-    painter.setFont(font);
-    painter.drawText(sourceRect, Qt::AlignCenter, "1");
 }
 
-
-//===================== RegisterButton ========================
-
-RegisterButton::RegisterButton(QWidget* parent) : QPushButton(parent) {
-    setText("");   
-    setCheckable(false);  
-
-    connect(this, &QPushButton::clicked, this, &RegisterButton::onButtonClicked);
-}
-
-void RegisterButton::paintEvent(QPaintEvent* event)
+void ToolbarButton::drawLabel(QPainter& painter, const QRectF& rect, const QString& text, int pointSize, bool bold)
 {
-    // Draw button background first
-    QPushButton::paintEvent(event);
-
-    // Draw register symbol on top
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    // Center the drawing area
-    QRect drawRect = rect().adjusted(8, 8, -8, -8);
-    painter.translate(drawRect.center());
-
-    // Scale to fit button
-    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 30.0);
-    painter.scale(scale, scale);
-
-    const CanvasTheme& theme = canvasTheme();
-    painter.setPen(QPen(theme.reg, 2));
-    painter.setBrush(theme.fillFor(theme.reg));
-    QRectF registerRect(-10, -14, 20, 28);   // taller than wide
-    painter.drawRoundedRect(registerRect, 3, 3);
-
-    // "R" for register
-    painter.setPen(theme.componentText);
-    QFont font = painter.font();
-    font.setBold(true);
-    font.setPointSize(12);
-    painter.setFont(font);
-    painter.drawText(registerRect, Qt::AlignCenter, "R");
-    
-    // Optional: Draw a small clock symbol (triangle) at bottom
-    painter.setPen(QPen(theme.reg, 1.5));
-    painter.setBrush(theme.reg);
-    QPainterPath clockTriangle;
-    clockTriangle.moveTo(-3, 10);   // Left point
-    clockTriangle.lineTo(3, 10);    // Right point  
-    clockTriangle.lineTo(0, 7);     // Top point
-    clockTriangle.closeSubpath();
-    painter.fillPath(clockTriangle, painter.brush());
-    painter.drawPath(clockTriangle);
-}
-
-//===================== MuxButton ========================
-MuxButton::MuxButton(QWidget* parent) : QPushButton(parent) {
-    setText("");     
-    setCheckable(false);  
-
-    connect(this, &QPushButton::clicked, this, &MuxButton::onButtonClicked);
-}
-
-void MuxButton::paintEvent(QPaintEvent* event)
-{
-    // Draw button background first
-    QPushButton::paintEvent(event);
-
-    // Draw register symbol on top
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    // Center the drawing area
-    QRect drawRect = rect().adjusted(8, 8, -8, -8);
-    painter.translate(drawRect.center());
-    QPainterPath path;
-    double width = drawRect.width();
-    double height = drawRect.height();
-    double halfWidth = width / 2;
-    double halfHeight = height / 2;
-    double qurtHeight = halfHeight / 2;
-    path.moveTo(-halfWidth,-halfHeight);
-    path.lineTo(halfWidth,-qurtHeight);
-    path.lineTo(halfWidth,qurtHeight);
-    path.lineTo(-halfWidth,halfHeight);
-    path.lineTo(-halfWidth,-halfHeight);
-    painter.setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.setBrush(canvasTheme().fillFor(canvasTheme().mux));
-    painter.drawPath(path);
-
-    // Draw "MUX" text on top
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
     painter.setPen(canvasTheme().componentText);
     QFont font = painter.font();
-    font.setBold(false);
-    font.setItalic(false);
-    font.setPointSize(8);  
+    font.setBold(bold);
+    font.setPointSize(pointSize);
     painter.setFont(font);
-
-    // Draw text centered in the gate
-    QRectF textRect(-halfWidth, -halfHeight, width, height);
-    painter.drawText(textRect, Qt::AlignCenter, "MUX");
-}
-//===================== DisplayButton ========================
-
-DisplayButton::DisplayButton(QWidget* parent) : QPushButton(parent) {
-    setText("");  
-    setCheckable(false); 
-
-
-    connect(this, &QPushButton::clicked, this, &DisplayButton::onButtonClicked);
+    painter.drawText(rect, Qt::AlignCenter, text);
 }
 
-void DisplayButton::paintEvent(QPaintEvent* event)
+//===================== The buttons ========================
+
+void GateButton::drawIcon(QPainter& painter, QSizeF size)
 {
-    // Draw button background first
-    QPushButton::paintEvent(event);
-
-    // Draw display symbol on top
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    // Center the drawing area
-    QRect drawRect = rect().adjusted(8, 8, -8, -8);
-    painter.translate(drawRect.center());
-
-    // Scale to fit button
-    double scale = qMin(drawRect.width() / 40.0, drawRect.height() / 60.0);
-    painter.scale(scale, scale);
-
-    // Casing outlined in the display's color and tinted with it, a screen as dark as the canvas, and a sample digit
+    // The canvas shape of the gate, with its name on it
     const CanvasTheme& theme = canvasTheme();
-    QRectF outerRect(-20, -30, 40, 60);
+    const QColor color = theme.gateColor(m_gateType);
+    painter.setPen(QPen(color, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(theme.fillFor(color));
+    const QRectF body(-size.width() / 2, -size.height() / 2, size.width() * 0.8, size.height());
+    drawGateSymbol(&painter, m_gateType, body);
+    // A NOT gate's name sits further left, in the wide end of the triangle
+    drawLabel(painter, m_gateType == GType::NOT ? body.translated(-body.width() / 6, 0) : body, gateTypeName(m_gateType));
+}
+
+void SourceButton::drawIcon(QPainter& painter, QSizeF size)
+{
+    fit(painter, size, {40, 30});
+    const CanvasTheme& theme = canvasTheme();
+    const QRectF body(-12, -10, 24, 20);
+    painter.setPen(QPen(theme.source, 2));
+    painter.setBrush(theme.fillFor(theme.source));
+    painter.drawRoundedRect(body, 3, 3);
+    drawLabel(painter, body, QStringLiteral("1"), 12, true);   // a logic source
+}
+
+void RegisterButton::drawIcon(QPainter& painter, QSizeF size)
+{
+    fit(painter, size, {40, 30});
+    const CanvasTheme& theme = canvasTheme();
+    const QRectF body(-10, -14, 20, 28);
+    painter.setPen(QPen(theme.reg, 2));
+    painter.setBrush(theme.fillFor(theme.reg));
+    painter.drawRoundedRect(body, 3, 3);
+    drawLabel(painter, body, QStringLiteral("R"), 12, true);
+
+    // The clock input's triangle at the bottom
+    QPainterPath clock;
+    clock.moveTo(-3, 10);
+    clock.lineTo(3, 10);
+    clock.lineTo(0, 7);
+    clock.closeSubpath();
+    painter.setPen(QPen(theme.reg, 1.5));
+    painter.setBrush(theme.reg);
+    painter.drawPath(clock);
+}
+
+void MuxButton::drawIcon(QPainter& painter, QSizeF size)
+{
+    // A trapezoid, narrower on the output side
+    const double halfWidth = size.width() / 2, halfHeight = size.height() / 2;
+    QPainterPath body;
+    body.moveTo(-halfWidth, -halfHeight);
+    body.lineTo(halfWidth, -halfHeight / 2);
+    body.lineTo(halfWidth, halfHeight / 2);
+    body.lineTo(-halfWidth, halfHeight);
+    body.closeSubpath();
+    painter.setPen(QPen(canvasTheme().mux, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(canvasTheme().fillFor(canvasTheme().mux));
+    painter.drawPath(body);
+    drawLabel(painter, QRectF(-halfWidth, -halfHeight, size.width(), size.height()), QStringLiteral("MUX"));
+}
+
+void DisplayButton::drawIcon(QPainter& painter, QSizeF size)
+{
+    // Casing outlined in the display's color, a screen as dark as the canvas, and a sample digit
+    fit(painter, size, {40, 60});
+    const CanvasTheme& theme = canvasTheme();
+    const QRectF casing(-20, -30, 40, 60);
     painter.setPen(QPen(theme.display, 2));
     painter.setBrush(theme.fillFor(theme.display));
-    painter.drawRoundedRect(outerRect, 4, 4);
+    painter.drawRoundedRect(casing, 4, 4);
 
-    QRectF displayArea = outerRect.adjusted(5, 5, -5, -5);
+    const QRectF screen = casing.adjusted(5, 5, -5, -5);
     painter.setPen(Qt::NoPen);
     painter.setBrush(theme.background);
-    painter.drawRoundedRect(displayArea, 2, 2);
+    painter.drawRoundedRect(screen, 2, 2);
 
     painter.setPen(QPen(theme.display, 2));
     QFont font = painter.font();
     font.setBold(true);
-    font.setFamily("Courier");
+    font.setFamily(QStringLiteral("Courier"));
     font.setPointSize(16);
     painter.setFont(font);
-    painter.drawText(displayArea, Qt::AlignCenter, "8");
+    painter.drawText(screen, Qt::AlignCenter, QStringLiteral("8"));
 }

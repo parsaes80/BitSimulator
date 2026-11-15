@@ -1,16 +1,16 @@
 #include "simulator.h"
-#include "general.h"
-#include <QThread>
 #include <QDebug>
 #include <QTimer>
-#include <QEventLoop>
 #include <chrono>
 
-Simulator::Simulator(QObject *parent) : QObject(parent) {
-    m_nets.reserve(1000);
-    m_gates.reserve(500);
-    m_registers.reserve(100);
-    m_sources.reserve(100);
+namespace {
+// The next value of an SR or JK register, edge-triggered or not: S (J) sets, R (K) resets, both
+// together hold an SR register and toggle a JK register, neither holds.
+bool setOrReset(RType type, bool stored, bool set, bool reset)
+{
+    if (set != reset) return set;
+    return (set && type == RType::JK) ? !stored : stored;
+}
 }
 
 void Simulator::clearCircuit() {
@@ -123,152 +123,56 @@ void Simulator::processMuxes(u32 changedNetId) {
     }
 }
 
-void Simulator::processRegisters() {
+void Simulator::processRegisters(bool firstTick) {
     for (auto& reg : m_registers) {
+        // Net 0 is "not connected" and always reads 0
+        const bool hasClock = reg.clkID != 0;
+        const bool hasEnable = reg.enableID != 0;
+        const bool clock = m_nets[reg.clkID];
+        const bool enable = m_nets[reg.enableID];
+        const bool input1 = m_nets[reg.inID];     // D, T, S or J
+        const bool input2 = m_nets[reg.InID2];    // the reset of D and T, R or K
 
-        bool currentClock = m_nets[reg.clkID];
-        bool currentEnable = m_nets[reg.enableID];
+        const bool hasReset = reg.regType == RType::D || reg.regType == RType::T;   // their second input
 
-        // Determine behavior based on connections
-        bool hasClockConnection = (reg.clkID != 0);  // 0 means not connected
-        bool hasEnableConnection = (reg.enableID != 0);
-
-        // Read input values (net 0 = disconnected = false)
-        bool input1 = m_nets[reg.inID];      // D, T, S, or J input
-        bool input2 = m_nets[reg.InID2];     // R or K input (for SR/JK)
-
-        if (hasClockConnection) {
-            // FLIP-FLOP BEHAVIOR (edge-triggered)
-            bool risingEdge = !reg.prevClkState && currentClock;
-
-            if (risingEdge) {
-                // Check enable if connected, otherwise always enabled
-                bool enabled = !hasEnableConnection || currentEnable;
-
-                if (enabled) {
-                    // Execute flip-flop logic based on type
-                    switch (reg.regType) {
-                        case RType::D:
-                            // D Flip-Flop: Q = D
-                            reg.storedValue = input1;
-                            if(input2){
-                                reg.storedValue = false;
-                            }
-                            break;
-
-                        case RType::T:
-                            // T Flip-Flop: Q = T ? !Q : Q (toggle if T=1, hold if T=0)
-                            if (input1) {
-                                reg.storedValue = !reg.storedValue;
-                            }
-                            if(input2){
-                                reg.storedValue = false;
-                            }
-                            break;
-
-                        case RType::SR:
-                            // SR Flip-Flop: S=input1, R=input2
-                            // S=0, R=0: Hold
-                            // S=1, R=0: Set (Q=1)
-                            // S=0, R=1: Reset (Q=0)
-                            // S=1, R=1: Invalid (treat as hold to avoid undefined behavior)
-                            if (input1 && !input2) {
-                                reg.storedValue = true;   // Set
-                            } else if (!input1 && input2) {
-                                reg.storedValue = false;  // Reset
-                            }
-                            // else: Hold (both 0 or both 1)
-                            break;
-
-                        case RType::JK:
-                            // JK Flip-Flop: J=input1, K=input2
-                            // J=0, K=0: Hold
-                            // J=1, K=0: Set (Q=1)
-                            // J=0, K=1: Reset (Q=0)
-                            // J=1, K=1: Toggle
-                            if (input1 && !input2) {
-                                reg.storedValue = true;   // Set
-                            } else if (!input1 && input2) {
-                                reg.storedValue = false;  // Reset
-                            } else if (input1 && input2) {
-                                reg.storedValue = !reg.storedValue;  // Toggle
-                            }
-                            // else: Hold (both 0)
-                            break;
-                    }
-                }
+        if (hasClock) {
+            // Flip-flop: changes on the rising clock edge, when enabled (always, without an enable pin).
+            // An asynchronous reset acts at once, whatever the clock and enable do.
+            const bool risingEdge = !firstTick && !reg.prevClkState && clock;
+            reg.prevClkState = clock;
+            if (hasReset && reg.asyncReset && input2) {
+                reg.storedValue = reg.resetValue;
+                continue;
             }
-            reg.prevClkState = currentClock;
-        }
-        else if (hasEnableConnection && currentEnable) {
-            // LATCH BEHAVIOR (level-triggered when clock not connected)
+            if (!risingEdge || (hasEnable && !enable)) continue;
             switch (reg.regType) {
-                case RType::D:
-                case RType::T:
-                    // D/T Latch: transparent when enabled
-                    reg.storedValue = input1;
-                    break;
-
-                case RType::SR:
-                    // SR Latch
-                    if (input1 && !input2) {
-                        reg.storedValue = true;   // Set
-                    } else if (!input1 && input2) {
-                        reg.storedValue = false;  // Reset
-                    }
-                    break;
-
-                case RType::JK:
-                    // JK Latch (similar to SR, but J=K=1 toggles)
-                    if (input1 && !input2) {
-                        reg.storedValue = true;
-                    } else if (!input1 && input2) {
-                        reg.storedValue = false;
-                    } else if (input1 && input2) {
-                        reg.storedValue = !reg.storedValue;
-                    }
-                    break;
+            case RType::D: reg.storedValue = input2 ? reg.resetValue : input1; break;
+            case RType::T: reg.storedValue = input2 ? reg.resetValue : (input1 != reg.storedValue); break;   // T = 1 toggles
+            case RType::SR:
+            case RType::JK: reg.storedValue = setOrReset(reg.regType, reg.storedValue, input1, input2); break;
             }
-        }
-        else if (!hasEnableConnection) {
-            // No clock, no enable: transparent latch (always follows input).
-            // A latch whose enable pin is wired but low reaches none of these branches and holds its value.
+        } else if (!hasEnable || enable) {
+            // Latch: follows its inputs while enabled (always, without an enable pin); a latch whose
+            // enable pin is wired but low holds its value
             switch (reg.regType) {
-                case RType::D:
-                case RType::T:
-                    reg.storedValue = input1;
-                    break;
-
-                case RType::SR:
-                    if (input1 && !input2) {
-                        reg.storedValue = true;
-                    } else if (!input1 && input2) {
-                        reg.storedValue = false;
-                    }
-                    break;
-
-                case RType::JK:
-                    if (input1 && !input2) {
-                        reg.storedValue = true;
-                    } else if (!input1 && input2) {
-                        reg.storedValue = false;
-                    } else if (input1 && input2) {
-                        reg.storedValue = !reg.storedValue;
-                    }
-                    break;
+            case RType::D:
+            case RType::T: reg.storedValue = input1; break;
+            case RType::SR:
+            case RType::JK: reg.storedValue = setOrReset(reg.regType, reg.storedValue, input1, input2); break;
             }
         }
     }
 }
 
 void Simulator::tick() {
-    if (firstTick) {
+    const bool firstTick = m_firstTick;
+    if (m_firstTick) {
         // Every net once, including net 0 ("not connected"): a gate with only unwired inputs
         // hangs off net 0 alone and would otherwise never be evaluated (a NOT of nothing is 1).
         for (size_t i = 0; i < m_nets.size(); i++) {
             enqueue(i);
         }
-    firstTick = false;
+        m_firstTick = false;
     }
 
     for (auto& reg : m_registers) {
@@ -313,7 +217,7 @@ void Simulator::tick() {
     // Drop processed entries; anything left after hitting maxSteps carries over to the next tick
     m_eventQueue.erase(m_eventQueue.begin(), m_eventQueue.begin() + head);
 
-    processRegisters();
+    processRegisters(firstTick);
 
     SimResult result;
     result.runId = m_runId;
@@ -334,7 +238,7 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_registers = graph.registers;
     m_muxes = graph.muxes;
 
-    firstTick = true;
+    m_firstTick = true;
     m_tick = 0;
     m_runId = graph.runId;
     const size_t numNets = graph.numNets;   // sent with the circuit; the GUI's wire map is not ours to read

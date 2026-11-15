@@ -19,8 +19,6 @@
 #include "MainWindow.h"
 #include "PropertiesPanel.h"
 
-extern GlobalMap map;
-
 namespace TestSupport {
 
 // Finds a child widget by object name; aborts the test program with a clear message if it is missing.
@@ -97,13 +95,13 @@ inline void choose(QComboBox* combo, const QString& text)
 inline bool hdlToolsAvailable()
 {
 #ifdef Q_OS_WIN
-    return QFile::exists(QStringLiteral("script.bat")) && QFile::exists(QStringLiteral("dot.exe"));
+    return QFile::exists(QStringLiteral("script.bat")) && QFile::exists(QStringLiteral("dot.exe")) && QFile::exists(QStringLiteral("sv2v.exe"));
 #else
-    return QFile::exists(QStringLiteral("yosys_bundle/bin/yosys")) && QFile::exists(QStringLiteral("dot"));
+    return QFile::exists(QStringLiteral("yosys_bundle/bin/yosys")) && QFile::exists(QStringLiteral("dot")) && QFile::exists(QStringLiteral("sv2v"));
 #endif
 }
 #define REQUIRE_HDL_TOOLS() \
-    do { if (!TestSupport::hdlToolsAvailable()) QSKIP("yosys and/or Graphviz dot were not found in the working directory"); } while (false)
+    do { if (!TestSupport::hdlToolsAvailable()) QSKIP("yosys, Graphviz dot or sv2v was not found in the working directory"); } while (false)
 
 // The whole application window with shortcuts to the parts the tests poke at.
 struct App {

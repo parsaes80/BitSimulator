@@ -6,7 +6,7 @@
 class Simulator : public QObject {
     Q_OBJECT
 public:
-    explicit Simulator(QObject *parent = nullptr);
+    explicit Simulator(QObject* parent = nullptr) : QObject(parent) {}
 
     // All of these run in the simulator's thread. The GUI reaches them through queued connections,
     // so they execute in the order the GUI asked for them and no state is shared between threads.
@@ -24,7 +24,7 @@ private:
     void clearCircuit();
     void processGates(u32 changedNetId);
     void processMuxes(u32 changedNetId);
-    void processRegisters();
+    void processRegisters(bool firstTick);   // firstTick: only note the clock levels, there is no edge yet
 
     // Worklist + per-net "already queued" flag replaces std::set: O(1) dedup, no per-event allocation
     inline void enqueue(u32 netId) {
@@ -42,9 +42,7 @@ private:
     std::vector<Source> m_sources;
     std::vector<Mux> m_muxes;
 
-    std::vector<u32> m_sourceOutputs;
-
-    bool firstTick = true;
+    bool m_firstTick = true;
     u64 m_tick = 0;                 // ticks done in this run; sources compute their value from it
     bool m_running = false;
     u32 m_runId = 0;

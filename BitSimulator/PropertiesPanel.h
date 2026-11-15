@@ -78,6 +78,7 @@ private:
     QWidget* buildMuxPage();
     QWidget* buildSourcePage();
     QWidget* buildDisplayPage();
+    QWidget* buildBlockPage();
 
     void loadGate(const GateProps& props);
     void loadRegister(const RegisterProps& props);
@@ -86,6 +87,7 @@ private:
     void setWavePinCount(int count);        // one pattern row per source pin
     void selectWavePin(int pin);            // the pin whose pattern the click editor shows
     void loadDisplay(const DisplayProps& props);
+    void loadBlock(const BlockProps& props);
 
     CircuitScene* m_scene;
     QPointer<ComponentItem> m_item;         // the selected component, or null when editing tool defaults
@@ -112,6 +114,10 @@ private:
     QButtonGroup* m_regTrigger = nullptr;
     QCheckBox* m_regEnable = nullptr;
     QLabel* m_regPins = nullptr;
+
+    QLabel* m_blockModule = nullptr;
+    QLabel* m_blockInputs = nullptr;
+    QLabel* m_blockOutputs = nullptr;
 
     QSpinBox* m_muxInputs = nullptr;
     QLabel* m_muxInfo = nullptr;

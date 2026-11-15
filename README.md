@@ -6,7 +6,7 @@ An interactive **digital circuit simulator** and **Verilog synthesiser**.
 
 **Bit Simulator** is designed to simulate any digital circuit, also it also has the ability to compile **Verilog** code in program and import the schematic of the synthesised circuit, meaning its a full **Verilog simulator**. 
 
-This application is using **C++** and the **Qt framework** for the GUI layer. It is also using the **Yosys** open source synthesiser to compile the verilog code. For the layout of the components after the synthesis its using the **Graphviz** library. 
+This application is using **C++** and the **Qt framework** for the GUI layer. It is also using **sv2v** to turn SystemVerilog into plain Verilog and the **Yosys** open source synthesiser to compile it. For the layout of the components after the synthesis its using the **Graphviz** library. 
 
 # Running Bit Simulator
 
@@ -42,7 +42,9 @@ A **source** drives its output pins (one per bit, lowest bit on top) with a new 
 | Waveform | A pattern of 0s and 1s for each pin, each repeating on its own. Type a pattern or click its steps. |
 | Constant | Always the same number. |
 
-Sources can be up to 64 bits wide. The panel shows the first few values, so you can see what a setting does. When Verilog is compiled, a 1-bit input becomes a waveform toggling every tick, and a wider input a counter that holds each value for 2 ticks.
+Sources can be up to 64 bits wide. The panel shows the first few values, so you can see what a setting does. When Verilog is compiled, each input of the top module becomes a source and each output a display, with the port's name from the code at its top (they are made wide enough for it; components placed by hand have no name). A 1-bit input becomes a waveform toggling every tick, and a wider input a counter that holds each value for 2 ticks. A 1-bit input named like a reset (`rst`, `reset`, `rst_n`, `resetn`, `sys_reset`, ...) is a constant 0 instead: toggling with the clock, it would reset the circuit on every clock edge. To reset the circuit at the start, select that source and set it, for example, to a waveform that is 1 for the first two steps and 0 after that.
+
+Flip-flops and latches are simulated as the Verilog describes them: on the rising or falling clock edge, with an enable, and with a synchronous or asynchronous reset (an asynchronous one, as in `always @(posedge clk or posedge rst)`, acts at once without waiting for the clock) to any value, including active-low resets and enables and `initial` power-up values. A flip-flop with both an asynchronous set and an asynchronous reset is not supported; compiling one gives an error.
 
 Running the simulation:
 
@@ -53,8 +55,21 @@ Running the simulation:
 - **Clear** stops the simulation and empties the Schematic Editor.
 
 ![Image](https://github.com/user-attachments/assets/598f7088-9dfa-43cf-8e53-41b766eee1a3)
-You can also write **Verilog** code in the **HDL Editor** tab of the program. After that pressing the compile button will turn you Verilog code into a fully sythesized circuit, and you can simulate it. Compiling stops a running simulation. If the code compiles, the new circuit replaces the one in the Schematic Editor; if it has an error, the error is shown and the current circuit is kept. **THE MODULE MUST ALWAYS BE NAMED "top".**
+You can also write **Verilog** code in the **HDL Editor** tab of the program. After that pressing the compile button will turn you Verilog code into a fully sythesized circuit, and you can simulate it. Compiling stops a running simulation. If the code compiles, the new circuit replaces the one in the Schematic Editor; if it has an error, the error is shown and the current circuit is kept. The top module can have any name: it is found automatically (the module no other module uses). Modules it uses that are written in the same text become blocks (see below).
+
+To compile a whole project instead, open the **Compile Dir** tab and press **Select path...** (or type a folder and press Enter). Every Verilog (`.v`) and SystemVerilog (`.sv`) file in the folder and its subfolders is listed with a checkbox; uncheck the files to leave out, such as testbenches. **Compile directory** compiles the checked files. As in the editor, the top module is found automatically, and submodules in other files become blocks. `` `include `` files are found next to the file that includes them or anywhere in the project folder.
 ![Image](https://github.com/user-attachments/assets/56b2722c-8d40-4972-800e-267351b7e81e)
+
+## Submodules: blocks
+
+Every submodule instance in the design is drawn as one **block**: a box with the instance and module name, e.g. `alu (ALU)`, its input ports on the left and output ports on the right. Selecting a block shows its module and ports in the Properties panel.
+
+- **Double-click** a block to open it: the canvas shows the inside of that module, its ports as tags at the edges. Blocks inside it open the same way.
+- The path at the top left shows where you are, e.g. `RISCV_FPGA › core (RISCV) › alu (ALU)`. Click an entry to go back to it, or press **Esc** to go back one level. Compiling again or pressing Clear goes back to the top.
+- The whole design is simulated, blocks included. While the simulation runs or is paused, the inside of a block shows its live values.
+- Only the top level can be edited. Inside a block you can pan, zoom and watch, but not place, wire, move or delete anything; change the Verilog and compile again instead.
+
+Each module is laid out by Graphviz dot. A module with fewer than 2,000 cells (gates, multiplexers, flip-flops and blocks) gets dot's full layout. A bigger one gets a fast dot: dot stops its two slowest steps early, so the layout is a little less tidy but done in seconds instead of minutes. A full layout can still take a while: the 1,215-cell core of a RISC-V CPU takes about a minute. All modules are laid out at the same time, each by its own dot, so a design takes as long as its slowest module. If dot takes longer than 2 minutes, the next faster layout is used: full dot, then fast dot, then placing the module in columns by logic level. The limits are `FastDotCells` and `DotTimeoutMs` in `BitSimulator/hdlcompiler.h`.
 
 Here is the a sample verolog code you can try, it creates a circuit that mutiplies two numbers: 
 ```
@@ -128,7 +143,7 @@ In Qt Creator you can also switch `BITSIM_BUILD_TESTS` on under Projects > Build
 | `tst_scene` | Components and their pins, the editing rules, and how the drawing is turned into what the simulator runs |
 | `tst_panel` | The Properties panel, with simulated clicks and typing |
 | `tst_lifecycle` | Start, Pause, Clear and Compile with the simulator running in its own thread |
-| `tst_hdlcompiler` | Compiling Verilog (needs yosys and Graphviz; skipped if they are missing) |
+| `tst_hdlcompiler` | Compiling Verilog, and blocks: simulating through them and opening them (needs yosys, sv2v and Graphviz; skipped if they are missing) |
 
 # Third Party Software
 
@@ -138,6 +153,9 @@ This project includes binaries from:
 - Yosys – Licensed under the ISC License.
   Copyright (C) 2012-2025 Claire Xenia Wolf.
   License in ./Licenses/Yosys-ISC.txt
+
+- sv2v – Licensed under the BSD 3-Clause License. Converts SystemVerilog (packages, imports, enums, ...) to the Verilog yosys reads.
+  Binaries in third_party/sv2v. License in ./Licenses/sv2v-BSD-3.txt
 
 - Graphviz – Licensed under the Eclipse Public License 2.0. Built from source (third_party/graphviz);
   BitSimulator's change to it is third_party/graphviz-support/ns-compact-arrays.patch.

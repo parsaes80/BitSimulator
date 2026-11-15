@@ -4,6 +4,11 @@
 // The tests that press Compile need yosys and Graphviz dot; they are skipped if those are missing.
 
 #include "TestSupport.h"
+#include <QDir>
+#include <QFileInfo>
+#include <QTabWidget>
+#include <QListWidget>
+#include <QTemporaryDir>
 #include <QMessageBox>
 #include <QRandomGenerator>
 #include <QStatusBar>
@@ -224,7 +229,7 @@ private slots:
         QCOMPARE(circuit.step(), 0);
         for (PortItem* port : itemsOfType<PortItem>(app.scene)) QVERIFY(!port->getValue());
         QCOMPARE(circuit.out->getValue(), 0);
-        QVERIFY(map.net2wire.empty());
+        QVERIFY(app.scene->wireMap().net2wire.empty());
 
         QTest::qWait(250);                                               // results still on their way are ignored
         for (PortItem* port : itemsOfType<PortItem>(app.scene)) QVERIFY(!port->getValue());
@@ -265,7 +270,7 @@ private slots:
         QVERIFY(app.pages->isEnabled());
 
         QTest::qWait(400);                                               // late results from the cleared run
-        QVERIFY(app.scene->items().isEmpty() && map.net2wire.empty());
+        QVERIFY(app.scene->items().isEmpty() && app.scene->wireMap().net2wire.empty());
 
         // The window is fully usable afterwards
         ClockCircuit again(app);
@@ -359,6 +364,81 @@ private slots:
         QTRY_VERIFY(std::ranges::any_of(itemsOfType<PortItem>(app.scene), [](PortItem* port) { return port->getValue(); }));
     }
 
+    void compileDirListsChecksAndCompilesAFolder()
+    {
+        REQUIRE_HDL_TOOLS();
+        // chip (the top) uses and2 from a subfolder; tb is a testbench that would otherwise be the top
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto write = [&dir](const QString& name, const QString& text) {
+            QDir().mkpath(QFileInfo(dir.filePath(name)).absolutePath());
+            QFile file(dir.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+            file.write(text.toUtf8());
+        };
+        write("cells/and2.v", "module and2(input wire a, b, output wire y);\n  assign y = a & b;\nendmodule\n");
+        write("chip.sv", "module chip(input logic p, q, output logic z);\n  and2 g(.a(p), .b(q), .y(z));\nendmodule\n");
+        write("tb/tb.v", "module tb;\n  reg p, q; wire z;\n  chip dut(.p(p), .q(q), .z(z));\n  initial $display(\"hi\");\nendmodule\n");
+        write("cells/defs.vh", "`define UNUSED 1\n");
+        write("notes.txt", "not Verilog\n");
+
+        App app;
+        auto* tabs = child<QTabWidget>(&app.window, "tabWidget");
+        auto* tab = child<QWidget>(&app.window, "CompileDirTab");
+        QCOMPARE(tabs->tabText(tabs->indexOf(tab)), QStringLiteral("Compile Dir"));
+        auto* path = child<QLineEdit>(&app.window, "compileDirPath");
+        auto* files = child<QListWidget>(&app.window, "compileFilesDisplayer");
+        auto* count = child<QLabel>(&app.window, "compileDirCount");
+        auto* compileDir = child<QPushButton>(&app.window, "compileDirButton");
+        QVERIFY(!compileDir->isEnabled());                              // nothing chosen yet
+
+        path->setText(dir.path());
+        emit path->editingFinished();                                    // like pressing Enter
+        QStringList listed;
+        for (int row = 0; row < files->count(); row++) {
+            listed << files->item(row)->text();
+            QCOMPARE(files->item(row)->checkState(), Qt::Checked);
+        }
+        QCOMPARE(listed, (QStringList{QDir::toNativeSeparators("cells/and2.v"), "chip.sv", QDir::toNativeSeparators("tb/tb.v")}));
+        QCOMPARE(count->text(), QStringLiteral("3 of 3 files selected"));
+        QVERIFY(compileDir->isEnabled());
+
+        files->item(2)->setCheckState(Qt::Unchecked);                    // leave the testbench out
+        QCOMPARE(count->text(), QStringLiteral("2 of 3 files selected"));
+
+        // A running simulation is stopped, both compile buttons wait, and the result is shown on the canvas
+        ClockCircuit circuit(app);
+        app.start->click();
+        tabs->setCurrentWidget(tab);
+        compileDir->click();
+        QCOMPARE(app.scene->simState(), SimState::Stopped);
+        QVERIFY(!compileDir->isEnabled() && !app.compile->isEnabled());
+        QVERIFY(waitForCompile(app));
+        QCoreApplication::processEvents();
+        QVERIFY2(app.window.statusBar()->currentMessage().contains(QStringLiteral("Compiled")), qPrintable(app.window.statusBar()->currentMessage()));
+        // and2, from another file, is a block in chip; its AND gate is inside it
+        QCOMPARE(itemsOfType<GateItem>(app.scene).size(), 0);
+        const QList<BlockItem*> blocks = itemsOfType<BlockItem>(app.scene);
+        QCOMPARE(blocks.size(), 1);
+        QCOMPARE(blocks.first()->blockProps().module, QStringLiteral("and2"));
+        app.canvas->openBlock(blocks.first());
+        QCOMPARE(itemsOfType<GateItem>(app.canvas->currentScene()).size(), 1);
+        QCOMPARE(itemsOfType<GateItem>(app.canvas->currentScene()).first()->getGateType(), GType::AND);
+        QVERIFY(!child<QFrame>(&app.window, "propertiesFrame")->isVisible());   // nothing to edit inside a block
+        app.canvas->showLevel(0);
+        QVERIFY(child<QFrame>(&app.window, "propertiesFrame")->isVisible());
+        QCOMPARE(tabs->currentWidget(), app.window.findChild<QWidget*>(QStringLiteral("CircuitTab")));
+        QVERIFY(compileDir->isEnabled());
+
+        // Unchecking everything, or a folder that does not exist, leaves nothing to compile
+        for (int row = 0; row < files->count(); row++) files->item(row)->setCheckState(Qt::Unchecked);
+        QVERIFY(!compileDir->isEnabled());
+        path->setText(dir.filePath("missing"));
+        emit path->editingFinished();
+        QCOMPARE(files->count(), 0);
+        QCOMPARE(count->text(), QStringLiteral("This folder does not exist."));
+    }
+
     void aFailedCompileKeepsTheCircuitAndShowsTheError()
     {
         REQUIRE_HDL_TOOLS();
@@ -379,7 +459,7 @@ private slots:
 
         auto* box = app.window.findChild<QMessageBox*>(QStringLiteral("compileErrorBox"));
         QVERIFY(box && box->isVisible());
-        QVERIFY2(box->informativeText().contains(QStringLiteral("ERROR")), qPrintable(box->informativeText()));
+        QVERIFY2(box->informativeText().contains(QStringLiteral("Parse error")), qPrintable(box->informativeText()));
         box->close();
 
         app.start->click();                                              // the kept circuit still works

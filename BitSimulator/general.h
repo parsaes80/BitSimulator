@@ -1,20 +1,21 @@
 #pragma once
+// What the simulator and the GUI share: number types and enums, a source's properties, and the
+// netlist the simulator runs (ExportGraph) with what it reports back (SimResult).
+// Plain data only: nothing here knows about the canvas or the window.
 
+#include <QList>
+#include <algorithm>
+#include <bit>
 #include <cstdint>
+#include <utility>
 #include <vector>
-#include <unordered_map>
 
-class WireItem;
-class GateItem;
-class SourceItem;
-class RegisterItem;
-
-using u8 = uint8_t;
+using u8  = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;
 using u64 = uint64_t;
 
-using s8 = int8_t;
+using s8  = int8_t;
 using s16 = int16_t;
 using s32 = int32_t;
 using s64 = int64_t;
@@ -26,8 +27,178 @@ enum class PortType : u8 {IN,OUT};
 enum class MType : u8 {MUX,DEMUX};
 enum class IOType : u8 {IN,OUT};
 
-// After the types and enums above, which Items.h uses; before Source below, which holds a SourceProps
-#include "Items.h"
+//===================== 1. Source properties ========================
+
+// What a source component drives, tick by tick.
+//
+// A source has `bits` output pins (lowest bit on the top pin) and a mode that decides which
+// number it outputs at each simulation tick. The value is a pure function of the tick number
+// (sourceValueAt), so the simulator and the canvas compute the same thing independently, and a
+// counter or random source needs no stored list however wide it is.
+
+enum class SourceMode : std::uint8_t {
+    Counter,      // start, start+step, start+2*step, ... (or downwards); wraps at the bit width
+    GrayCode,     // a counter in Gray code: one pin changes per step
+    WalkingOne,   // a single 1 moving across the pins: 0001, 0010, 0100, 1000, 0001, ...
+    Random,       // pseudo-random numbers over the full width; the same sequence on every run
+    List,         // a list of numbers, then it repeats
+    Waveforms,    // one 0/1 pattern per pin, each repeating on its own
+    Constant,     // always the same number
+};
+inline constexpr SourceMode allSourceModes[] = {
+    SourceMode::Counter, SourceMode::GrayCode, SourceMode::WalkingOne, SourceMode::Random,
+    SourceMode::List, SourceMode::Waveforms, SourceMode::Constant,
+};
+
+namespace SourceLimits {
+inline constexpr int maxBits = 64;
+inline constexpr int maxSteps = 65536;              // entries in a list, or steps in one pin's waveform
+inline constexpr int maxTicksPerStep = 1000000;
+}
+
+struct SourceProps {
+    SourceMode mode = SourceMode::Counter;
+    int bits = 3;                                   // output pins
+    int ticksPerStep = 1;                           // a new value every this many ticks (not for Constant)
+
+    // The settings of every mode are kept, so switching modes and back does not lose them
+    bool countDown = false;                         // Counter, Gray code; Walking one: from the top pin down
+    std::uint64_t start = 0;                        // Counter, Gray code
+    std::uint64_t step = 1;                         // Counter
+    std::uint32_t seed = 1;                         // Random
+    QList<std::uint64_t> values{2, 5};              // List
+    QList<QList<bool>> waves{{false, true}};        // Waveforms: one pattern per pin, lowest pin first
+    std::uint64_t constant = 0;                     // Constant
+
+    // Shorthands, mostly for tests and the HDL compiler
+    static SourceProps waveform(const QList<bool>& pattern)
+    {
+        SourceProps p;
+        p.mode = SourceMode::Waveforms;
+        p.bits = 1;
+        p.waves = {pattern};
+        return p;
+    }
+    static SourceProps list(const QList<std::uint64_t>& numbers, int bits)
+    {
+        SourceProps p;
+        p.mode = SourceMode::List;
+        p.values = numbers;
+        p.bits = bits;
+        return p;
+    }
+    static SourceProps counter(int bits, int ticksPerStep = 1)
+    {
+        SourceProps p;
+        p.mode = SourceMode::Counter;
+        p.bits = bits;
+        p.ticksPerStep = ticksPerStep;
+        return p;
+    }
+    static SourceProps constantOf(std::uint64_t value, int bits)
+    {
+        SourceProps p;
+        p.mode = SourceMode::Constant;
+        p.bits = bits;
+        p.constant = value;
+        return p;
+    }
+
+    bool operator==(const SourceProps&) const = default;
+};
+
+// All ones in the lowest `bits` bits.
+inline std::uint64_t sourceMask(int bits)
+{
+    return bits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << std::max(bits, 0)) - 1;
+}
+
+// Smallest number of pins that can show `value`.
+inline int bitsNeeded(std::uint64_t value)
+{
+    return std::max(1, static_cast<int>(std::bit_width(value)));
+}
+
+inline int bitsNeeded(const QList<std::uint64_t>& values)
+{
+    return values.isEmpty() ? 1 : bitsNeeded(*std::ranges::max_element(values));
+}
+
+// Mixes a 64-bit number into one that looks random (splitmix64). The same input always gives the same output.
+inline std::uint64_t sourceHash(std::uint64_t x)
+{
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+
+// The number the source outputs at `tick` (0 is the first tick of a run). Bit i drives pin i.
+inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
+{
+    const std::uint64_t mask = sourceMask(p.bits);
+    const std::uint64_t n = tick / static_cast<std::uint64_t>(std::max(p.ticksPerStep, 1));   // which step
+
+    switch (p.mode) {
+    case SourceMode::Counter:
+        // Unsigned arithmetic wraps at 2^64; the mask then wraps it at the bit width
+        return (p.countDown ? p.start - n * p.step : p.start + n * p.step) & mask;
+    case SourceMode::GrayCode: {
+        const std::uint64_t count = (p.countDown ? p.start - n : p.start + n) & mask;
+        return (count ^ (count >> 1)) & mask;
+    }
+    case SourceMode::WalkingOne: {
+        const int bits = std::clamp(p.bits, 1, 64);
+        const int pin = static_cast<int>(n % static_cast<std::uint64_t>(bits));
+        return std::uint64_t{1} << (p.countDown ? bits - 1 - pin : pin);
+    }
+    case SourceMode::Random:
+        return sourceHash((std::uint64_t{p.seed} << 32) ^ sourceHash(n)) & mask;
+    case SourceMode::List:
+        if (p.values.isEmpty()) return 0;
+        return p.values[static_cast<qsizetype>(n % static_cast<std::uint64_t>(p.values.size()))] & mask;
+    case SourceMode::Waveforms: {
+        std::uint64_t value = 0;
+        const int pins = std::min<int>(std::min<int>(p.bits, 64), static_cast<int>(p.waves.size()));
+        for (int pin = 0; pin < pins; pin++) {
+            const QList<bool>& wave = p.waves[pin];
+            if (!wave.isEmpty() && wave[static_cast<qsizetype>(n % static_cast<std::uint64_t>(wave.size()))])
+                value |= std::uint64_t{1} << pin;
+        }
+        return value;
+    }
+    case SourceMode::Constant:
+        return p.constant & mask;
+    }
+    return 0;
+}
+
+// Brings the properties into a consistent state: limits, enough pins for a list or constant,
+// one waveform per pin.
+inline SourceProps normalized(SourceProps p)
+{
+    p.ticksPerStep = std::clamp(p.ticksPerStep, 1, SourceLimits::maxTicksPerStep);
+
+    if (p.values.isEmpty()) p.values.append(0);
+    if (p.values.size() > SourceLimits::maxSteps) p.values.resize(SourceLimits::maxSteps);
+
+    int bits = std::clamp(p.bits, 1, SourceLimits::maxBits);
+    if (p.mode == SourceMode::List) bits = std::max(bits, bitsNeeded(p.values));
+    if (p.mode == SourceMode::Constant) bits = std::max(bits, bitsNeeded(p.constant));
+    p.bits = bits;
+
+    // Waveforms: a pattern for every pin; patterns of pins that were removed are kept for when they come back
+    if (p.mode == SourceMode::Waveforms) {
+        while (p.waves.size() < p.bits) p.waves.append(QList<bool>{false});
+        for (QList<bool>& wave : p.waves) {
+            if (wave.isEmpty()) wave.append(false);
+            if (wave.size() > SourceLimits::maxSteps) wave.resize(SourceLimits::maxSteps);
+        }
+    }
+    return p;
+}
+
+//===================== The netlist the simulator runs ========================
 
 struct Register {
 	u32 inID;
@@ -36,13 +207,13 @@ struct Register {
 	u32 clkID;
 	u32 enableID;
 	RType regType;
+	bool asyncReset = false;    // D and T: InID2 resets at once, not on the clock edge
+	bool resetValue = false;    // D and T: what InID2 sets the register to
 	bool storedValue = false;
 	bool prevClkState = false;
 	Register() = default;
-	Register(RType t, u32 inId, u32 outId, u32 clkId, u32 enId)
-        : regType(t), inID(inId), outID(outId), clkID(clkId), enableID(enId) {InID2=0;}
-    Register(RType t, u32 inId,u32 inId2, u32 outId, u32 clkId, u32 enId)
-        : regType(t), inID(inId), InID2(inId2), outID(outId), clkID(clkId), enableID(enId) {}
+    Register(RType t, u32 inId, u32 inId2, u32 outId, u32 clkId, u32 enId, bool asyncReset = false, bool resetValue = false)
+        : inID(inId), InID2(inId2), outID(outId), clkID(clkId), enableID(enId), regType(t), asyncReset(asyncReset), resetValue(resetValue) {}
 };
 
 struct Gate {
@@ -50,7 +221,7 @@ struct Gate {
 	u32 outID;    
 	GType gateType;
 	Gate() = default;
-    Gate(GType t, std::vector<u32> inIds, u32 outId) : gateType(t), inIDs(inIds), outID(outId) {}
+    Gate(GType t, std::vector<u32> inIds, u32 outId) : inIDs(std::move(inIds)), outID(outId), gateType(t) {}
 };
 
 // A source component: at every tick it computes sourceValueAt(props, tick) and drives bit i onto outIDs[i]
@@ -66,8 +237,8 @@ struct Mux{
     std::vector<u32> inAddress;
     u32 outID;
     Mux()= default;
-    Mux(std::vector<u32> InData, std::vector<u32> InAddress,u32 outData):
-        inData(InData), inAddress(InAddress), outID(outData){}
+    Mux(std::vector<u32> data, std::vector<u32> address, u32 out)
+        : inData(std::move(data)), inAddress(std::move(address)), outID(out) {}
 };
 
 struct ExportGraph
@@ -79,14 +250,6 @@ struct ExportGraph
 
     u32 numNets = 0;   // highest net id used by the components above
     u32 runId = 0;     // identifies this run; the simulator copies it into every result
-
-    void clear()
-    {
-        gates.clear();
-        sources.clear();
-        registers.clear();
-        muxes.clear();
-    }
 };
 
 struct SimResult
@@ -97,22 +260,4 @@ struct SimResult
 	std::vector<bool> registerValues;
 };
 
-struct GlobalMap {
-	std::unordered_map <u32, std::vector<WireItem*>> net2wire; // One net can be mapped to multiple WireItems
-	std::unordered_map <WireItem*, u32> wire2net;  // Multiple WireItems can be mapped to the same net
 
-	std::unordered_map <GateItem*, u32> gate2Idx;
-	std::unordered_map <u32, GateItem*> Idx2gate;
-
-	std::unordered_map <RegisterItem*, u32> reg2Idx;
-	std::unordered_map <u32, RegisterItem*> Idx2reg;
-	
-	void clear() {
-		net2wire.clear();
-		wire2net.clear();
-		gate2Idx.clear();
-		Idx2gate.clear();
-		reg2Idx.clear();
-		Idx2reg.clear();
-    }
-};

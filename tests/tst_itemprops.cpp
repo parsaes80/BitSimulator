@@ -257,7 +257,8 @@ private slots:
         QCOMPARE(itemKind<MuxProps>, ItemProps(MuxProps{}).index());
         QCOMPARE(itemKind<SourceProps>, ItemProps(SourceProps{}).index());
         QCOMPARE(itemKind<DisplayProps>, ItemProps(DisplayProps{}).index());
-        QCOMPARE(itemKindCount, std::size_t(5));
+        QCOMPARE(itemKind<BlockProps>, ItemProps(BlockProps{}).index());
+        QCOMPARE(itemKindCount, std::size_t(6));
     }
 };
 
