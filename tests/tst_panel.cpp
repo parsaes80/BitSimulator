@@ -393,6 +393,25 @@ private slots:
         QCOMPARE(source->sourceProps().constant, std::uint64_t(0x155));
     }
 
+    void repeatIsOfferedForListsAndWaveforms()
+    {
+        App app;
+        auto* source = add<SourceItem>(app, SourceProps::waveform({true, true, false}));
+        app.select(source);
+        auto* repeat = app.editor_<QCheckBox>("sourceRepeat");
+        QVERIFY(repeat->isVisible() && repeat->isChecked());
+
+        repeat->click();                                                 // a pulse that stays 0 afterwards
+        QVERIFY(!source->sourceProps().repeat);
+        QVERIFY(labelWith(app.panel, QStringLiteral("Steps: 1, 1, 0, 0, 0, 0, 0, 0")));
+
+        auto* mode = app.editor_<QComboBox>("sourceMode");
+        choose(mode, QStringLiteral("List"));
+        QVERIFY(repeat->isVisible() && !repeat->isChecked());           // kept when switching modes
+        choose(mode, QStringLiteral("Counter"));
+        QVERIFY(!repeat->isVisible());                                   // a counter wraps at its bits instead
+    }
+
     void waveformPerPin()
     {
         App app;

@@ -127,6 +127,7 @@ private:
     QFormLayout* m_sourceForm = nullptr;
     QSpinBox* m_sourceBits = nullptr;
     QSpinBox* m_sourceEvery = nullptr;      // a new value every N ticks
+    QCheckBox* m_sourceRepeat = nullptr;    // List and Waveforms: start again, or hold the last value
     QList<QWidget*> m_sourcePages;          // in SourcePage order; only the current one is shown, so
                                             // the panel is exactly as tall as the settings in view
     QFormLayout* m_sequenceForm = nullptr;  // counter, Gray code and walking one share a page

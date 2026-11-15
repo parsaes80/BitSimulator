@@ -217,6 +217,26 @@ private slots:
         QCOMPARE(sequence(waves, 6), (QList<std::uint64_t>{2, 3, 0, 3, 2, 1}));
     }
 
+    void withoutRepeatTheLastStepStays()
+    {
+        // A reset pulse: 1 for two steps, then 0 for good
+        SourceProps pulse = SourceProps::waveform({true, true, false});
+        pulse.repeat = false;
+        QCOMPARE(sequence(pulse, 6), (QList<std::uint64_t>{1, 1, 0, 0, 0, 0}));
+
+        // Each pin stops on its own last step; a list stops on its last value
+        SourceProps waves = SourceProps::waveform({false, true});
+        waves.bits = 2;
+        waves.waves.append(QList<bool>{true, true, false});
+        waves.repeat = false;
+        QCOMPARE(sequence(waves, 5), (QList<std::uint64_t>{2, 3, 1, 1, 1}));
+        SourceProps list = SourceProps::list({4, 7, 9}, 4);
+        list.repeat = false;
+        list.ticksPerStep = 2;
+        QCOMPARE(sequence(list, 8), (QList<std::uint64_t>{4, 4, 7, 7, 9, 9, 9, 9}));   // each value for 2 ticks
+        QVERIFY(SourceProps{}.repeat);                                   // repeating is the default
+    }
+
     void constantAlwaysOutputsItsValue()
     {
         SourceProps constant;

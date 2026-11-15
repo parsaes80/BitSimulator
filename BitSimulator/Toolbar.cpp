@@ -34,14 +34,16 @@ void ToolbarButton::drawLabel(QPainter& painter, const QRectF& rect, const QStri
 
 //===================== The buttons ========================
 
-void GateButton::drawIcon(QPainter& painter, QSizeF size)
+void GateButton::drawIcon(QPainter& painter, QSizeF)
 {
-    // The canvas shape of the gate, with its name on it
+    // The canvas shape of the gate, with its name on it. It is sized from the whole button, not the
+    // inset area the other pictures use: 70% of its width and 75% of its height, centred.
     const CanvasTheme& theme = canvasTheme();
     const QColor color = theme.gateColor(m_gateType);
     painter.setPen(QPen(color, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(theme.fillFor(color));
-    const QRectF body(-size.width() / 2, -size.height() / 2, size.width() * 0.8, size.height());
+    const double width = rect().width() * 0.7, height = rect().height() * 0.75;
+    const QRectF body(-width / 2, -height / 2, width, height);
     drawGateSymbol(&painter, m_gateType, body);
     // A NOT gate's name sits further left, in the wide end of the triangle
     drawLabel(painter, m_gateType == GType::NOT ? body.translated(-body.width() / 6, 0) : body, gateTypeName(m_gateType));

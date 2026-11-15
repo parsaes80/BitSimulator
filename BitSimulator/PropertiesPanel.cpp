@@ -638,9 +638,9 @@ QString sourceModeInfo(SourceMode mode)
     case SourceMode::Random:
         return PropertiesPanel::tr("A random number over all bits at every step. The same seed gives the same numbers on every run.");
     case SourceMode::List:
-        return PropertiesPanel::tr("One value per step, then the list repeats. Separate values with commas, spaces or new lines; write 0x... for hex and 0b... for binary.");
+        return PropertiesPanel::tr("One value per step, then the list repeats (without Repeat: stays on the last value). Separate values with commas, spaces or new lines; write 0x... for hex and 0b... for binary.");
     case SourceMode::Waveforms:
-        return PropertiesPanel::tr("Each pin repeats its own pattern of 0s and 1s, one step at a time. The patterns can have different lengths.");
+        return PropertiesPanel::tr("Each pin plays its own pattern of 0s and 1s, one step at a time, and starts it again (without Repeat: stays on its last step). The patterns can have different lengths.");
     case SourceMode::Constant:
         return PropertiesPanel::tr("Always outputs this value. Write 0x... for hex and 0b... for binary.");
     }
@@ -684,7 +684,11 @@ QWidget* PropertiesPanel::buildSourcePage()
     m_sourceEvery->setToolTip(tr("A new value every this many simulation ticks"));
     m_sourceForm->addRow(tr("Mode"), m_sourceMode);
     m_sourceForm->addRow(tr("Bits"), m_sourceBits);
+    m_sourceRepeat = new QCheckBox(tr("Repeat"));
+    m_sourceRepeat->setObjectName(QStringLiteral("sourceRepeat"));
+    m_sourceRepeat->setToolTip(tr("Start again after the last step. Off: stay on the last value, e.g. a reset pulse 1, 1, 0."));
     m_sourceForm->addRow(tr("Every"), m_sourceEvery);
+    m_sourceForm->addRow(QString(), m_sourceRepeat);
     layout->addWidget(common);
 
     // Counter, Gray code and walking one
@@ -784,6 +788,9 @@ QWidget* PropertiesPanel::buildSourcePage()
     connect(m_sourceEvery, &QSpinBox::valueChanged, this, [this](int value) {
         m_sourceEvery->setSuffix(value == 1 ? tr(" tick") : tr(" ticks"));
         edit<SourceProps>([value](SourceProps& p) { p.ticksPerStep = value; });
+    });
+    connect(m_sourceRepeat, &QCheckBox::clicked, this, [this](bool checked) {
+        edit<SourceProps>([checked](SourceProps& p) { p.repeat = checked; });
     });
     connect(m_sourceDirection, &QButtonGroup::idClicked, this, [this](int id) {
         edit<SourceProps>([id](SourceProps& p) { p.countDown = (id == 1); });
@@ -889,6 +896,8 @@ void PropertiesPanel::loadSource(const SourceProps& props)
     showValue(m_sourceEvery, props.ticksPerStep);
     m_sourceEvery->setSuffix(props.ticksPerStep == 1 ? tr(" tick") : tr(" ticks"));
     m_sourceForm->setRowVisible(m_sourceEvery, props.mode != SourceMode::Constant);
+    m_sourceRepeat->setChecked(props.repeat);
+    m_sourceForm->setRowVisible(m_sourceRepeat, props.mode == SourceMode::List || props.mode == SourceMode::Waveforms);
 
     for (qsizetype page = 0; page < m_sourcePages.size(); page++) m_sourcePages[page]->setVisible(page == sourcePage(props.mode));
 

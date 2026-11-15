@@ -69,6 +69,7 @@ struct SourceProps {
     QList<std::uint64_t> values{2, 5};              // List
     QList<QList<bool>> waves{{false, true}};        // Waveforms: one pattern per pin, lowest pin first
     std::uint64_t constant = 0;                     // Constant
+    bool repeat = true;                             // List, Waveforms: start again at the end; false: hold the last value
 
     // Shorthands, mostly for tests and the HDL compiler
     static SourceProps waveform(const QList<bool>& pattern)
@@ -134,6 +135,14 @@ inline std::uint64_t sourceHash(std::uint64_t x)
 }
 
 // The number the source outputs at `tick` (0 is the first tick of a run). Bit i drives pin i.
+// The entry of a list or pattern of `size` entries at step n: it starts again at the end, or without
+// repeat stays on the last entry
+inline qsizetype stepIndex(std::uint64_t n, qsizetype size, bool repeat)
+{
+    const auto count = static_cast<std::uint64_t>(size);
+    return static_cast<qsizetype>(repeat ? n % count : std::min(n, count - 1));
+}
+
 inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
 {
     const std::uint64_t mask = sourceMask(p.bits);
@@ -156,14 +165,13 @@ inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
         return sourceHash((std::uint64_t{p.seed} << 32) ^ sourceHash(n)) & mask;
     case SourceMode::List:
         if (p.values.isEmpty()) return 0;
-        return p.values[static_cast<qsizetype>(n % static_cast<std::uint64_t>(p.values.size()))] & mask;
+        return p.values[stepIndex(n, p.values.size(), p.repeat)] & mask;
     case SourceMode::Waveforms: {
         std::uint64_t value = 0;
         const int pins = std::min<int>(std::min<int>(p.bits, 64), static_cast<int>(p.waves.size()));
         for (int pin = 0; pin < pins; pin++) {
             const QList<bool>& wave = p.waves[pin];
-            if (!wave.isEmpty() && wave[static_cast<qsizetype>(n % static_cast<std::uint64_t>(wave.size()))])
-                value |= std::uint64_t{1} << pin;
+            if (!wave.isEmpty() && wave[stepIndex(n, wave.size(), p.repeat)]) value |= std::uint64_t{1} << pin;
         }
         return value;
     }
