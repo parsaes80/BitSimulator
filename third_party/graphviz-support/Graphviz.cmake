@@ -97,6 +97,14 @@ if(WIN32)
         -DFLEX_EXECUTABLE=${GRAPHVIZ_SOURCE_DIR}/${build_utilities}/winflexbison/win_flex.exe)
 endif()
 
+# Graphviz requires a getopt library when the C library has no getopt.h, which is the case with
+# MSVC (glibc and MinGW have one). Only Graphviz's other tools (gvpr, gc, acyclic, ...) use getopt;
+# dot does not, and no source file reads HAVE_GETOPT_H. So answer Graphviz's check up front:
+# that skips the search for a getopt library, which only those tools (never built here) would link.
+if(MSVC)
+    list(APPEND GRAPHVIZ_OPTIONS -DHAVE_GETOPT_H=1)
+endif()
+
 # Profile-guided optimization: GCC only (Clang and MSVC handle profiles differently)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     option(BITSIM_DOT_PGO "Build Graphviz dot with profile-guided optimization (about 10% faster)" ON)
