@@ -293,12 +293,7 @@ bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDi
         "opt_clean\n"
         "write_json code_netlist.json\n"_s;
     if (!writeTextFile(u"compile.ys"_s, script)) return false;
-#ifdef Q_OS_WIN
-    // script.bat sets up the OSS CAD Suite, then runs "yosys -s compile.ys"
-    if (!runTool(u"Yosys"_s, yosysScript, {}, 100000)) return false;
-#else
     if (!runTool(u"Yosys"_s, yosysPath, {u"-s"_s, u"compile.ys"_s}, 100000)) return false;
-#endif
 
     // 3. Read yosys's netlist, every module of it
     QFile netlist(u"code_netlist.json"_s);

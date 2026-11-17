@@ -10,11 +10,10 @@ set(APP_DIR ${CMAKE_BINARY_DIR}/BitSimulator)
 set(THIRD_PARTY_DIR ${CMAKE_SOURCE_DIR}/third_party)
 
 if(WIN32)
-    # Windows: yosys from the bundled OSS CAD Suite (launched via script.bat), and sv2v
+    # Windows: yosys from the bundled OSS CAD Suite (yosys.exe and its DLLs in oss-cad-suite/bin), and sv2v
     add_custom_target(copy_yosys_bundle ALL
-        COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/oss-cad-suite ${APP_DIR}/dot
+        COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/oss-cad-suite ${APP_DIR}/dot ${APP_DIR}/script.bat
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${THIRD_PARTY_DIR}/oss-cad-suite ${APP_DIR}/oss-cad-suite
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/script.bat ${APP_DIR}/script.bat
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${THIRD_PARTY_DIR}/sv2v/windows/sv2v.exe ${APP_DIR}/sv2v.exe
     )
 else()

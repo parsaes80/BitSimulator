@@ -12,6 +12,23 @@ class QProcess;
 #include <optional>
 #include <variant>
 #include "Items.h"   // BlockProps and componentSize, for blocks and for dot's node sizes
+#include <QOperatingSystemVersion>
+
+// The external tools, relative to the app's folder (the build copies them there from third_party/)
+struct ToolPaths {
+    QString yosys;   // yosys for Windows: the OSS CAD Suite; for Linux: yosys_bundle
+    QString sv2v;    // third_party/sv2v
+    QString dot;     // Graphviz, built from third_party/graphviz
+};
+// Windows paths
+inline const ToolPaths WindowsToolPaths{".\\oss-cad-suite\\bin\\yosys.exe", ".\\sv2v.exe", ".\\dot.exe"};
+// Linux paths
+inline const ToolPaths LinuxToolPaths{"./yosys_bundle/bin/yosys", "./sv2v", "./dot"};
+// The paths for the system the app is running on
+inline const ToolPaths& toolPaths()
+{
+    return QOperatingSystemVersion::currentType() == QOperatingSystemVersion::Windows ? WindowsToolPaths : LinuxToolPaths;
+}
 
 // A compiled design: the modules yosys produced, each a list of nodes wired together by numbered bits.
 //
@@ -239,16 +256,10 @@ private:
     // Longer than this, dot is stopped and the next faster layout used: fast dot, then columns.
     // All modules share the time: they run at the same time.
     static constexpr int DotTimeoutMs = 120000;
-#ifdef Q_OS_WIN
-    // script.bat loads oss-cad-suite\environment.bat, then runs "yosys -s compile.ys" (see compile())
-    QString yosysScript = "script.bat";
-    QString sv2vPath = ".\\sv2v.exe";          // third_party/sv2v, copied next to the app
-    QString dotPath = ".\\dot.exe";           // Graphviz, built from third_party/graphviz next to the app
-#else
-    QString yosysPath = "./yosys_bundle/bin/yosys";
-    QString sv2vPath = "./sv2v";                // third_party/sv2v, copied next to the app
-    QString dotPath = "./dot";                  // Graphviz, built from third_party/graphviz next to the app
-#endif
+    // The external tools for this system (see ToolPaths above)
+    QString yosysPath = toolPaths().yosys;
+    QString sv2vPath = toolPaths().sv2v;
+    QString dotPath = toolPaths().dot;
 };
 
 

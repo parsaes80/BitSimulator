@@ -16,6 +16,7 @@
 #include <QToolButton>
 
 #include "CircuitCanvas.h"
+#include "hdlcompiler.h"   // toolPaths()
 #include "MainWindow.h"
 #include "PropertiesPanel.h"
 
@@ -95,11 +96,8 @@ inline void choose(QComboBox* combo, const QString& text)
 inline bool hdlToolsAvailable()
 {
     using namespace Qt::StringLiterals;
-#ifdef Q_OS_WIN
-    return QFile::exists(u"script.bat"_s) && QFile::exists(u"dot.exe"_s) && QFile::exists(u"sv2v.exe"_s);
-#else
-    return QFile::exists(u"yosys_bundle/bin/yosys"_s) && QFile::exists(u"dot"_s) && QFile::exists(u"sv2v"_s);
-#endif
+    const ToolPaths& tools = toolPaths();
+    return QFile::exists(tools.yosys) && QFile::exists(tools.dot) && QFile::exists(tools.sv2v);
 }
 // Skip message for a test that needs them: if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
 inline constexpr const char* MissingHdlTools = "yosys, Graphviz dot or sv2v was not found in the working directory";
