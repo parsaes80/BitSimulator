@@ -17,11 +17,14 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${THIRD_PARTY_DIR}/sv2v/windows/sv2v.exe ${APP_DIR}/sv2v.exe
     )
 else()
-    # Linux: bundled yosys, and sv2v
+    # Linux: bundled yosys, and sv2v.
+    # The copies are made executable here: a commit from Windows can record the originals without the
+    # executable bit, and copy_if_different does not copy sv2v again when only its mode changed.
     add_custom_target(copy_yosys_bundle ALL
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/yosys_bundle
         COMMAND cp -r ${THIRD_PARTY_DIR}/yosys_bundle ${APP_DIR}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${THIRD_PARTY_DIR}/sv2v/linux/sv2v ${APP_DIR}/sv2v
+        COMMAND chmod -R a+x ${APP_DIR}/yosys_bundle/bin ${APP_DIR}/sv2v
     )
 endif()
 
