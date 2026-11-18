@@ -258,6 +258,25 @@ struct ExportGraph
 
     u32 numNets = 0;   // highest net id used by the components above
     u32 runId = 0;     // identifies this run; the simulator copies it into every result
+
+    // The nets the waveforms show (ports of the circuit and of its blocks): the simulator records
+    // every change of these, tick by tick, and reports them in WaveChanges. Sorted, no duplicates, no 0.
+    std::vector<u32> recordedNets;
+};
+
+// One change of a recorded net: it flipped at this tick (its value after the tick's propagation)
+struct WaveChange {
+    u64 tick = 0;
+    u32 net = 0;
+};
+
+// What the simulator recorded since its last report. Every recorded net is 0 before its first change,
+// so a net's value at a tick is whether it changed an odd number of times up to that tick.
+struct WaveChanges {
+    u32 runId = 0;
+    u64 lastTick = 0;                  // the newest tick these changes cover
+    bool hasTicks = false;             // false: no tick has run since the last report
+    std::vector<WaveChange> changes;   // in tick order
 };
 
 struct SimResult

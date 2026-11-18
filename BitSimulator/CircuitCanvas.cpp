@@ -1,5 +1,6 @@
 #include "CircuitCanvas.h"
 #include <QApplication>
+#include <QCollator>
 #include <QGraphicsSceneMouseEvent>
 #include <QHBoxLayout>
 #include <QHash>
@@ -425,6 +426,14 @@ ExportGraph CircuitScene::buildGraph()
         for (PortItem* pin : pins) nets.push_back(netOf(pin));
         return nets;
     };
+    // A source's pins without wires get nets of their own too: nothing reads them, but the waveforms
+    // show every bit of every source
+    const auto sourceNetsOf = [&](const QList<PortItem*>& pins) {
+        std::vector<u32> nets;
+        nets.reserve(pins.size());
+        for (PortItem* pin : pins) nets.push_back(pin->getConnections().isEmpty() ? nextNet++ : netOf(pin));
+        return nets;
+    };
 
     for (WireItem* wire : std::as_const(wires)) {
         const u32 net = netOf(wire->getStartPort());
@@ -445,14 +454,75 @@ ExportGraph CircuitScene::buildGraph()
                                          netOf(reg->getClkPort()), netOf(reg->getReadEnablePort()), props.asyncReset, props.resetValue);
         } else if (auto* source = dynamic_cast<SourceItem*>(component)) {
             m_sources.append(source);   // the simulator computes the values itself
-            graph.sources.emplace_back(netsOf(source->getOutputPorts()), source->sourceProps());
+            graph.sources.emplace_back(sourceNetsOf(source->getOutputPorts()), source->sourceProps());
         } else if (auto* display = dynamic_cast<DisplayItem*>(component)) {
             m_displays.append(display);
         }
     }
     graph.numNets = nextNet - 1;
     if (!blocks.isEmpty()) expandBlocks(graph, blocks, netOf);
+    buildWaveSignals(graph, blocks);
     return graph;
+}
+
+void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>& blocks)
+{
+    m_waveSignals.clear();
+
+    // The circuit's own inputs and outputs. m_sources is in the order of graph.sources (a constant 1
+    // that blocks need is added after them).
+    for (qsizetype i = 0; i < m_sources.size(); i++) {
+        m_waveSignals.append({QString(), QString(), m_sources[i]->name(), false, graph.sources[size_t(i)].outIDs});
+    }
+    for (DisplayItem* display : std::as_const(m_displays)) {
+        WaveSignal signal{QString(), QString(), display->name(), true, {}};
+        for (PortItem* pin : display->getInputPorts()) {
+            const auto wire = pin->getConnections().isEmpty() ? m_wireMap.wire2net.end()
+                                                              : m_wireMap.wire2net.find(pin->getConnections().first());
+            signal.nets.push_back(wire == m_wireMap.wire2net.end() ? 0 : wire->second);
+        }
+        m_waveSignals.append(std::move(signal));
+    }
+    // Inputs first, then outputs, each by name with numbers in order: "Source 2" before "Source 10"
+    QCollator collator;
+    collator.setNumericMode(true);
+    std::ranges::stable_sort(m_waveSignals, [&collator](const WaveSignal& a, const WaveSignal& b) {
+        if (a.output != b.output) return !a.output;
+        return collator.compare(a.name, b.name) < 0;
+    });
+
+    // Every port of every block instance, and of the instances inside it
+    std::function<void(const QString&, const QString&)> addInstance = [&](const QString& path, const QString& moduleName) {
+        const NetModule* module = m_design.module(moduleName);
+        if (!module) return;
+        const QHash<int, u32> nets = m_instanceNets.value(path);
+        for (const NetNode& node : module->nodes) {
+            const auto* io = std::get_if<IOType>(&node.type);
+            if (!io || node.ports.isEmpty()) continue;
+            WaveSignal signal{path, moduleName, node.id, *io == IOType::OUT, {}};
+            for (int bit : node.ports.first().bits) {
+                if (bit == NetBit::One) signal.nets.push_back(WaveSignal::AlwaysOne);
+                else if (bit == NetBit::Zero) signal.nets.push_back(0);
+                else signal.nets.push_back(nets.value(bit, 0));
+            }
+            m_waveSignals.append(std::move(signal));
+        }
+        for (const NetNode& node : module->nodes) {
+            if (const auto* ref = std::get_if<ModuleRef>(&node.type)) addInstance(path + u'/' + node.id, ref->module);
+        }
+    };
+    for (BlockItem* block : blocks) addInstance(block->blockProps().instance, block->blockProps().module);
+
+    // The simulator records exactly the nets these signals are made of
+    std::vector<u32> recorded;
+    for (const WaveSignal& signal : std::as_const(m_waveSignals)) {
+        for (u32 net : signal.nets) {
+            if (net != 0 && net != WaveSignal::AlwaysOne) recorded.push_back(net);
+        }
+    }
+    std::ranges::sort(recorded);
+    recorded.erase(std::unique(recorded.begin(), recorded.end()), recorded.end());
+    graph.recordedNets = std::move(recorded);
 }
 
 namespace {

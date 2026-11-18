@@ -716,7 +716,9 @@ private slots:
         QCOMPARE(itemsOfType<WireItem>(&scene).size(), 1);
 
         scene.startOrResumeSim();                                        // used to dereference the wire's missing end
-        QCOMPARE(link.started.first().numNets, u32(0));
+        // The wire carries nothing; the one net is the source pin's own, which the waveforms record
+        QCOMPARE(link.started.first().numNets, u32(1));
+        QVERIFY(scene.wireMap().wire2net.empty());
         QVERIFY(itemsOfType<WireItem>(&scene).isEmpty());
     }
 

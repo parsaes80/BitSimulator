@@ -1,4 +1,5 @@
 #pragma once
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 #include "general.h"
@@ -19,8 +20,17 @@ public:
     void printRunDataInfo();
 signals:
     void sendResult(SimResult result);
+    // The recorded nets' changes for the waveforms, about every WaveReportMs and when the run pauses
+    // or stops. Unlike sendResult, none of these may be skipped: together they are the whole history.
+    void sendWaveChanges(WaveChanges changes);
 private:
     void tick();
+    // After a tick's propagation: notes the recorded nets that changed. Only the nets in the event
+    // queue can have changed (every write to a net queues it), so only those are looked at.
+    void recordWaveChanges(u64 tick);
+    void reportWaveChanges();           // sends what was recorded since the last report
+
+    static constexpr int WaveReportMs = 30;
     void clearCircuit();
     void processGates(u32 changedNetId);
     void processMuxes(u32 changedNetId);
@@ -56,6 +66,13 @@ private:
 
     std::vector<u32> m_eventQueue;
     std::vector<u8> m_inQueue; // indexed by net id
+
+    // Waveform recording: the nets to watch, their values after the last tick, and the changes not reported yet
+    std::vector<u32> m_recordedNets;
+    std::vector<u8> m_recordedValues;
+    std::vector<u32> m_recordedSlot;    // by net id: its index in m_recordedNets + 1, or 0 if it is not recorded
+    WaveChanges m_waveChanges;
+    QElapsedTimer m_sinceWaveReport;
 
 };
 

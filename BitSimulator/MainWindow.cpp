@@ -143,6 +143,7 @@ void MainWindow::setup()
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
     qRegisterMetaType<SimResult>("SimResult");
+    qRegisterMetaType<WaveChanges>("WaveChanges");
     qRegisterMetaType<NetDesign>("NetDesign");
 }
 

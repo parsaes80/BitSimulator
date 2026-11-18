@@ -214,6 +214,9 @@ void Simulator::tick() {
 
         propagationStep++;
     }
+    // The queue now lists every net that changed in this tick, also any left over after maxSteps
+    recordWaveChanges(tick);
+
     // Drop processed entries; anything left after hitting maxSteps carries over to the next tick
     m_eventQueue.erase(m_eventQueue.begin(), m_eventQueue.begin() + head);
 
@@ -226,11 +229,42 @@ void Simulator::tick() {
     for (const auto& reg : m_registers) {result.registerValues.push_back(reg.storedValue);}
 
     result.netValues = m_nets;
+    // Recorded above, before the result: whatever the result sets off (a pause, say) finds this tick in the waveforms
     sendResult(std::move(result));
+}
+
+void Simulator::recordWaveChanges(u64 tick)
+{
+    // A net queued twice in one tick, or changed and changed back, is compared with its last recorded value
+    for (const u32 net : m_eventQueue) {
+        const u32 slot = m_recordedSlot[net];
+        if (!slot) continue;
+        const u8 value = m_nets[net];
+        if (value == m_recordedValues[slot - 1]) continue;
+        m_recordedValues[slot - 1] = value;
+        m_waveChanges.changes.push_back({tick, net});
+    }
+    m_waveChanges.lastTick = tick;
+    m_waveChanges.hasTicks = true;
+    // At fast speeds many ticks go into one report; at slow ones every tick is reported at once
+    if (m_sinceWaveReport.elapsed() >= WaveReportMs) reportWaveChanges();
+}
+
+void Simulator::reportWaveChanges()
+{
+    m_sinceWaveReport.restart();
+    if (!m_waveChanges.hasTicks) return;
+    WaveChanges report;
+    report.runId = m_waveChanges.runId;
+    report.lastTick = m_waveChanges.lastTick;
+    std::swap(report.changes, m_waveChanges.changes);
+    m_waveChanges.hasTicks = false;
+    sendWaveChanges(std::move(report));
 }
 
 void Simulator::receiveCircuit(ExportGraph graph){
 
+    reportWaveChanges();   // the end of a run that was not stopped first
     clearCircuit();
 
     m_gates = graph.gates;
@@ -241,6 +275,16 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_firstTick = true;
     m_tick = 0;
     m_runId = graph.runId;
+
+    // Every recorded net starts at 0; the first tick reports the ones that are not
+    m_recordedNets = graph.recordedNets;
+    std::erase_if(m_recordedNets, [&graph](u32 net) { return net == 0 || net > graph.numNets; });
+    m_recordedValues.assign(m_recordedNets.size(), 0);
+    m_recordedSlot.assign(size_t(graph.numNets) + 1, 0);
+    for (size_t i = 0; i < m_recordedNets.size(); i++) m_recordedSlot[m_recordedNets[i]] = u32(i + 1);
+    m_waveChanges = WaveChanges{};
+    m_waveChanges.runId = graph.runId;
+    m_sinceWaveReport.start();
     const size_t numNets = graph.numNets;   // sent with the circuit; the GUI's wire map is not ours to read
     m_nets.assign(numNets + 1, 0);
     m_inQueue.assign(numNets + 1, 0);
@@ -281,10 +325,15 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
 void Simulator::setRunning(bool running) {
     m_running = running;
+    if (!running) reportWaveChanges();   // a paused run's waveforms reach the newest tick
 }
 
 void Simulator::unloadCircuit() {
     m_running = false;
+    reportWaveChanges();                 // the waveforms keep the stopped run, up to its last tick
+    m_recordedNets.clear();
+    m_recordedValues.clear();
+    m_recordedSlot.clear();
     clearCircuit();
 }
 

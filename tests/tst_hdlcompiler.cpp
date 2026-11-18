@@ -550,6 +550,69 @@ private slots:
         scene.stopSim();
     }
 
+    void waveSignalsCoverEveryBlockPort()
+    {
+        const CompileRun run = compile(hierarchicalVerilog);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        CircuitScene scene;
+        scene.receiveDesign(run.design);
+        ExportGraph graph;
+        connect(&scene, &CircuitScene::startSimSIG, this, [&graph](const ExportGraph& g) { graph = g; });
+        scene.startOrResumeSim();
+
+        // The top's ports (sources and displays), then every port of every instance, nested too
+        QHash<QString, QStringList> portsOf;
+        QHash<QString, QString> moduleOf;
+        for (const WaveSignal& signal : scene.waveSignals()) {
+            portsOf[signal.scope] << signal.name;
+            moduleOf[signal.scope] = signal.module;
+        }
+        QCOMPARE(QSet<QString>(portsOf.keyBegin(), portsOf.keyEnd()),
+                 (QSet<QString>{QString(), u"u"_s, u"r"_s, u"u/h0"_s, u"u/h1"_s, u"u/h2"_s}));
+        QCOMPARE(moduleOf.value(u"u/h1"_s), u"ha"_s);
+        QCOMPARE(moduleOf.value(u"r"_s), u"dff2"_s);
+        QStringList inside = portsOf.value(u"u"_s);
+        inside.sort();
+        QCOMPARE(inside, (QStringList{u"x"_s, u"xcopy"_s, u"y"_s, u"z"_s}));
+        const auto signalNamed = [&](const QString& scope, const QString& name) {
+            return *std::ranges::find_if(scene.waveSignals(), [&](const WaveSignal& w) { return w.scope == scope && w.name == name; });
+        };
+        QCOMPARE(signalNamed(u"u"_s, u"z"_s).width(), 3);
+        QVERIFY(signalNamed(u"r"_s, u"q"_s).output);
+        // A block's port is the same net as what it is wired to outside: u's z is the sum display's input
+        QCOMPARE(signalNamed(u"u"_s, u"z"_s).nets, signalNamed(QString(), u"sum"_s).nets);
+
+        // What the simulator records for them matches every tick
+        Simulator sim;
+        QList<SimResult> results;
+        QList<WaveChanges> reports;
+        QEventLoop loop;
+        connect(&sim, &Simulator::sendResult, &sim, [&](SimResult result) {
+            results.append(std::move(result));
+            if (results.size() >= 48) { sim.setRunning(false); loop.quit(); }
+        });
+        connect(&sim, &Simulator::sendWaveChanges, &sim, [&](WaveChanges changes) { reports.append(std::move(changes)); });
+        sim.SimController();
+        sim.setTimerPeriod(0);
+        sim.receiveCircuit(graph);
+        if (results.size() < 48) { QTimer::singleShot(20000, &loop, &QEventLoop::quit); loop.exec(); }
+        sim.unloadCircuit();
+        scene.stopSim();
+        QCOMPARE(results.size(), 48);
+
+        std::unordered_map<u32, std::vector<u64>> changesOf;
+        for (const WaveChanges& report : reports) {
+            for (const WaveChange& change : report.changes) changesOf[change.net].push_back(change.tick);
+        }
+        for (const SimResult& result : results) {
+            for (u32 net : graph.recordedNets) {
+                const auto& ticks = changesOf[net];
+                const bool recorded = std::ranges::count_if(ticks, [&](u64 t) { return t <= result.sourceTick; }) % 2 == 1;
+                QVERIFY2(recorded == (result.netValues[net] != 0), qPrintable(u"net %1 at tick %2"_s.arg(net).arg(result.sourceTick)));
+            }
+        }
+    }
+
     void blocksOpenOnTheSameCanvas()
     {
         const CompileRun run = compile(hierarchicalVerilog);

@@ -12,6 +12,20 @@
 #include "Items.h"
 #include "hdlcompiler.h"
 
+// A signal the waveforms can show: an input or output of the circuit (a source or display), or a
+// port of a block instance. Internal wires are not signals.
+struct WaveSignal {
+    static constexpr u32 AlwaysOne = 0xFFFFFFFF;   // in `nets`: a bit tied to a constant 1
+
+    QString scope;            // empty for the circuit itself, else the instance path, e.g. "core/alu"
+    QString module;           // the module of that instance; empty for the circuit itself
+    QString name;             // the source or display's name, or the port's name
+    bool output = false;      // a display, or an output port of its module
+    std::vector<u32> nets;    // the simulator net of each bit, lowest bit first; 0 = always 0
+
+    int width() const { return int(nets.size()); }
+};
+
 // Stopped: editing view, no values shown.
 // Running: live values; the circuit is read-only.
 // Paused:  values frozen on screen. The circuit can be edited, but any edit ends the paused run.
@@ -71,6 +85,9 @@ public:
     const NetDesign& design() const { return m_design; }
     // The nets of the current run (empty while stopped)
     const WireMap& wireMap() const { return m_wireMap; }
+    // The signals of the current run, made when it starts: the circuit's sources and displays, then
+    // every port of every block instance (blocks inside blocks too). Kept until the next run starts.
+    const QList<WaveSignal>& waveSignals() const { return m_waveSignals; }
     // Builds a module of `design` as components and wires. topLevel: the module's ports become sources
     // and displays, and everything can be edited and simulated. Otherwise they become port terminals,
     // for a read-only view of the inside of a block.
@@ -120,6 +137,8 @@ private:
     WireItem* addWire(PortItem* from, PortItem* to);
     // Adds the contents of every block to `graph` (see BlockExpander); pinNet gives the net on a block pin
     void expandBlocks(ExportGraph& graph, const QList<BlockItem*>& blocks, const std::function<u32(PortItem*)>& pinNet);
+    // Fills m_waveSignals and graph.recordedNets, once the nets have their final numbers
+    void buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>& blocks);
     void setSimState(SimState state);
     void circuitEdited();              // call after every structural change
     QString automaticName(const ComponentItem* item) const;   // "Source 3" / "Display 1"; empty for other kinds
@@ -148,6 +167,7 @@ private:
     // Cached per simulation run (rebuilt in startSim) so receiveResult avoids scanning items()
     QList<QPointer<DisplayItem>> m_displays;
     QList<QPointer<SourceItem>> m_sources;   // they show their value at the tick the simulator reports
+    QList<WaveSignal> m_waveSignals;
     std::vector<u8> m_lastNetValues; // last applied net values; only changed nets are pushed to wires
     std::vector<bool> m_lastRegisterValues;
 

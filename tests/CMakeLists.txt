@@ -67,6 +67,7 @@ bitsim_add_test(tst_panel)          # the Properties panel, through the real win
 bitsim_add_test(tst_lifecycle)      # Start / Pause / Clear / Compile with the simulator thread
 bitsim_add_test(tst_hdlcompiler)    # Verilog -> component graph (needs yosys and dot; skipped otherwise)
 bitsim_add_test(tst_theme)          # light and dark mode, the theme button, the canvas dots
+bitsim_add_test(tst_waveform)       # the waveforms: recording in the simulator, the history, the view
 
 # "check" builds every test and runs them all; usable from any IDE as a normal build target
 add_custom_target(check
