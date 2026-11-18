@@ -468,6 +468,59 @@ private slots:
         QVERIFY2(timer.elapsed() < 500, qPrintable(u"took %1 ms"_s.arg(timer.elapsed())));
     }
 
+    //===================== The tab, through the window ========================
+
+    void theTabFollowsTheRuns()
+    {
+        App app;
+        auto* model = app.window.findChild<WaveformModel*>();
+        auto* view = child<WaveformView>(&app.window, "waveView");
+        auto* status = child<QLabel>(&app.window, "waveStatus");
+        auto* tree = child<QTreeWidget>(&app.window, "waveSignalTree");
+        QVERIFY(model && !model->hasRun());
+
+        auto* source = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(2), app.centre));
+        auto* display = dynamic_cast<DisplayItem*>(app.scene->addComponent(DisplayProps{2, 0}, app.centre + QPointF(200, 0)));
+        QVERIFY(connectPorts(app.scene, source->getOutputPorts()[0], display->getInputPorts()[0]));
+        child<QSlider>(&app.window, "slider")->setValue(10000);          // the fastest speed
+
+        // Start: the circuit's input and output are shown, and the ticks come in
+        app.start->click();
+        QCOMPARE(model->rows().size(), 2);
+        QTRY_VERIFY(!model->history().isEmpty() && model->history().lastTick() > 20);
+        QVERIFY(tree->topLevelItem(0)->childCount() == 2);
+        QVERIFY(status->text().startsWith(u"Tick"_s));
+
+        // Pause: the newest tick is reported and the status says so
+        app.start->click();
+        QTRY_VERIFY(status->text().startsWith(u"Paused at tick"_s));
+        QTest::qWait(100);                                                  // ticks run before the pause reached the simulator
+        const u64 paused = model->history().lastTick();
+        QCOMPARE(status->text(), u"Paused at tick %1"_s.arg(paused));
+        QTest::qWait(100);
+        QCOMPARE(model->history().lastTick(), paused);                     // no ticks while paused
+
+        // An edit ends the paused run; its history stays on screen
+        QVERIFY(app.scene->renameComponent(source, u"clk"_s));
+        QCOMPARE(app.scene->simState(), SimState::Stopped);
+        QVERIFY(status->text().startsWith(u"Stopped at tick"_s));
+        QCOMPARE(model->history().lastTick(), paused);
+        QCOMPARE(view->selectedRow(), -1);
+
+        // The next run starts again from tick 0; the renamed input is a new signal, shown too
+        app.start->click();
+        QTRY_VERIFY(!model->history().isEmpty());
+        QStringList labels;
+        for (const WaveRow& row : model->rows()) labels << model->label(row);
+        QCOMPARE(labels, (QStringList{u"Display 1[1:0]"_s, u"clk[1:0]"_s}));
+
+        // Clear: a new circuit, nothing to show
+        app.clear->click();
+        QVERIFY(!model->hasRun());
+        QVERIFY(model->rows().isEmpty());
+        QVERIFY(!(tree->topLevelItem(0)->flags() & Qt::ItemIsEnabled));   // the hint
+    }
+
     //===================== The signal tree ========================
 
     void theTreeChecksShowAndHideSignals()

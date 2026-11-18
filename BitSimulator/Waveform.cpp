@@ -1,6 +1,7 @@
 #include "Waveform.h"
 #include <QActionGroup>
 #include <QContextMenuEvent>
+#include <QHeaderView>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -668,19 +669,25 @@ void WaveformView::paintEvent(QPaintEvent*)
     // The cursors over everything, and the ticks between them
     if (m_cursor2) paintCursor(painter, *m_cursor2, theme.waveCursor2);
     if (m_cursor) paintCursor(painter, *m_cursor, theme.waveCursor);
-    if (m_cursor && m_cursor2) {
-        const u64 a = std::min(*m_cursor, *m_cursor2), b = std::max(*m_cursor, *m_cursor2);
-        const QString text = tr("Δ %1 ticks").arg(b - a);
-        const double x0 = std::max<double>(xOf(double(a)), waves.left()), x1 = std::min<double>(xOf(double(b)), waves.right());
-        const int textWidth = QFontMetrics(font()).horizontalAdvance(text) + 14;
-        const QRect pill(int((x0 + x1) / 2 - textWidth / 2.0), 3, textWidth, RulerHeight - 6);
+    if (const std::optional<QRect> pill = measureLabel()) {
+        const u64 ticks = std::max(*m_cursor, *m_cursor2) - std::min(*m_cursor, *m_cursor2);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(Qt::NoPen);
         painter.setBrush(theme.button);
-        painter.drawRoundedRect(pill, 9, 9);
+        painter.drawRoundedRect(*pill, 9, 9);
         painter.setPen(theme.text);
-        painter.drawText(pill, Qt::AlignCenter, text);
+        painter.drawText(*pill, Qt::AlignCenter, tr("Δ %1 ticks").arg(ticks));
     }
+}
+
+std::optional<QRect> WaveformView::measureLabel() const
+{
+    if (!m_cursor || !m_cursor2) return std::nullopt;
+    const QRect waves = waveArea();
+    const u64 a = std::min(*m_cursor, *m_cursor2), b = std::max(*m_cursor, *m_cursor2);
+    const double x0 = std::max<double>(xOf(double(a)), waves.left()), x1 = std::min<double>(xOf(double(b)), waves.right());
+    const int textWidth = QFontMetrics(font()).horizontalAdvance(tr("Δ %1 ticks").arg(b - a)) + 14;
+    return QRect(int((x0 + x1) / 2 - textWidth / 2.0), 3, textWidth, RulerHeight - 6);
 }
 
 void WaveformView::paintRuler(QPainter& painter)
@@ -697,7 +704,10 @@ void WaveformView::paintRuler(QPainter& painter)
     painter.drawLine(0, RulerHeight - 1, width(), RulerHeight - 1);
     if (history.isEmpty()) return;
 
-    // Labels at least 70 pixels apart, at round ticks; a faint line down through the rows at each
+    // Labels at least 70 pixels apart, at round ticks; a faint line down through the rows at each.
+    // A label under the measuring label is left out.
+    const std::optional<QRect> measure = measureLabel();
+    const QFontMetrics metrics(font());
     const u64 step = niceStep(70 * m_ticksPerPixel);
     const double firstVisible = std::max(0.0, tickAt(waves.left()));
     u64 tick = u64(firstVisible / double(step)) * step;
@@ -709,8 +719,10 @@ void WaveformView::paintRuler(QPainter& painter)
         painter.drawLine(x, RulerHeight, x, waves.bottom());
         painter.setPen(theme.border);
         painter.drawLine(x, RulerHeight - 6, x, RulerHeight - 1);
+        const QRect label(x + 3, 0, metrics.horizontalAdvance(rulerText(tick)) + 2, RulerHeight - 3);
+        if (measure && label.adjusted(-4, 0, 4, 0).intersects(*measure)) continue;
         painter.setPen(theme.mutedText);
-        painter.drawText(QRect(x + 3, 0, 80, RulerHeight - 3), Qt::AlignVCenter | Qt::AlignLeft, rulerText(tick));
+        painter.drawText(label, Qt::AlignVCenter | Qt::AlignLeft, rulerText(tick));
     }
     painter.restore();
 }
@@ -937,6 +949,10 @@ WaveSignalTree::WaveSignalTree(QTreeWidget* tree, WaveformModel* model, QObject*
     : QObject(parent), m_tree(tree), m_model(model)
 {
     if (m_tree->columnCount() < 2) m_tree->setColumnCount(2);
+    // The name gets the room; "in" / "out" only what it needs
+    m_tree->header()->setStretchLastSection(false);
+    m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     connect(model, &WaveformModel::signalsChanged, this, &WaveSignalTree::refresh);
     connect(m_tree, &QTreeWidget::itemChanged, this, &WaveSignalTree::itemChanged);
     refresh();
@@ -1014,7 +1030,6 @@ void WaveSignalTree::rebuild()
     for (auto it = scopes.cbegin(); it != scopes.cend(); ++it) {
         it.value()->setExpanded(first ? it.key().isEmpty() : open.contains(it.key()));
     }
-    m_tree->resizeColumnToContents(1);
 }
 
 void WaveSignalTree::itemChanged(QTreeWidgetItem* item, int column)

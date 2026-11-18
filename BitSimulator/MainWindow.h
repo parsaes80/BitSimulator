@@ -8,6 +8,7 @@
 
 class FloatingPanel;
 class PropertiesPanel;
+class WaveformModel;
 enum class SimState;
 
 class MainWindow : public QMainWindow
@@ -45,11 +46,14 @@ private:
     void setupHdlEditor();
     void setupPropertiesPanel();
     void setupColorScheme();
+    void setupWaveforms();                   // the Waveforms tab: its model follows the scene's runs
+    void updateWaveStatus();                 // "Tick 1234" / "Paused at tick ..." / "Stopped at tick ..."
     void beginCompile(const QString& message);   // stops the simulation and disables both compile buttons
 
     Ui::BitSimulatorClass ui;
     PropertiesPanel* m_properties = nullptr;
     FloatingPanel* m_propertiesFrame = nullptr;   // the floating box holding the panel
+    WaveformModel* m_waveModel = nullptr;
     ColorScheme m_colorScheme = ColorScheme::Dark;
     bool m_followSystemScheme = true;        // until the user picks a mode with the theme button
     QString m_compileError;                  // last message from the HDL compiler, shown if the compile fails

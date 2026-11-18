@@ -17,6 +17,7 @@
 #include "CircuitCanvas.h"
 #include "PropertiesPanel.h"
 #include "Toolbar.h"
+#include "Waveform.h"
 
 using namespace Qt::StringLiterals;
 
@@ -81,6 +82,7 @@ void MainWindow::setup()
 
     setupPropertiesPanel();
     setupColorScheme();
+    setupWaveforms();
 
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
@@ -179,6 +181,53 @@ void MainWindow::setupPropertiesPanel()
     m_propertiesFrame->setObjectName(u"propertiesFrame"_s);
 }
 
+
+void MainWindow::setupWaveforms()
+{
+    CircuitScene* scene = ui.camera->getScene();
+    m_waveModel = new WaveformModel(this);
+    ui.waveView->setModel(m_waveModel);
+    new WaveSignalTree(ui.waveSignalTree, m_waveModel, this);
+    ui.waveSplitter->setStretchFactor(1, 1);    // the waves get the room when the window grows
+    ui.waveSplitter->setSizes({240, 1000});
+
+    // A run starts: its signals. It stops: its history stays. A new circuit (a compile, Clear): start over.
+    connect(scene, &CircuitScene::startSimSIG, m_waveModel, [this, scene](const ExportGraph& graph) {
+        m_waveModel->startRun(graph.runId, scene->waveSignals(), graph.recordedNets, scene->design().top);
+    });
+    connect(scene, &CircuitScene::simStateChanged, m_waveModel, [this](SimState state) {
+        if (state == SimState::Stopped) m_waveModel->stopRun();
+        updateWaveStatus();
+    });
+    connect(scene, &CircuitScene::designChanged, m_waveModel, &WaveformModel::resetSignals);
+    connect(simObj, &Simulator::sendWaveChanges, m_waveModel, &WaveformModel::addChanges);   // queued: from the simulator's thread
+
+    connect(ui.waveZoomIn, &QPushButton::clicked, ui.waveView, &WaveformView::zoomIn);
+    connect(ui.waveZoomOut, &QPushButton::clicked, ui.waveView, &WaveformView::zoomOut);
+    connect(ui.waveZoomFit, &QPushButton::clicked, ui.waveView, [this] {
+        ui.waveView->setFollow(false);          // fitting the whole run, not following its end
+        ui.waveView->zoomToFit();
+    });
+    connect(ui.waveFollow, &QPushButton::toggled, ui.waveView, &WaveformView::setFollow);
+    connect(ui.waveView, &WaveformView::followChanged, ui.waveFollow, &QPushButton::setChecked);
+    connect(m_waveModel, &WaveformModel::historyGrew, this, &MainWindow::updateWaveStatus);
+    connect(m_waveModel, &WaveformModel::signalsChanged, this, &MainWindow::updateWaveStatus);
+    updateWaveStatus();
+}
+
+void MainWindow::updateWaveStatus()
+{
+    const WaveHistory& history = m_waveModel->history();
+    QString text;
+    if (!history.isEmpty()) {
+        switch (ui.camera->getScene()->simState()) {
+        case SimState::Running: text = tr("Tick %1").arg(history.lastTick()); break;
+        case SimState::Paused: text = tr("Paused at tick %1").arg(history.lastTick()); break;
+        case SimState::Stopped: text = tr("Stopped at tick %1").arg(history.lastTick()); break;
+        }
+    }
+    ui.waveStatus->setText(text);
+}
 
 void MainWindow::setupColorScheme()
 {

@@ -93,6 +93,25 @@ end
 endmodule
  ```
 
+## Waveforms
+
+The **Waveforms** tab shows the circuit's inputs and outputs over the ticks of a run, like the wave window of an HDL simulator. When a run starts, every source and display of the circuit is listed; the tree on the left adds more: check a port of a block (or a whole block, for all of its ports) to show it, uncheck it to remove it. Internal wires are not signals; a block's ports are, at every level.
+
+Every port of every block is recorded from the first tick, so a port added later still shows its whole run. Recording happens in the simulator itself and costs no measurable time; it keeps up to about 256 MB of changes, then drops the oldest ticks.
+
+| Action | Control |
+|---|---|
+| Zoom in / out around the pointer | Mouse wheel over the waves, or the Zoom in / Zoom out buttons |
+| See the whole run | Fit |
+| Move through the run | Drag with the left mouse button, or the scroll bars |
+| Scroll the rows | Mouse wheel over the names |
+| Cursor (the values column shows the values at it) | Click |
+| Second cursor, to measure the ticks between them | Shift+click |
+| Radix (hex, unsigned, signed, binary), expand a bus into bits, move, remove | Right-click a row |
+| Expand or collapse a bus | Click its arrow, or double-click its name |
+
+While the simulation runs, **Follow** keeps the newest tick in view; dragging turns it off and the button turns it back on. When the run stops, its waveforms stay until the next Start. The next run of the same circuit keeps the signals and their settings; compiling or clearing starts over with the new circuit's inputs and outputs.
+
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
 
@@ -150,6 +169,8 @@ In Qt Creator you can also switch `BITSIM_BUILD_TESTS` on under Projects > Build
 | `tst_panel` | The Properties panel, with simulated clicks and typing |
 | `tst_lifecycle` | Start, Pause, Clear and Compile with the simulator running in its own thread |
 | `tst_hdlcompiler` | Compiling Verilog, and blocks: simulating through them and opening them (needs yosys, sv2v and Graphviz; skipped if they are missing) |
+| `tst_theme` | Light and dark mode, the style sheet's colors, the canvas dots |
+| `tst_waveform` | The waveforms: what the simulator records, the history, the view's zoom, pan and cursors, and the signal tree |
 
 # Third Party Software
 

@@ -541,7 +541,38 @@ QListWidget::item:selected {
     color: @text;
 }
 
-QListWidget::indicator {
+/* Trees, such as the signals on the Waveforms tab */
+QTreeWidget {
+    background-color: @field;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+
+QTreeWidget::item {
+    padding: 2px 2px;
+}
+
+QTreeWidget::item:hover {
+    background-color: @button;
+}
+
+QTreeWidget::item:selected {
+    background-color: @buttonChecked;
+    color: @text;
+}
+
+QHeaderView::section {
+    background-color: @panel;
+    color: @mutedText;
+    border: none;
+    border-bottom: 1px solid @border;
+    padding: 4px 6px;
+}
+
+QListWidget::indicator, QTreeWidget::indicator {
     width: 14px;
     height: 14px;
     background-color: @field;
@@ -549,10 +580,16 @@ QListWidget::indicator {
     border-radius: 4px;
 }
 
-QListWidget::indicator:checked {
+QListWidget::indicator:checked, QTreeWidget::indicator:checked {
     background-color: @accent;
     border-color: @accent;
     image: url(:/theme/check.png);
+}
+
+/* A block in the signal tree with only some of its ports shown */
+QTreeWidget::indicator:indeterminate {
+    background-color: @buttonChecked;
+    border-color: @accent;
 }
 
 /* The pin buttons of a waveform source: the checked one is the pin the step editor shows */

@@ -228,6 +228,7 @@ private:
     void paintWaves(QPainter& painter, const WaveRow& row, int top);
     void paintCursor(QPainter& painter, u64 tick, const QColor& color);
     QString rulerText(u64 tick) const;
+    std::optional<QRect> measureLabel() const;   // "Δ 16 ticks" on the ruler, between the two cursors
     void showRowMenu(int row, const QPoint& globalPos);
 
     WaveformModel* m_model = nullptr;
