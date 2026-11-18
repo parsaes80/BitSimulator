@@ -10,7 +10,6 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QScrollArea>
-#include <QVBoxLayout>
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QStyle>
@@ -162,8 +161,8 @@ void MainWindow::setupHdlEditor()
 
 void MainWindow::setupPropertiesPanel()
 {
-    // The panel floats over the top-right corner of the canvas, 2/3 of the canvas high, so the
-    // canvas keeps its full width below it. Content taller than that scrolls.
+    // The panel floats over the canvas, so the canvas keeps its full width below it. It starts in the
+    // top-right corner, 2/3 of the canvas high; the user can move and minimize it. Content taller than it scrolls.
     m_properties = new PropertiesPanel(ui.camera->getScene());
 
     auto* scroll = new QScrollArea;
@@ -173,31 +172,10 @@ void MainWindow::setupPropertiesPanel()
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    // A child of the canvas widget, not of its viewport: panning scrolls the viewport's children along
-    m_propertiesFrame = new QFrame(ui.camera);
+    // A child of the canvas widget, not of its viewport: panning scrolls the viewport's children along.
+    // It stays over the viewport, the drawing area without the scroll bars.
+    m_propertiesFrame = new FloatingPanel(tr("Properties"), scroll, ui.camera->viewport(), ui.camera);
     m_propertiesFrame->setObjectName(u"propertiesFrame"_s);
-    auto* layout = new QVBoxLayout(m_propertiesFrame);
-    layout->setContentsMargins(2, 4, 2, 4);     // keeps the scroll bar inside the rounded corners
-    layout->addWidget(scroll);
-
-    ui.camera->viewport()->installEventFilter(this);   // follow the canvas when it is resized
-    placePropertiesPanel();
-}
-
-void MainWindow::placePropertiesPanel()
-{
-    constexpr int Width = 270, Margin = 12;
-    const QRect canvas = ui.camera->viewport()->geometry();   // the drawing area, without scroll bars
-    const int width = std::max(0, std::min(Width, canvas.width() - 2 * Margin));
-    const int height = canvas.height() * 2 / 3;
-    m_propertiesFrame->setGeometry(canvas.right() + 1 - Margin - width, canvas.top() + Margin, width, height);
-    m_propertiesFrame->raise();
-}
-
-bool MainWindow::eventFilter(QObject* watched, QEvent* event)
-{
-    if (m_propertiesFrame && watched == ui.camera->viewport() && event->type() == QEvent::Resize) placePropertiesPanel();
-    return QMainWindow::eventFilter(watched, event);
 }
 
 
@@ -313,8 +291,8 @@ void MainWindow::compileFinished(bool ok)
 
     if (ok) {
         statusBar()->showMessage(tr("Compiled. The new circuit is on the canvas."), 6000);
-        // From the Compile Dir tab nothing of the result would be visible: show it
-        if (ui.tabWidget->currentWidget() == ui.CompileDirTab) ui.tabWidget->setCurrentWidget(ui.CircuitTab);
+        // From a compile tab nothing of the result would be visible: show it
+        ui.tabWidget->setCurrentWidget(ui.CircuitTab);
         return;
     }
 

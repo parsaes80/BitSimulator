@@ -344,8 +344,13 @@ QCheckBox:disabled {
 QPlainTextEdit {
     background-color: @field;
     color: @text;
-    border: none;
+    border: 1px solid @border;
+    border-radius: 6px;
     padding: 6px 8px;
+}
+
+QPlainTextEdit:focus {
+    border-color: @accent;
 }
 
 /* ---------- Scroll bars ---------- */
@@ -396,11 +401,33 @@ QAbstractScrollArea::corner {
 
 /* ---------- Properties panel ---------- */
 
-/* The properties panel floats over the top-right of the canvas in this rounded box */
+/* The properties panel floats over the canvas in this rounded box (FloatingPanel) */
 #propertiesFrame {
     background-color: @panel;
     border: 1px solid @border;
     border-radius: 10px;
+}
+
+/* Its title bar: drag it to move the box; the button at its right minimizes the box */
+#panelTitle {
+    color: @mutedText;
+}
+
+#panelMinimize {
+    padding: 1px 6px;
+    background-color: transparent;
+    color: @mutedText;
+    border: none;
+    border-radius: 4px;
+}
+
+#panelMinimize:hover {
+    background-color: @buttonHover;
+    color: @text;
+}
+
+#panelSeparator {
+    color: @border;
 }
 
 #propertiesScroll, #propertiesScroll QWidget#qt_scrollarea_viewport, #propertiesPanel {

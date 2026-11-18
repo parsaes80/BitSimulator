@@ -270,6 +270,71 @@ private slots:
         QVERIFY(qAbs(frame->height() - viewport->height() * 2 / 3) <= 1);   // still 2/3, not stretched by the content
     }
 
+    void panelCanBeMovedAndMinimized()
+    {
+        App app;
+        auto* frame = child<FloatingPanel>(&app.window, "propertiesFrame");
+        QWidget* titleBar = frame->titleBar();
+        QWidget* viewport = app.canvas->viewport();
+        const QRect area = viewport->geometry();
+        // QTest takes positions relative to the title bar, which moves with the box: after the move
+        // the mouse is over the point it grabbed again
+        const auto drag = [titleBar](QPoint by) {
+            const QPoint grab(20, titleBar->height() / 2);
+            QTest::mousePress(titleBar, Qt::LeftButton, {}, grab);
+            QTest::mouseMove(titleBar, grab + by);
+            QTest::mouseRelease(titleBar, Qt::LeftButton, {}, grab);
+        };
+
+        // Dragging the title bar moves the box with the mouse
+        const QPoint start = frame->pos();
+        drag(QPoint(-300, 80));
+        QCOMPARE(frame->pos(), start + QPoint(-300, 80));
+        QVERIFY(qAbs(frame->height() - area.height() * 2 / 3) <= 1);    // still 2/3 high: it fits
+
+        // On the left half it keeps its distance from the left side when the window is resized
+        drag(QPoint(-(frame->x() - area.left()) + 40, 0));
+        QCOMPARE(frame->x(), area.left() + 40);
+        app.window.resize(1500, 900);
+        QTRY_VERIFY(viewport->geometry() != area);
+        QTRY_COMPARE(frame->x(), viewport->geometry().left() + 40);
+
+        // It never leaves the canvas; moved far down, an open box gets shorter instead
+        drag(QPoint(-5000, 5000));
+        const QRect inside = viewport->geometry();
+        QCOMPARE(frame->x(), inside.left());
+        QVERIFY(frame->geometry().bottom() <= inside.bottom());
+        QVERIFY(frame->height() < inside.height() * 2 / 3);
+        QVERIFY(child<QScrollArea>(&app.window, "propertiesScroll")->isVisible());
+
+        // Minimizing leaves just the title bar; restoring brings the content back
+        auto* minimize = child<QToolButton>(frame, "panelMinimize");
+        minimize->click();
+        QVERIFY(frame->isMinimized());
+        QVERIFY(!child<QScrollArea>(&app.window, "propertiesScroll")->isVisible());
+        QVERIFY(frame->height() < titleBar->height() + 20);
+        QVERIFY(frame->geometry().bottom() <= inside.bottom());
+        drag(QPoint(0, -5000));                                          // a minimized box moves too
+        QCOMPARE(frame->y(), inside.top());
+        QTest::mouseDClick(titleBar, Qt::LeftButton, {}, QPoint(20, titleBar->height() / 2));
+        QVERIFY(!frame->isMinimized());
+        QVERIFY(child<QScrollArea>(&app.window, "propertiesScroll")->isVisible());
+        QVERIFY(qAbs(frame->height() - inside.height() * 2 / 3) <= 1);
+
+        // The panel still works where it was moved to
+        auto* gate = add<GateItem>(app, GateProps{});
+        app.select(gate);
+        QCOMPARE(app.title(), u"AND gate"_s);
+    }
+
+    void compileButtonsAreOnTheirTabs()
+    {
+        App app;
+        QVERIFY(child<QWidget>(&app.window, "hdlEditorTab")->isAncestorOf(app.compile));
+        QVERIFY(child<QWidget>(&app.window, "CompileDirTab")->isAncestorOf(child<QPushButton>(&app.window, "compileDirButton")));
+        QVERIFY(!child<QWidget>(&app.window, "CircuitTab")->isAncestorOf(app.compile));
+    }
+
     void listSourceEditing()
     {
         App app;

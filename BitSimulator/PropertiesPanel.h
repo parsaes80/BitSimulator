@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QFrame>
 #include <QList>
+#include <QPoint>
 #include <QPointer>
 #include <QWidget>
 #include <array>
@@ -20,6 +22,7 @@ class QPlainTextEdit;
 class QScrollArea;
 class QSpinBox;
 class QStackedWidget;
+class QToolButton;
 
 // A row of steps drawn as a digital waveform; clicking a step flips it between 0 and 1.
 // Long patterns show their first MaxShownSteps steps; the rest are edited as text.
@@ -152,4 +155,46 @@ private:
 
     QSpinBox* m_displayInputs = nullptr;
     QSpinBox* m_displayOutputs = nullptr;
+};
+
+// A box floating over an area of its parent widget (the properties panel over the canvas).
+//
+// It has a title bar and its content below. Dragging the title bar moves the box anywhere inside the
+// area; the button at its right, or a double-click on the title bar, minimizes it to just the title bar.
+// It starts in the top-right corner, 2/3 of the area high. Moved, it keeps its distance from the
+// nearer side and from the top when the area is resized, and it never leaves the area: moved down, an
+// open box gets shorter and its content scrolls.
+class FloatingPanel : public QFrame {
+    Q_OBJECT
+public:
+    // `area` is the widget the box stays over (the canvas viewport); it must be a child of `parent`.
+    FloatingPanel(const QString& title, QWidget* content, QWidget* area, QWidget* parent);
+
+    bool isMinimized() const { return m_minimized; }
+    void setMinimized(bool minimized);
+
+    QWidget* titleBar() const { return m_titleBar; }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;   // title bar drags; area resizes
+
+private:
+    void place();                                     // geometry from the stored position and the area's size
+    void moveTo(QPoint topLeft);                      // top-left within the area, as dragged
+    int minimizedHeight() const;
+    int openMinimumHeight() const;                    // an open box is never shorter than this
+
+    QWidget* m_area;
+    QWidget* m_titleBar;
+    QToolButton* m_minimizeButton;
+    QWidget* m_body;                                  // the content and the line above it; hidden when minimized
+    bool m_minimized = false;
+
+    // Where the box is: its distance from the area's top, and from its left or right side
+    bool m_fromRight = true;
+    QPoint m_offset{12, 12};
+
+    bool m_dragging = false;
+    QPointF m_dragStartGlobal;
+    QPoint m_dragStartPos;                            // the box's top-left in the area when the drag began
 };

@@ -6,8 +6,8 @@
 #include "simulator.h"
 #include "Theme.h"
 
+class FloatingPanel;
 class PropertiesPanel;
-class QFrame;
 enum class SimState;
 
 class MainWindow : public QMainWindow
@@ -44,14 +44,12 @@ private:
     void setup();
     void setupHdlEditor();
     void setupPropertiesPanel();
-    void placePropertiesPanel();             // top-right of the canvas, 2/3 of its height
-    bool eventFilter(QObject* watched, QEvent* event) override;
     void setupColorScheme();
     void beginCompile(const QString& message);   // stops the simulation and disables both compile buttons
 
     Ui::BitSimulatorClass ui;
     PropertiesPanel* m_properties = nullptr;
-    QFrame* m_propertiesFrame = nullptr;     // the floating box holding the panel
+    FloatingPanel* m_propertiesFrame = nullptr;   // the floating box holding the panel
     ColorScheme m_colorScheme = ColorScheme::Dark;
     bool m_followSystemScheme = true;        // until the user picks a mode with the theme button
     QString m_compileError;                  // last message from the HDL compiler, shown if the compile fails

@@ -4,6 +4,7 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -20,6 +21,7 @@
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <expected>
 #include <limits>
 
@@ -1002,4 +1004,148 @@ void PropertiesPanel::loadBlock(const BlockProps& props)
     m_blockModule->setText(props.module);
     m_blockInputs->setText(inputs.isEmpty() ? tr("none") : inputs.join(u", "_s));
     m_blockOutputs->setText(outputs.isEmpty() ? tr("none") : outputs.join(u", "_s));
+}
+
+//===================== FloatingPanel ========================
+
+namespace {
+constexpr int PanelWidth = 270;          // pixels, or the area's width less the margins if that is narrower
+constexpr int PanelMargin = 12;          // from the area's sides at the start, and from its bottom when open
+constexpr int PanelMinContent = 120;     // an open box shows at least this much of its content
+} // namespace
+
+FloatingPanel::FloatingPanel(const QString& title, QWidget* content, QWidget* area, QWidget* parent)
+    : QFrame(parent), m_area(area)
+{
+    //----- Title bar: the title, then the minimize button at the right -----
+    m_titleBar = new QWidget;
+    m_titleBar->setObjectName(u"panelTitleBar"_s);
+    m_titleBar->setCursor(Qt::SizeAllCursor);
+    m_titleBar->setToolTip(tr("Drag to move; double-click to minimize or restore"));
+
+    auto* titleLabel = new QLabel(title.toUpper());
+    titleLabel->setObjectName(u"panelTitle"_s);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleFont.setPointSizeF(titleFont.pointSizeF() * 0.85);
+    titleFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
+    titleLabel->setFont(titleFont);
+
+    m_minimizeButton = new QToolButton;
+    m_minimizeButton->setObjectName(u"panelMinimize"_s);
+    m_minimizeButton->setAutoRaise(true);
+    m_minimizeButton->setCursor(Qt::PointingHandCursor);
+    m_minimizeButton->setFocusPolicy(Qt::NoFocus);
+    connect(m_minimizeButton, &QToolButton::clicked, this, [this] { setMinimized(!m_minimized); });
+
+    auto* titleLayout = new QHBoxLayout(m_titleBar);
+    titleLayout->setContentsMargins(14, 4, 6, 4);
+    titleLayout->setSpacing(4);
+    titleLayout->addWidget(titleLabel);
+    titleLayout->addStretch(1);
+    titleLayout->addWidget(m_minimizeButton);
+
+    //----- Body: a line under the title bar, then the content -----
+    m_body = new QWidget;
+    auto* separator = new QFrame;
+    separator->setObjectName(u"panelSeparator"_s);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Plain);
+    auto* bodyLayout = new QVBoxLayout(m_body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(0);
+    bodyLayout->addWidget(separator);
+    bodyLayout->addWidget(content, 1);
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(2, 2, 2, 4);     // keeps the scroll bar inside the rounded corners
+    layout->setSpacing(0);
+    layout->addWidget(m_titleBar);
+    layout->addWidget(m_body, 1);
+
+    m_titleBar->installEventFilter(this);
+    m_area->installEventFilter(this);          // follow the area when it is resized
+    setMinimized(false);
+}
+
+void FloatingPanel::setMinimized(bool minimized)
+{
+    m_minimized = minimized;
+    m_body->setVisible(!minimized);
+    m_minimizeButton->setText(minimized ? u"▾"_s : u"▴"_s);   // ▾ unfolds, ▴ folds up
+    m_minimizeButton->setToolTip(minimized ? tr("Restore") : tr("Minimize"));
+    place();
+}
+
+int FloatingPanel::minimizedHeight() const
+{
+    const QMargins margins = layout()->contentsMargins();
+    return m_titleBar->sizeHint().height() + margins.top() + margins.bottom();
+}
+
+int FloatingPanel::openMinimumHeight() const
+{
+    return minimizedHeight() + PanelMinContent;
+}
+
+void FloatingPanel::place()
+{
+    const QRect area = m_area->geometry();
+    const int width = std::max(0, std::min(PanelWidth, area.width() - 2 * PanelMargin));
+
+    // Open, the box is 2/3 of the area high, shorter if it was moved down; minimized, just the title bar
+    const int openHeight = area.height() * 2 / 3;
+    const int shortest = m_minimized ? minimizedHeight() : std::min(openHeight, openMinimumHeight());
+    const int top = std::clamp(m_offset.y(), 0, std::max(0, area.height() - shortest));
+    const int height = m_minimized ? minimizedHeight()
+                                   : std::clamp(area.height() - top - PanelMargin, shortest, std::max(shortest, openHeight));
+
+    const int left = std::clamp(m_fromRight ? area.width() - width - m_offset.x() : m_offset.x(),
+                                0, std::max(0, area.width() - width));
+    setGeometry(area.left() + left, area.top() + top, width, std::min(height, std::max(0, area.height() - top)));
+    raise();
+}
+
+void FloatingPanel::moveTo(QPoint topLeft)
+{
+    const QRect area = m_area->geometry();
+    const int x = std::clamp(topLeft.x(), 0, std::max(0, area.width() - width()));
+
+    // Keep the distance to whichever side the box is nearer to, so it stays there when the window is resized
+    m_fromRight = x + width() / 2 > area.width() / 2;
+    m_offset = QPoint(m_fromRight ? area.width() - width() - x : x, topLeft.y());
+    place();
+    m_offset.setY(y() - area.top());   // where it actually went, so the next drag starts from there
+}
+
+bool FloatingPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_area && event->type() == QEvent::Resize) {
+        place();
+    } else if (watched == m_titleBar) {
+        const auto* mouse = static_cast<QMouseEvent*>(event);
+        switch (event->type()) {
+        case QEvent::MouseButtonPress:
+            if (mouse->button() != Qt::LeftButton) break;
+            m_dragging = true;
+            m_dragStartGlobal = mouse->globalPosition();
+            m_dragStartPos = pos() - m_area->pos();
+            return true;
+        case QEvent::MouseMove:
+            if (!m_dragging) break;
+            moveTo(m_dragStartPos + (mouse->globalPosition() - m_dragStartGlobal).toPoint());
+            return true;
+        case QEvent::MouseButtonRelease:
+            if (mouse->button() != Qt::LeftButton) break;
+            m_dragging = false;
+            return true;
+        case QEvent::MouseButtonDblClick:
+            if (mouse->button() != Qt::LeftButton) break;
+            setMinimized(!m_minimized);
+            return true;
+        default:
+            break;
+        }
+    }
+    return QFrame::eventFilter(watched, event);
 }

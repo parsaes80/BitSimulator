@@ -30,6 +30,8 @@ Controls in the Schematic Editor:
 
 The **Properties** panel on the right of the Schematic Editor shows the settings of the selected component (number of inputs, register type, source values, and so on) and lets you change them after the component has been placed. With nothing selected, it says so and shows the settings for the next component you place. A change that would remove a pin with a wire on it is refused until you remove the wire.
 
+The panel floats over the canvas. Drag its title bar to move it anywhere on the canvas; it stays near the side you moved it to when the window is resized. The button at the right of the title bar, or a double-click on the title bar, minimizes it to just the title bar and brings it back.
+
 A **source** drives its output pins (one per bit, lowest bit on top) with a new value every N simulation ticks ("Every"). Its **Mode** decides the values:
 
 | Mode | What it outputs |
@@ -57,7 +59,7 @@ Running the simulation:
 - **Clear** stops the simulation and empties the Schematic Editor.
 
 ![Image](https://github.com/user-attachments/assets/598f7088-9dfa-43cf-8e53-41b766eee1a3)
-You can also write **Verilog** code in the **HDL Editor** tab of the program. After that pressing the compile button will turn you Verilog code into a fully sythesized circuit, and you can simulate it. Compiling stops a running simulation. If the code compiles, the new circuit replaces the one in the Schematic Editor; if it has an error, the error is shown and the current circuit is kept. The top module can have any name: it is found automatically (the module no other module uses). Modules it uses that are written in the same text become blocks (see below).
+You can also write **Verilog** code in the **Compile file** tab of the program. Pressing **Compile** at the bottom right of the tab turns your Verilog code into a fully synthesized circuit and shows it on the canvas, where you can simulate it. Compiling stops a running simulation. If the code compiles, the new circuit replaces the one in the Schematic Editor; if it has an error, the error is shown and the current circuit is kept. The top module can have any name: it is found automatically (the module no other module uses). Modules it uses that are written in the same text become blocks (see below).
 
 To compile a whole project instead, open the **Compile Dir** tab and press **Select path...** (or type a folder and press Enter). Every Verilog (`.v`) and SystemVerilog (`.sv`) file in the folder and its subfolders is listed with a checkbox; uncheck the files to leave out, such as testbenches. **Compile directory** compiles the checked files. As in the editor, the top module is found automatically, and submodules in other files become blocks. `` `include `` files are found next to the file that includes them or anywhere in the project folder.
 ![Image](https://github.com/user-attachments/assets/56b2722c-8d40-4972-800e-267351b7e81e)

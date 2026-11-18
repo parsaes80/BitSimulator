@@ -260,7 +260,7 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="14">
+            <item row="0" column="13">
              <widget class="QPushButton" name="clearButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -353,7 +353,7 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="13">
+            <item row="0" column="12">
              <widget class="QPushButton" name="startButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
@@ -480,7 +480,7 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="12">
+            <item row="0" column="11">
              <widget class="QSlider" name="slider">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
@@ -539,31 +539,6 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="11">
-             <widget class="QPushButton" name="compileButton">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>70</width>
-                <height>40</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>75</width>
-                <height>60</height>
-               </size>
-              </property>
-              <property name="text">
-               <string>Compile</string>
-              </property>
-             </widget>
-            </item>
            </layout>
           </item>
           <item row="0" column="2">
@@ -602,21 +577,61 @@
        <attribute name="title">
         <string>Compile file</string>
        </attribute>
-       <layout class="QHBoxLayout" name="horizontalLayout">
+       <layout class="QVBoxLayout" name="hdlEditorLayout">
+        <property name="spacing">
+         <number>10</number>
+        </property>
         <property name="leftMargin">
-         <number>0</number>
+         <number>16</number>
         </property>
         <property name="topMargin">
-         <number>0</number>
+         <number>16</number>
         </property>
         <property name="rightMargin">
-         <number>0</number>
+         <number>16</number>
         </property>
         <property name="bottomMargin">
-         <number>0</number>
+         <number>16</number>
         </property>
         <item>
+         <widget class="QLabel" name="hdlEditorHint">
+          <property name="text">
+           <string>Write or paste Verilog code. The top module is found automatically.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+          <property name="muted" stdset="0">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QPlainTextEdit" name="hdlEditor"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="hdlEditorButtonRow">
+          <item>
+           <spacer name="hdlEditorSpacer">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="compileButton">
+            <property name="text">
+             <string>Compile</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
        </layout>
       </widget>
@@ -643,7 +658,7 @@
         <item>
          <widget class="QLabel" name="compileDirHint">
           <property name="text">
-           <string>Choose a folder: every Verilog (.v) and SystemVerilog (.sv) file in it and its subfolders is listed. Uncheck the files to leave out, such as testbenches. The top module is found automatically: it is the module no other module uses.</string>
+           <string>Choose a folder: every Verilog (.v) and SystemVerilog (.sv) file in it and its subfolders is listed. Uncheck the files to leave out, such as testbenches. The top module is found automatically.</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>
