@@ -49,15 +49,17 @@ Theme makeTheme(ColorScheme scheme)
     t.componentFill = pick(0x141b1f, 0xffffff);
     t.componentTint = 0.5;
     t.componentText = pick(0xc3ced4, 0x3d4b53);
-    t.andGate       = pick(0xe8b05a, 0xc4891d);
-    t.orGate        = pick(0x5fd3a5, 0x13976d);
-    t.xorGate       = pick(0xa78bfa, 0x7c4ddb);
-    t.notGate       = pick(0xf27c7c, 0xd9474b);
+    t.andGate       = pick(0xf1cf51, 0xcfa312);
+    t.orGate        = pick(0x55dd87, 0x0aa049);
+    t.xorGate       = pick(0xa586ff, 0x7842e6);
+    t.notGate       = pick(0xf97575, 0xe43c41);
     t.mux           = pick(0xf59e5b, 0xdd6f16);
     t.reg           = pick(0x7aa2f7, 0x3567d6);
     t.source        = pick(0x9aa6ad, 0x7d878d);
-    t.display       = pick(0x67e8f9, 0x0e8fae);
+    t.sourceLit     = pick(0xef4444, 0xc62828);
+    t.display       = pick(0xef4444, 0xc62828);
     t.block         = pick(0xf0abfc, 0xa21caf);
+    t.inversion     = pick(0xef4444, 0xc62828);
     t.wire          = pick(0xc3ced4, 0x3d4b53);
     t.wireHigh      = pick(0x2dd4bf, 0x0d9488);
     t.wireLow       = pick(0x3b4a52, 0xc3cdd2);
@@ -676,13 +678,13 @@ QColor Theme::fillFor(const QColor& outline) const
 
 QColor Theme::sourceOutline(double ones) const
 {
-    return mix(source, wireHigh, ones);
+    return mix(source, sourceLit, ones);
 }
 
 QColor Theme::sourceFill(double ones) const
 {
-    // From the tinted body of a gray source to solid teal
-    return mix(fillFor(source), wireHigh, ones);
+    // From the tinted body of a gray source to solid red
+    return mix(fillFor(source), sourceLit, ones);
 }
 
 QColor Theme::textOn(const QColor& background) const

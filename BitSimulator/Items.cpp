@@ -218,6 +218,12 @@ void drawGateSymbol(QPainter* painter, GType type, const QRectF& body)
         painter->strokePath(curve, painter->pen());
     }
     if (type == GType::NAND || type == GType::NOR || type == GType::XNOR) {
+        // The inverting bubble, in its own color whatever the gate's
+        const Theme& theme = currentTheme();
+        QPen pen = painter->pen();
+        pen.setColor(theme.inversion);
+        painter->setPen(pen);
+        painter->setBrush(theme.fillFor(theme.inversion));
         const double bubble = std::min(10.0, body.width() * 0.2);
         painter->drawEllipse(QRectF(halfWidth, -bubble / 2, bubble, bubble));
     }
@@ -438,7 +444,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     const u64 current = value();
     const QString text = QString::number(current);
 
-    // Gray with all pins 0, teal with all 1, and in between by how many are 1 (only while values are shown)
+    // Gray with all pins 0, red with all 1, and in between by how many are 1 (only while values are shown)
     const u64 pins = m_props.bits >= 64 ? current : current & ((u64(1) << m_props.bits) - 1);
     const double ones = sim_values_visible ? double(std::popcount(pins)) / m_props.bits : 0.0;
     const QColor fill = theme.sourceFill(ones);

@@ -76,19 +76,19 @@ private slots:
         QFETCH(ColorScheme, scheme);
         const Theme& theme = themeFor(scheme);
         QCOMPARE(theme.sourceOutline(0), theme.source);                     // all pins 0: gray
-        QCOMPARE(theme.sourceOutline(1), theme.wireHigh);                   // all 1: the teal of a 1
+        QCOMPARE(theme.sourceOutline(1), theme.sourceLit);                  // all 1: red, a lit LED
         QCOMPARE(theme.sourceFill(0), theme.fillFor(theme.source));
-        QCOMPARE(theme.sourceFill(1), theme.wireHigh);
+        QCOMPARE(theme.sourceFill(1), theme.sourceLit);
         QVERIFY(theme.source.saturation() < 40);                            // gray, not a color
 
-        // In a straight line: each pin at 1 moves it the same step closer to teal
+        // In a straight line: each pin at 1 moves it the same step closer to red
+        const QColor lit = theme.sourceLit;
         const auto distance = [&](const QColor& c) {
-            return std::abs(c.red() - theme.wireHigh.red()) + std::abs(c.green() - theme.wireHigh.green()) +
-                   std::abs(c.blue() - theme.wireHigh.blue());
+            return std::abs(c.red() - lit.red()) + std::abs(c.green() - lit.green()) + std::abs(c.blue() - lit.blue());
         };
         const QColor half = theme.sourceOutline(0.5);
-        QVERIFY(std::abs(half.red() - (theme.source.red() + theme.wireHigh.red()) / 2) <= 1);
-        QVERIFY(std::abs(half.green() - (theme.source.green() + theme.wireHigh.green()) / 2) <= 1);
+        QVERIFY(std::abs(half.red() - (theme.source.red() + lit.red()) / 2) <= 1);
+        QVERIFY(std::abs(half.green() - (theme.source.green() + lit.green()) / 2) <= 1);
         int previous = distance(theme.sourceFill(0));
         for (const double ones : {0.25, 0.5, 0.75, 1.0}) {
             const int now = distance(theme.sourceFill(ones));
@@ -96,7 +96,7 @@ private slots:
             previous = now;
         }
 
-        // The number stays readable: light text on the gray body, the other text color on solid teal
+        // The number stays readable: light text on the gray body, the other text color on solid red
         QCOMPARE(theme.textOn(theme.sourceFill(0)), theme.componentText);
         QCOMPARE(theme.textOn(theme.sourceFill(1)), theme.canvas);
     }
@@ -129,6 +129,28 @@ private slots:
         sim_values_visible = true;
         QVERIFY2(near(bodyColor(), currentTheme().sourceFill(0.5)), qPrintable(bodyColor().name()));
         sim_values_visible = false;
+    }
+
+    void theInvertingBubbleIsRed()
+    {
+        // A NAND gate: the gate is yellow, its bubble red
+        CircuitScene scene;
+        ComponentItem* nand = scene.addComponent(GateProps{GType::NAND, 2}, QPointF(80000, 50000));
+        const QRectF area = nand->sceneBoundingRect();
+        QImage image(area.size().toSize(), QImage::Format_ARGB32);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        scene.render(&painter, QRectF(image.rect()), area);
+        painter.end();
+
+        const double width = componentSize(nand->props()).width();
+        const double bubble = std::min(10.0, width * 0.2);
+        const QPointF centre = nand->mapToScene(QPointF(width / 2 + bubble / 2, 0)) - area.topLeft();
+        const QColor inside = image.pixelColor(centre.toPoint());
+        const QColor expected = currentTheme().fillFor(currentTheme().inversion);
+        QVERIFY2(std::abs(inside.red() - expected.red()) <= 3 && std::abs(inside.green() - expected.green()) <= 3
+                     && std::abs(inside.blue() - expected.blue()) <= 3,
+                 qPrintable(inside.name() + u" instead of "_s + expected.name()));
     }
 
     void aComponentBodyIsTintedWithItsOutline()

@@ -54,8 +54,10 @@ struct Theme {
     QColor mux;
     QColor reg;
     QColor source;          // gray: a source with all pins 0 (see sourceOutline)
+    QColor sourceLit;       // red: a source with all pins 1, like a lit LED
     QColor display;
     QColor block;           // submodule blocks and the module ports inside them
+    QColor inversion;       // the bubble at the output of a NAND, NOR and XNOR gate
 
     // Wires: one color while editing; while the simulation runs, a 1 lights up and a 0 dims
     QColor wire;
@@ -78,9 +80,9 @@ struct Theme {
     QColor fillFor(const QColor& outline) const;
     QColor gateColor(GType type) const;
 
-    // A source shows how many of its pins are 1: `ones` from 0 (none: gray, `source`) to 1 (all: teal,
-    // `wireHigh`, like a wire carrying 1), in a straight line. A 1-pin source goes all the way at once;
-    // one of 4 pins moves it a quarter of the way.
+    // A source shows how many of its pins are 1: `ones` from 0 (none: gray, `source`) to 1 (all: red,
+    // `sourceLit`), in a straight line. A 1-pin source goes all the way at once; one of 4 pins moves it
+    // a quarter of the way.
     QColor sourceOutline(double ones) const;
     QColor sourceFill(double ones) const;
     // Of the two text colors (componentText, canvas), the one that reads better on `background`
