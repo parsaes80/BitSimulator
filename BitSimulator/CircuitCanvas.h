@@ -2,7 +2,9 @@
 #include <QFrame>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QElapsedTimer>
 #include <QPointer>
+#include <QTimer>
 #include <array>
 #include <functional>
 #include <unordered_map>
@@ -92,7 +94,11 @@ public:
     void setToolProps(const ItemProps& props);   // makes that kind of component the active tool
     void selectTool(std::size_t kind);           // kind = itemKind<...>; keeps that tool's defaults
     void selectGateTool(GType gateType);
-    void receiveResult(const SimResult& result);
+    void receiveResult(const SimResult& result);   // applies a result now
+    // For the simulator's results: keeps only the newest and applies it at the next screen frame. At
+    // fast speeds the simulator sends far more results than the screen can show; applying every one
+    // would keep the GUI thread busy with values nobody sees, and leave painting and input waiting.
+    void queueResult(const SimResult& result);
     void receiveDesign(const NetDesign& design);   // a compiled design replaces the circuit
 signals:
     // To the simulator (queued across threads, so they arrive in this order)
@@ -139,6 +145,13 @@ private:
     QList<QPointer<SourceItem>> m_sources;   // they show their value at the tick the simulator reports
     std::vector<u8> m_lastNetValues; // last applied net values; only changed nets are pushed to wires
     std::vector<bool> m_lastRegisterValues;
+
+    // Frame pacing for queueResult: the newest result not yet applied, and when the last one was
+    SimResult m_pendingResult;
+    bool m_hasPendingResult = false;
+    QTimer m_frameTimer;               // single shot: fires at the next frame to apply m_pendingResult
+    QElapsedTimer m_sinceLastFrame;
+    void applyPendingResult();
 
     // Compiled designs
     NetDesign m_design;

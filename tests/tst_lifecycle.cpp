@@ -328,9 +328,12 @@ private slots:
         QCOMPARE(circuit.step(), 0);                                     // and then nothing for a second
 
         slider->setValue(10000);                                         // 1 ms per tick
-        int changes = 0, last = circuit.step();
-        for (int i = 0; i < 40; i++) { QTest::qWait(5); if (circuit.step() != last) { changes++; last = circuit.step(); } }
-        QVERIFY2(changes >= 10, qPrintable(u"only %1 step changes seen in 200 ms at full speed"_s.arg(changes)));
+        // The canvas shows values at most once per frame, so count the ticks the clock shows it got
+        // through, not how often the picture changed
+        const u64 before = circuit.clock->tick();
+        QTest::qWait(200);
+        const u64 ticks = circuit.clock->tick() - before;
+        QVERIFY2(ticks >= 50, qPrintable(u"only %1 ticks in 200 ms at full speed"_s.arg(ticks)));
     }
 
     //===================== Compile ========================

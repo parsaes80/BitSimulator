@@ -6,7 +6,9 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QGuiApplication>
 #include <QPainter>
+#include <QScreen>
 #include <QScrollBar>
 #include <QToolButton>
 #include <QWheelEvent>
@@ -21,6 +23,10 @@ CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent)
 {
     setSceneRect(0, 0, 160000, 100000); // Large canvas
+
+    m_frameTimer.setSingleShot(true);
+    m_frameTimer.setTimerType(Qt::PreciseTimer);
+    connect(&m_frameTimer, &QTimer::timeout, this, &CircuitScene::applyPendingResult);
 }
 
 void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
@@ -37,12 +43,17 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     if (pixelsPerUnit <= 0) return;
     while (spacing * pixelsPerUnit < MinDotGap) spacing *= 2;
 
+    // Also the dots just outside `rect` that reach into it; else a partly redrawn area (a scrolled
+    // strip of the cached background, say) would lose the halves of the dots on its edges
+    const qreal reach = DotSize / pixelsPerUnit;
+    const QRectF area = rect.adjusted(-reach, -reach, reach, reach);
+
     QList<QPointF> dots;
-    const qreal firstX = std::ceil(rect.left() / spacing) * spacing;
-    const qreal firstY = std::ceil(rect.top() / spacing) * spacing;
-    dots.reserve(qsizetype((rect.width() / spacing + 1) * (rect.height() / spacing + 1)));
-    for (qreal y = firstY; y <= rect.bottom(); y += spacing) {
-        for (qreal x = firstX; x <= rect.right(); x += spacing) dots.append(QPointF(x, y));
+    const qreal firstX = std::ceil(area.left() / spacing) * spacing;
+    const qreal firstY = std::ceil(area.top() / spacing) * spacing;
+    dots.reserve(qsizetype((area.width() / spacing + 1) * (area.height() / spacing + 1)));
+    for (qreal y = firstY; y <= area.bottom(); y += spacing) {
+        for (qreal x = firstX; x <= area.right(); x += spacing) dots.append(QPointF(x, y));
     }
 
     QPen pen(theme.dot, DotSize, Qt::SolidLine, Qt::RoundCap);
@@ -396,6 +407,37 @@ ExportGraph CircuitScene::buildGraph()
     graph.numNets = nextNet - 1;
     if (!blocks.isEmpty()) expandBlocks(graph, blocks, netOf);
     return graph;
+}
+
+namespace {
+// How often a running simulation's values are put on the canvas: every frame of the screen, but
+// at most 60 times a second. A big circuit takes longer than a frame of a 144 or 360 Hz screen to
+// paint, and values changing faster than that cannot be followed anyway. (Panning, zooming and
+// dragging are not limited by this; they repaint as fast as they can.)
+int frameIntervalMs()
+{
+    const QScreen* screen = QGuiApplication::primaryScreen();
+    const qreal hz = screen && screen->refreshRate() > 0 ? screen->refreshRate() : 60.0;
+    return int(std::ceil(1000.0 / std::clamp(hz, 30.0, 60.0)));
+}
+} // namespace
+
+void CircuitScene::queueResult(const SimResult& result)
+{
+    m_pendingResult = result;          // a newer result replaces one that was not shown yet
+    m_hasPendingResult = true;
+    if (m_frameTimer.isActive()) return;
+    // A whole frame since the last one (always so at slow speeds): show it at once; else at the next frame
+    const qint64 sinceLast = m_sinceLastFrame.isValid() ? m_sinceLastFrame.elapsed() : std::numeric_limits<qint64>::max();
+    m_frameTimer.start(int(std::max<qint64>(0, frameIntervalMs() - sinceLast)));
+}
+
+void CircuitScene::applyPendingResult()
+{
+    if (!m_hasPendingResult) return;
+    m_hasPendingResult = false;
+    m_sinceLastFrame.start();
+    receiveResult(m_pendingResult);
 }
 
 void CircuitScene::receiveResult(const SimResult& result)
@@ -802,6 +844,13 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     setRenderHint(QPainter::Antialiasing);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    // The dot grid is drawn once and reused; Qt redraws it when the view is zoomed, and
+    // MainWindow::setColorScheme drops it when the theme changes
+    setCacheMode(QGraphicsView::CacheBackground);
+    // A running circuit changes many items at once, all over the view. The default (minimal) mode then
+    // merges thousands of small rectangles into an update region, which costs more than painting;
+    // repainting the one rectangle around them all is much cheaper.
+    setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
 
     m_breadcrumb = new QFrame(this);   // a child of the canvas, not its viewport, so panning does not move it
     m_breadcrumb->setObjectName(u"blockBreadcrumb"_s);

@@ -139,7 +139,7 @@ void MainWindow::setup()
     connect(scene, &CircuitScene::startSimSIG, simObj, &Simulator::receiveCircuit);
     connect(scene, &CircuitScene::setSimRunningSIG, simObj, &Simulator::setRunning);
     connect(scene, &CircuitScene::stopSimSIG, simObj, &Simulator::unloadCircuit);
-    connect(simObj, &Simulator::sendResult, scene, &CircuitScene::receiveResult);
+    connect(simObj, &Simulator::sendResult, scene, &CircuitScene::queueResult);   // shown at most once per frame
     connect(this, &MainWindow::sendTimerPeriod, simObj, &Simulator::setTimerPeriod);
 
     qRegisterMetaType<ExportGraph>("ExportGraph");
@@ -226,6 +226,7 @@ void MainWindow::setColorScheme(ColorScheme scheme)
     const Theme& theme = currentTheme();
     applyPalette(*qApp, theme);
     setStyleSheet(themeStyleSheet(theme));
+    ui.camera->resetCachedContent();   // the cached dot grid has the old theme's colors
     ui.camera->viewport()->update();
 }
 
