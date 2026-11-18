@@ -64,6 +64,73 @@ private slots:
         QVERIFY(themeStyleSheet(light).contains(light.window.name()));
     }
 
+    void aSourceMovesFromGrayToTealWithItsOnes_data()
+    {
+        QTest::addColumn<ColorScheme>("scheme");
+        QTest::newRow("dark") << ColorScheme::Dark;
+        QTest::newRow("light") << ColorScheme::Light;
+    }
+
+    void aSourceMovesFromGrayToTealWithItsOnes()
+    {
+        QFETCH(ColorScheme, scheme);
+        const Theme& theme = themeFor(scheme);
+        QCOMPARE(theme.sourceOutline(0), theme.source);                     // all pins 0: gray
+        QCOMPARE(theme.sourceOutline(1), theme.wireHigh);                   // all 1: the teal of a 1
+        QCOMPARE(theme.sourceFill(0), theme.fillFor(theme.source));
+        QCOMPARE(theme.sourceFill(1), theme.wireHigh);
+        QVERIFY(theme.source.saturation() < 40);                            // gray, not a color
+
+        // In a straight line: each pin at 1 moves it the same step closer to teal
+        const auto distance = [&](const QColor& c) {
+            return std::abs(c.red() - theme.wireHigh.red()) + std::abs(c.green() - theme.wireHigh.green()) +
+                   std::abs(c.blue() - theme.wireHigh.blue());
+        };
+        const QColor half = theme.sourceOutline(0.5);
+        QVERIFY(std::abs(half.red() - (theme.source.red() + theme.wireHigh.red()) / 2) <= 1);
+        QVERIFY(std::abs(half.green() - (theme.source.green() + theme.wireHigh.green()) / 2) <= 1);
+        int previous = distance(theme.sourceFill(0));
+        for (const double ones : {0.25, 0.5, 0.75, 1.0}) {
+            const int now = distance(theme.sourceFill(ones));
+            QVERIFY(now < previous);
+            previous = now;
+        }
+
+        // The number stays readable: light text on the gray body, the other text color on solid teal
+        QCOMPARE(theme.textOn(theme.sourceFill(0)), theme.componentText);
+        QCOMPARE(theme.textOn(theme.sourceFill(1)), theme.canvas);
+    }
+
+    void aSourceIsPaintedByHowManyPinsAreOne()
+    {
+        // A 4-pin source holding 3: two of four pins are 1, so its body is halfway to teal
+        CircuitScene scene;
+        auto* source = dynamic_cast<SourceItem*>(scene.addComponent(SourceProps::constantOf(3, 4), QPointF(80000, 50000)));
+        QVERIFY(source);
+        const QRectF body = source->sceneBoundingRect();
+        const auto bodyColor = [&] {
+            QImage image(int(body.width()), int(body.height()), QImage::Format_ARGB32);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            scene.render(&painter, QRectF(image.rect()), body);
+            painter.end();
+            // Inside the body (its shape less the outline), near its bottom-left corner: away from the
+            // number and the pins
+            const QRectF inside = source->shape().boundingRect().adjusted(2, 2, -2, -2);
+            const QPointF at = source->mapToScene(inside.bottomLeft() + QPointF(6, -6)) - body.topLeft();
+            return image.pixelColor(at.toPoint());
+        };
+        const auto near = [](const QColor& a, const QColor& b) {
+            return std::abs(a.red() - b.red()) <= 3 && std::abs(a.green() - b.green()) <= 3 && std::abs(a.blue() - b.blue()) <= 3;
+        };
+
+        sim_values_visible = false;
+        QVERIFY2(near(bodyColor(), currentTheme().sourceFill(0)), qPrintable(bodyColor().name()));   // not running: gray
+        sim_values_visible = true;
+        QVERIFY2(near(bodyColor(), currentTheme().sourceFill(0.5)), qPrintable(bodyColor().name()));
+        sim_values_visible = false;
+    }
+
     void aComponentBodyIsTintedWithItsOutline()
     {
         Theme theme = themeFor(ColorScheme::Dark);

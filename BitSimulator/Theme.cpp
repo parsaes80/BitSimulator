@@ -55,7 +55,7 @@ Theme makeTheme(ColorScheme scheme)
     t.notGate       = pick(0xf27c7c, 0xd9474b);
     t.mux           = pick(0xf59e5b, 0xdd6f16);
     t.reg           = pick(0x7aa2f7, 0x3567d6);
-    t.source        = pick(0xef4444, 0xc62828);
+    t.source        = pick(0x9aa6ad, 0x7d878d);
     t.display       = pick(0x67e8f9, 0x0e8fae);
     t.block         = pick(0xf0abfc, 0xa21caf);
     t.wire          = pick(0xc3ced4, 0x3d4b53);
@@ -662,12 +662,41 @@ const std::pair<QLatin1StringView, QColor Theme::*> SheetColors[] = {
 
 //===================== Theme ========================
 
+QColor Theme::mix(const QColor& from, const QColor& to, double t)
+{
+    t = std::clamp(t, 0.0, 1.0);
+    const auto channel = [t](int a, int b) { return static_cast<int>(std::lround(a + (b - a) * t)); };
+    return QColor(channel(from.red(), to.red()), channel(from.green(), to.green()), channel(from.blue(), to.blue()));
+}
+
 QColor Theme::fillFor(const QColor& outline) const
 {
-    const double t = std::clamp(componentTint, 0.0, 1.0);
-    const auto mix = [t](int from, int to) { return static_cast<int>(std::lround(from + (to - from) * t)); };
-    return QColor(mix(componentFill.red(), outline.red()), mix(componentFill.green(), outline.green()),
-                  mix(componentFill.blue(), outline.blue()));
+    return mix(componentFill, outline, componentTint);
+}
+
+QColor Theme::sourceOutline(double ones) const
+{
+    return mix(source, wireHigh, ones);
+}
+
+QColor Theme::sourceFill(double ones) const
+{
+    // From the tinted body of a gray source to solid teal
+    return mix(fillFor(source), wireHigh, ones);
+}
+
+QColor Theme::textOn(const QColor& background) const
+{
+    // WCAG's contrast ratio between relative luminances
+    const auto luminance = [](const QColor& color) {
+        const auto linear = [](double c) { return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4); };
+        return 0.2126 * linear(color.redF()) + 0.7152 * linear(color.greenF()) + 0.0722 * linear(color.blueF());
+    };
+    const auto contrast = [&](const QColor& a, const QColor& b) {
+        const double la = luminance(a), lb = luminance(b);
+        return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+    };
+    return contrast(componentText, background) >= contrast(canvas, background) ? componentText : canvas;
 }
 
 QColor Theme::gateColor(GType type) const

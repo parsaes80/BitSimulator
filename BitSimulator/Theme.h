@@ -53,7 +53,7 @@ struct Theme {
     QColor notGate;
     QColor mux;
     QColor reg;
-    QColor source;
+    QColor source;          // gray: a source with all pins 0 (see sourceOutline)
     QColor display;
     QColor block;           // submodule blocks and the module ports inside them
 
@@ -77,6 +77,17 @@ struct Theme {
     // The body of a component outlined in `outline`: the plain body moved `componentTint` of the way to it
     QColor fillFor(const QColor& outline) const;
     QColor gateColor(GType type) const;
+
+    // A source shows how many of its pins are 1: `ones` from 0 (none: gray, `source`) to 1 (all: teal,
+    // `wireHigh`, like a wire carrying 1), in a straight line. A 1-pin source goes all the way at once;
+    // one of 4 pins moves it a quarter of the way.
+    QColor sourceOutline(double ones) const;
+    QColor sourceFill(double ones) const;
+    // Of the two text colors (componentText, canvas), the one that reads better on `background`
+    QColor textOn(const QColor& background) const;
+
+    // `from` moved `t` (0..1) of the way to `to`
+    static QColor mix(const QColor& from, const QColor& to, double t);
 };
 
 // The colors of a color scheme

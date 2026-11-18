@@ -437,13 +437,20 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     // The value at the tick the simulator last reported (tick 0, the first value, when not running)
     const u64 current = value();
     const QString text = QString::number(current);
-    const bool lit = m_props.bits == 1 && current != 0 && sim_values_visible;   // a 1-pin source showing a 1
 
-    painter->setPen(QPen(lit ? theme.wireHigh : theme.source, 2));
-    painter->setBrush(lit ? theme.wireHigh : theme.fillFor(theme.source));
+    // Gray with all pins 0, teal with all 1, and in between by how many are 1 (only while values are shown)
+    const u64 pins = m_props.bits >= 64 ? current : current & ((u64(1) << m_props.bits) - 1);
+    const double ones = sim_values_visible ? double(std::popcount(pins)) / m_props.bits : 0.0;
+    const QColor fill = theme.sourceFill(ones);
+    const QColor textColor = theme.textOn(fill);
+    QColor nameLine = textColor;
+    nameLine.setAlpha(120);
+
+    painter->setPen(QPen(theme.sourceOutline(ones), 2));
+    painter->setBrush(fill);
     painter->drawRoundedRect(m_rect, 3, 3);
-    painter->setPen(lit ? theme.canvas : theme.componentText);
-    drawName(painter, m_rect, m_name, lit ? theme.canvas : theme.componentText, lit ? theme.canvas : theme.source);
+    painter->setPen(textColor);
+    drawName(painter, m_rect, m_name, textColor, nameLine);
 
     // A wide source is a tall, narrow box: run a number that does not fit across it along its length,
     // and shrink the font if it does not fit that way either
