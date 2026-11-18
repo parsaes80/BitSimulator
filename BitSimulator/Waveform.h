@@ -5,14 +5,18 @@
 //   1. WaveHistory    what the simulator recorded: for every recorded net, the ticks it changed at
 //   2. formatValue    a value as text, in the radix chosen for its signal
 //   3. WaveformModel  the run's signals, which of them are shown and how, and their history
+//   4. WaveformView   draws the shown signals over the ticks: zoom, pan, cursors
+//   5. WaveSignalTree the circuit and its block instances, with a check box per port to show it
 //
 // The simulator records the changes in its own thread (Simulator::sendWaveChanges); this side only
 // keeps and reads them.
 
 #include <QObject>
+#include <QPoint>
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QWidget>
 #include <optional>
 #include <vector>
 #include "CircuitCanvas.h"   // WaveSignal
@@ -149,4 +153,124 @@ private:
     QString m_topName;
     WaveHistory m_history;
     bool m_running = false;
+};
+
+//===================== 4. WaveformView ========================
+
+class QScrollBar;
+class QTreeWidget;
+class QTreeWidgetItem;
+
+// The shown signals, one row each: name | value at the cursor | the waves. A tick t covers the
+// pixels from xOf(t) to xOf(t + 1); its value is the value after that tick.
+//   Wheel over the waves: zoom around the pointer. Wheel over the names: scroll the rows.
+//   Left-drag: pan. Click: the cursor. Shift+click: a second cursor; the ruler shows the ticks between.
+//   Right-click a row: radix, expand or collapse a bus, move, remove. Delete removes the selected row.
+class WaveformView : public QWidget {
+    Q_OBJECT
+public:
+    explicit WaveformView(QWidget* parent = nullptr);
+    void setModel(WaveformModel* model);
+
+    // The waves' area, and how ticks map to it
+    QRect waveArea() const;
+    double tickAt(double x) const;
+    double xOf(double tick) const;
+    double ticksPerPixel() const { return m_ticksPerPixel; }
+    double leftTick() const { return m_leftTick; }
+
+    std::optional<u64> cursorTick() const { return m_cursor; }
+    std::optional<u64> secondCursorTick() const { return m_cursor2; }
+    void setCursorTick(std::optional<u64> tick);
+    void setSecondCursorTick(std::optional<u64> tick);
+
+    // Follow: while the run goes on, keep its newest tick at the right edge. Panning turns it off.
+    bool follows() const { return m_follow; }
+    void setFollow(bool follow);
+
+    void zoomIn();
+    void zoomOut();
+    void zoomToFit();
+    void zoomAround(double x, double factor);   // factor < 1 zooms in; the tick at x stays at x
+
+    int selectedRow() const { return m_selected; }   // index in the model's rows(), or -1
+    int rowAt(int y) const;                           // the row under a y, or -1
+
+    static constexpr int RowHeight = 26;
+    static constexpr int RulerHeight = 26;
+    static constexpr double MinTicksPerPixel = 1.0 / 200;   // zoomed in to 200 pixels per tick
+
+signals:
+    void followChanged(bool follow);
+    void cursorsChanged();
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+
+private:
+    void signalsChanged();
+    void historyGrew();
+    void layoutParts();                    // the columns' widths and the scroll bars' places
+    void clampView();                      // keeps the view on the recorded ticks
+    void updateScrollBars();
+    void scrollRows(int pixels);
+    int rowsHeight() const { return int(m_rows.size()) * RowHeight; }
+    std::optional<u64> nextChange(const std::vector<u32>& nets, u64 tick) const;   // of any of the nets
+    void paintRuler(QPainter& painter);
+    void paintWaves(QPainter& painter, const WaveRow& row, int top);
+    void paintCursor(QPainter& painter, u64 tick, const QColor& color);
+    QString rulerText(u64 tick) const;
+    void showRowMenu(int row, const QPoint& globalPos);
+
+    WaveformModel* m_model = nullptr;
+    QList<WaveRow> m_rows;
+    int m_nameWidth = 140;
+    int m_valueWidth = 96;
+    double m_leftTick = 0;                 // the tick at the waves' left edge (may be fractional)
+    double m_ticksPerPixel = 1.0 / 20;     // 20 pixels per tick to start with
+    int m_scrollY = 0;                     // rows scrolled out at the top, in pixels
+    bool m_follow = true;
+    std::optional<u64> m_cursor;
+    std::optional<u64> m_cursor2;
+    int m_selected = -1;
+
+    // A left press in the waves: a click (cursor) unless the mouse moves; then a pan
+    bool m_pressed = false;
+    bool m_panning = false;
+    QPoint m_pressPos;
+    double m_pressLeftTick = 0;
+    int m_pressScrollY = 0;
+
+    QScrollBar* m_hbar = nullptr;
+    QScrollBar* m_vbar = nullptr;
+    double m_hbarScale = 1;                // pixels per scroll bar step, so long runs fit its int range
+    bool m_updatingBars = false;
+};
+
+//===================== 5. WaveSignalTree ========================
+
+// Fills a QTreeWidget (two columns: name, in/out) with the circuit, its block instances and their
+// ports. A port's check box shows or hides it in the waveforms; an instance's, all of its ports.
+class WaveSignalTree : public QObject {
+    Q_OBJECT
+public:
+    WaveSignalTree(QTreeWidget* tree, WaveformModel* model, QObject* parent = nullptr);
+
+private:
+    void refresh();                        // rebuilds the tree for a new run, else updates the checks
+    void rebuild();
+    void itemChanged(QTreeWidgetItem* item, int column);
+
+    QTreeWidget* m_tree;
+    WaveformModel* m_model;
+    QStringList m_builtFor;                // the keys of the signals the tree shows
+    bool m_filling = false;
 };

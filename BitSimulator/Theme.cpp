@@ -66,6 +66,11 @@ Theme makeTheme(ColorScheme scheme)
     t.selection     = pick(0x2dd4bf, 0x0d9488);
     t.drag          = pick(0x7a8890, 0x5f6e76);
     t.snap          = pick(0xfde68a, 0xd98a06);
+
+    // Waveforms
+    t.waveCursor    = pick(0xfde68a, 0xd98a06);
+    t.waveCursor2   = pick(0x7aa2f7, 0x3567d6);
+    t.waveGrid      = pick(0x1c2428, 0xe1e7ea);
     return t;
 }
 

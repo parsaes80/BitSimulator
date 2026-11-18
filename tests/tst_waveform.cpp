@@ -3,7 +3,9 @@
 #include "TestSupport.h"
 #include "Waveform.h"
 #include "simulator.h"
+#include <QElapsedTimer>
 #include <QEventLoop>
+#include <QTreeWidget>
 #include <QTimer>
 
 using namespace Qt::StringLiterals;
@@ -338,6 +340,169 @@ private slots:
         model.startRun(3, second, {1, 2, 3, 4}, u"top"_s);
         QCOMPARE(model.rows().size(), 3);                                  // a, y, b
         QCOMPARE(model.radix(0), Radix::Hex);
+    }
+
+    //===================== The view ========================
+
+    void theViewMapsTicksToPixelsAndZooms()
+    {
+        WaveformModel model;
+        model.startRun(1, {signalOf({}, u"a"_s, false, {1})}, {1}, {});
+        model.addChanges(report(1, 999, {{10, 1}, {20, 1}}));
+        WaveformView view;
+        view.setModel(&model);
+        view.resize(900, 300);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        const QRect waves = view.waveArea();
+
+        // Following: the newest tick ends at the right edge
+        QVERIFY(view.follows());
+        QVERIFY(qAbs(view.xOf(1000) - waves.left() - waves.width() * 1.0) < 2);
+
+        // Fit: all 1000 ticks across the waves
+        view.zoomToFit();
+        QCOMPARE(view.tickAt(waves.left()), 0.0);
+        QVERIFY(qAbs(view.xOf(1000) - (waves.left() + waves.width())) < 2);
+
+        // Zooming keeps the tick under the pointer where it is
+        view.setFollow(false);
+        const double x = waves.left() + 300;
+        const double before = view.tickAt(x);
+        view.zoomAround(x, 0.25);
+        QVERIFY(qAbs(view.tickAt(x) - before) < 1e-6);
+        QVERIFY(view.ticksPerPixel() < 1000.0 / waves.width());
+        for (int i = 0; i < 40; i++) view.zoomAround(x, 0.5);           // not past 200 pixels per tick
+        QCOMPARE(view.ticksPerPixel(), WaveformView::MinTicksPerPixel);
+    }
+
+    void clicksSetTheCursorsAndDragsPan()
+    {
+        WaveformModel model;
+        model.startRun(1, {signalOf({}, u"a"_s, false, {1})}, {1}, {});
+        model.addChanges(report(1, 199, {{10, 1}}));
+        WaveformView view;
+        view.setModel(&model);
+        view.resize(900, 300);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        view.setFollow(false);
+        view.zoomToFit();                                                   // all 200 ticks on screen
+        const QRect waves = view.waveArea();
+        const int y = WaveformView::RulerHeight + WaveformView::RowHeight / 2;
+
+        // A click puts the cursor on the tick under it; Shift+click the second one
+        const auto xMiddleOf = [&](u64 tick) { return int(view.xOf(double(tick) + 0.5)); };
+        QTest::mouseClick(&view, Qt::LeftButton, {}, QPoint(xMiddleOf(30), y));
+        QCOMPARE(view.cursorTick(), std::optional<u64>(30));
+        QTest::mouseClick(&view, Qt::LeftButton, Qt::ShiftModifier, QPoint(xMiddleOf(42), y));
+        QCOMPARE(view.secondCursorTick(), std::optional<u64>(42));
+        QCOMPARE(view.cursorTick(), std::optional<u64>(30));
+
+        // A drag pans instead, and stops following
+        view.zoomAround(waves.center().x(), 0.25);                        // room to pan
+        view.setFollow(true);
+        const double left = view.leftTick();
+        const QPoint start(waves.left() + 400, y);
+        QTest::mousePress(&view, Qt::LeftButton, {}, start);
+        QTest::mouseMove(&view, start + QPoint(120, 0));
+        QTest::mouseRelease(&view, Qt::LeftButton, {}, start + QPoint(120, 0));
+        QVERIFY(!view.follows());
+        QVERIFY(qAbs(view.leftTick() - (left - 120 * view.ticksPerPixel())) < 1e-6);
+        QCOMPARE(view.cursorTick(), std::optional<u64>(30));             // a drag is not a click
+
+        // The wheel over the waves zooms in
+        const double zoom = view.ticksPerPixel();
+        QWheelEvent wheel(QPointF(waves.left() + 200, y), view.mapToGlobal(QPointF(waves.left() + 200, y)), {}, QPoint(0, 120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(&view, &wheel);
+        QVERIFY(view.ticksPerPixel() < zoom);
+    }
+
+    void aHighLevelIsDrawnWhereTheSignalIsOne()
+    {
+        WaveformModel model;
+        model.startRun(1, {signalOf({}, u"a"_s, false, {1})}, {1}, {});
+        model.addChanges(report(1, 39, {{10, 1}, {20, 1}}));             // 1 during ticks 10..19
+        WaveformView view;
+        view.setModel(&model);
+        view.resize(900, 200);
+        view.zoomToFit();
+        QImage image(view.size(), QImage::Format_ARGB32);
+        view.render(&image);
+
+        const int high = WaveformView::RulerHeight + 5 + 1;               // just under the high level
+        const QColor canvas = currentTheme().canvas;
+        // Sampled between the ruler's grid lines
+        QVERIFY(image.pixelColor(int(view.xOf(12.5)), high) != canvas);  // filled under the 1
+        QCOMPARE(image.pixelColor(int(view.xOf(32.5)), high), canvas);  // nothing at 0
+    }
+
+    void drawingAMillionTicksIsQuick()
+    {
+        // A clock and a 32-bit counter over a million ticks, all on screen at once
+        std::vector<u32> nets{1};
+        for (u32 n = 2; n < 34; n++) nets.push_back(n);
+        WaveformModel model;
+        QList<WaveSignal> list{signalOf({}, u"clk"_s, false, {1}), signalOf({}, u"count"_s, false, std::vector<u32>(nets.begin() + 1, nets.end()))};
+        model.startRun(1, list, nets, {});
+        std::vector<WaveChange> changes;
+        constexpr u64 Ticks = 1'000'000;
+        for (u64 t = 0; t < Ticks; t++) {
+            changes.push_back({t, 1});
+            const u64 flipped = t ^ (t + 1);                              // the counter's bits that change after t
+            for (u32 bit = 0; bit < 32; bit++) if ((flipped >> bit) & 1) changes.push_back({t + 1, 2 + bit});
+        }
+        std::ranges::stable_sort(changes, {}, &WaveChange::tick);
+        changes.erase(std::ranges::find_if(changes, [](const WaveChange& c) { return c.tick >= Ticks; }), changes.end());
+        model.addChanges(report(1, Ticks - 1, std::move(changes)));
+
+        WaveformView view;
+        view.setModel(&model);
+        view.resize(1600, 300);
+        view.zoomToFit();
+        QImage image(view.size(), QImage::Format_ARGB32);
+        QElapsedTimer timer;
+        timer.start();
+        view.render(&image);
+        QVERIFY2(timer.elapsed() < 500, qPrintable(u"took %1 ms"_s.arg(timer.elapsed())));
+    }
+
+    //===================== The signal tree ========================
+
+    void theTreeChecksShowAndHideSignals()
+    {
+        WaveformModel model;
+        QTreeWidget tree;
+        WaveSignalTree filler(&tree, &model);
+        QCOMPARE(tree.topLevelItemCount(), 1);                             // the hint
+        QVERIFY(!(tree.topLevelItem(0)->flags() & Qt::ItemIsEnabled));
+
+        const QList<WaveSignal> list{signalOf({}, u"a"_s, false, {1}), signalOf({}, u"y"_s, true, {2}),
+                                     signalOf(u"u"_s, u"x"_s, false, {1}), signalOf(u"u"_s, u"z"_s, true, {2}),
+                                     signalOf(u"u/h0"_s, u"s"_s, true, {2})};
+        model.startRun(1, list, {1, 2}, u"top"_s);
+        QTreeWidgetItem* top = tree.topLevelItem(0);
+        QCOMPARE(top->text(0), u"top"_s);
+        QCOMPARE(top->childCount(), 3);                                     // a, y, u
+        QTreeWidgetItem* u = top->child(2);
+        QCOMPARE(u->text(0), u"u (mod)"_s);
+        QCOMPARE(u->childCount(), 3);                                       // x, z, h0
+        QCOMPARE(u->child(2)->text(0), u"h0 (mod)"_s);
+        QCOMPARE(top->child(0)->checkState(0), Qt::Checked);              // the circuit's own are shown
+        QCOMPARE(u->child(0)->checkState(0), Qt::Unchecked);
+        QCOMPARE(top->child(1)->text(1), u"out"_s);
+
+        u->child(0)->setCheckState(0, Qt::Checked);                        // u/x
+        QVERIFY(model.isShown(2));
+        top->child(0)->setCheckState(0, Qt::Unchecked);                    // a
+        QVERIFY(!model.isShown(0));
+
+        // An instance's check box: all of its ports, and those of the instances in it
+        u->setCheckState(0, Qt::Checked);
+        QVERIFY(model.isShown(3) && model.isShown(4));
+        model.hide(4);                                                      // and the other way: hidden elsewhere
+        QCOMPARE(u->child(2)->child(0)->checkState(0), Qt::Unchecked);
     }
 };
 

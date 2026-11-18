@@ -69,6 +69,11 @@ struct Theme {
     QColor drag;            // a wire being dragged, not over a pin it can connect to
     QColor snap;            // ... over a pin it can connect to, and that pin
 
+    //----- The waveforms (the waves themselves use wireHigh, like a wire carrying 1) -----
+    QColor waveCursor;      // the cursor, set with a click
+    QColor waveCursor2;     // the second cursor, set with Shift+click, to measure from the first
+    QColor waveGrid;        // lines between rows, and at the ruler's ticks
+
     // The body of a component outlined in `outline`: the plain body moved `componentTint` of the way to it
     QColor fillFor(const QColor& outline) const;
     QColor gateColor(GType type) const;

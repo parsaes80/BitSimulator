@@ -1,5 +1,19 @@
 #include "Waveform.h"
+#include <QActionGroup>
+#include <QContextMenuEvent>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QScopedValueRollback>
+#include <QScrollBar>
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QWheelEvent>
 #include <algorithm>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include "Theme.h"
 
 using namespace Qt::StringLiterals;
 
@@ -338,4 +352,676 @@ QString WaveformModel::label(const WaveRow& row) const
     if (row.bit >= 0) return u"%1[%2]"_s.arg(name).arg(row.bit);
     if (signal.width() > 1) return u"%1[%2:0]"_s.arg(name).arg(signal.width() - 1);
     return name;
+}
+
+//===================== 4. WaveformView ========================
+
+namespace {
+constexpr int ScopeSpacing = 6;          // between columns
+constexpr int MinSegmentPx = 2;          // narrower segments are drawn as one dense band
+constexpr int ArrowWidth = 14;           // the expand arrow before a bus's name
+constexpr int WaveMargin = 5;            // between a row's edge and its high or low level
+constexpr int DragThreshold = 4;         // pixels the mouse moves before a press becomes a pan
+
+// A step for the ruler's labels: 1, 2 or 5 times a power of ten, at least `minimum` ticks
+u64 niceStep(double minimum)
+{
+    u64 power = 1;
+    while (true) {
+        for (const u64 factor : {1, 2, 5}) {
+            if (double(power * factor) >= minimum) return power * factor;
+        }
+        if (power > std::numeric_limits<u64>::max() / 100) return power;
+        power *= 10;
+    }
+}
+} // namespace
+
+WaveformView::WaveformView(QWidget* parent)
+    : QWidget(parent)
+{
+    setFocusPolicy(Qt::ClickFocus);
+    setMouseTracking(false);
+    m_hbar = new QScrollBar(Qt::Horizontal, this);
+    m_vbar = new QScrollBar(Qt::Vertical, this);
+    connect(m_hbar, &QScrollBar::valueChanged, this, [this](int value) {
+        if (m_updatingBars || !m_model) return;
+        setFollow(false);
+        m_leftTick = double(m_model->history().firstTick()) + value * m_hbarScale * m_ticksPerPixel;
+        clampView();
+        update();
+    });
+    connect(m_vbar, &QScrollBar::valueChanged, this, [this](int value) {
+        if (m_updatingBars) return;
+        m_scrollY = value;
+        update();
+    });
+    layoutParts();
+}
+
+void WaveformView::setModel(WaveformModel* model)
+{
+    m_model = model;
+    connect(model, &WaveformModel::signalsChanged, this, &WaveformView::signalsChanged);
+    connect(model, &WaveformModel::historyGrew, this, &WaveformView::historyGrew);
+    signalsChanged();
+}
+
+void WaveformView::signalsChanged()
+{
+    const bool newRun = m_model && m_model->isRunning() && m_model->history().isEmpty();
+    m_rows = m_model ? m_model->rows() : QList<WaveRow>{};
+    if (m_selected >= m_rows.size()) m_selected = -1;
+    if (newRun || !m_model || !m_model->hasRun()) {
+        // A run starts from tick 0: no cursors, follow the newest tick at the starting zoom
+        m_cursor.reset();
+        m_cursor2.reset();
+        m_leftTick = 0;
+        m_ticksPerPixel = 1.0 / 20;
+        setFollow(true);
+    }
+    layoutParts();
+    clampView();
+    update();
+}
+
+void WaveformView::historyGrew()
+{
+    clampView();
+    updateScrollBars();
+    update();
+}
+
+QRect WaveformView::waveArea() const
+{
+    const int left = m_nameWidth + m_valueWidth + 2 * ScopeSpacing;
+    const int right = width() - m_vbar->sizeHint().width();
+    const int bottom = height() - m_hbar->sizeHint().height();
+    return QRect(QPoint(left, RulerHeight), QPoint(std::max(left, right - 1), std::max(RulerHeight, bottom - 1)));
+}
+
+double WaveformView::tickAt(double x) const
+{
+    return m_leftTick + (x - waveArea().left()) * m_ticksPerPixel;
+}
+
+double WaveformView::xOf(double tick) const
+{
+    return waveArea().left() + (tick - m_leftTick) / m_ticksPerPixel;
+}
+
+void WaveformView::layoutParts()
+{
+    // The name column fits the longest label, within limits
+    const QFontMetrics metrics(font());
+    int longest = metrics.horizontalAdvance(tr("Signal"));
+    if (m_model) {
+        for (const WaveRow& row : std::as_const(m_rows)) longest = std::max(longest, metrics.horizontalAdvance(m_model->label(row)));
+    }
+    m_nameWidth = std::clamp(longest + ArrowWidth + 16, 110, 280);
+
+    const int barH = m_hbar->sizeHint().height();
+    const int barW = m_vbar->sizeHint().width();
+    const QRect waves = waveArea();
+    m_hbar->setGeometry(waves.left(), height() - barH, std::max(0, width() - waves.left() - barW), barH);
+    m_vbar->setGeometry(width() - barW, RulerHeight, barW, std::max(0, height() - RulerHeight - barH));
+    updateScrollBars();
+}
+
+void WaveformView::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    layoutParts();
+    clampView();
+}
+
+void WaveformView::clampView()
+{
+    const int visibleRows = std::max(0, waveArea().height() - 1);
+    m_scrollY = std::clamp(m_scrollY, 0, std::max(0, rowsHeight() - visibleRows));
+    if (!m_model || m_model->history().isEmpty()) return;
+
+    const WaveHistory& history = m_model->history();
+    const double first = double(history.firstTick());
+    const double end = double(history.lastTick()) + 1;       // the end of the newest tick
+    const double width = std::max(1, waveArea().width());
+    const double maxTicksPerPixel = std::max(MinTicksPerPixel, (end - first) / width * 1.05);
+    m_ticksPerPixel = std::clamp(m_ticksPerPixel, MinTicksPerPixel, std::max(maxTicksPerPixel, 1.0 / 20));
+    const double visible = width * m_ticksPerPixel;
+    if (m_follow) m_leftTick = end - visible;
+    m_leftTick = std::clamp(m_leftTick, first, std::max(first, end - visible));
+    updateScrollBars();
+}
+
+void WaveformView::updateScrollBars()
+{
+    const QScopedValueRollback<bool> updating(m_updatingBars, true);
+    const int visibleRows = std::max(0, waveArea().height());
+    m_vbar->setRange(0, std::max(0, rowsHeight() - visibleRows));
+    m_vbar->setPageStep(visibleRows);
+    m_vbar->setSingleStep(RowHeight);
+    m_vbar->setValue(m_scrollY);
+
+    if (!m_model || m_model->history().isEmpty()) {
+        m_hbar->setRange(0, 0);
+        return;
+    }
+    const WaveHistory& history = m_model->history();
+    const double first = double(history.firstTick());
+    const double totalPx = (double(history.lastTick()) + 1 - first) / m_ticksPerPixel;
+    const double width = std::max(1, waveArea().width());
+    m_hbarScale = std::max(1.0, totalPx / 1e9);              // keep the range within an int
+    m_hbar->setRange(0, int(std::max(0.0, (totalPx - width) / m_hbarScale)));
+    m_hbar->setPageStep(int(width / m_hbarScale));
+    m_hbar->setSingleStep(std::max(1, int(40 / m_hbarScale)));
+    m_hbar->setValue(int((m_leftTick - first) / m_ticksPerPixel / m_hbarScale));
+}
+
+void WaveformView::setCursorTick(std::optional<u64> tick)
+{
+    m_cursor = tick;
+    emit cursorsChanged();
+    update();
+}
+
+void WaveformView::setSecondCursorTick(std::optional<u64> tick)
+{
+    m_cursor2 = tick;
+    emit cursorsChanged();
+    update();
+}
+
+void WaveformView::setFollow(bool follow)
+{
+    if (m_follow == follow) return;
+    m_follow = follow;
+    if (follow) clampView();
+    emit followChanged(follow);
+    update();
+}
+
+void WaveformView::zoomIn()
+{
+    zoomAround(m_follow ? waveArea().right() : waveArea().center().x(), 0.5);
+}
+
+void WaveformView::zoomOut()
+{
+    zoomAround(m_follow ? waveArea().right() : waveArea().center().x(), 2.0);
+}
+
+void WaveformView::zoomToFit()
+{
+    if (!m_model || m_model->history().isEmpty()) return;
+    const WaveHistory& history = m_model->history();
+    m_ticksPerPixel = (double(history.lastTick()) + 1 - double(history.firstTick())) / std::max(1, waveArea().width());
+    m_leftTick = double(history.firstTick());
+    clampView();
+    update();
+}
+
+void WaveformView::zoomAround(double x, double factor)
+{
+    const double tick = tickAt(x);
+    m_ticksPerPixel *= factor;
+    m_ticksPerPixel = std::max(m_ticksPerPixel, MinTicksPerPixel);
+    m_leftTick = tick - (x - waveArea().left()) * m_ticksPerPixel;
+    clampView();
+    update();
+}
+
+int WaveformView::rowAt(int y) const
+{
+    if (y < RulerHeight) return -1;
+    const int row = (y - RulerHeight + m_scrollY) / RowHeight;
+    return row < m_rows.size() ? row : -1;
+}
+
+void WaveformView::scrollRows(int pixels)
+{
+    m_scrollY += pixels;
+    clampView();
+    updateScrollBars();
+    update();
+}
+
+std::optional<u64> WaveformView::nextChange(const std::vector<u32>& nets, u64 tick) const
+{
+    std::optional<u64> next;
+    for (const u32 net : nets) {
+        const std::optional<u64> change = m_model->history().nextChange(net, tick);
+        if (change && (!next || *change < *next)) next = change;
+    }
+    return next;
+}
+
+//----- Painting -----
+
+QString WaveformView::rulerText(u64 tick) const
+{
+    return QString::number(tick);
+}
+
+void WaveformView::paintEvent(QPaintEvent*)
+{
+    QPainter painter(this);
+    const Theme& theme = currentTheme();
+    const QRect waves = waveArea();
+    painter.fillRect(rect(), theme.panel);
+    painter.fillRect(QRect(waves.left(), 0, width() - waves.left(), height()), theme.canvas);
+
+    if (!m_model || !m_model->hasRun()) {
+        painter.setPen(theme.mutedText);
+        painter.drawText(rect(), Qt::AlignCenter, tr("Start the simulation to see the waveforms."));
+        return;
+    }
+
+    paintRuler(painter);
+
+    // The rows: name | value | waves
+    const WaveHistory& history = m_model->history();
+    const std::optional<u64> at = m_cursor ? m_cursor : (history.isEmpty() ? std::nullopt : std::optional<u64>(history.lastTick()));
+    QFont valueFont = font();
+    valueFont.setStyleHint(QFont::Monospace);
+    valueFont.setFamilies({u"JetBrains Mono"_s, u"Cascadia Mono"_s, u"Consolas"_s, u"DejaVu Sans Mono"_s, u"monospace"_s});
+    const QFontMetrics nameMetrics(font());
+
+    painter.save();
+    painter.setClipRect(QRect(0, RulerHeight, width(), waves.height() + 1));
+    const int first = m_scrollY / RowHeight;
+    for (int i = first; i < m_rows.size(); i++) {
+        const int top = RulerHeight + i * RowHeight - m_scrollY;
+        if (top > waves.bottom()) break;
+        const WaveRow& row = m_rows[i];
+
+        if (i == m_selected) painter.fillRect(QRect(0, top, waves.left(), RowHeight), theme.buttonChecked);
+
+        // Name, with an arrow for a bus; a bit of an expanded bus is indented under it
+        const WaveSignal& signal = m_model->signalList()[row.signal];
+        int textLeft = 6 + ArrowWidth;
+        if (row.bit < 0 && signal.width() > 1) {
+            painter.setPen(theme.mutedText);
+            painter.drawText(QRect(4, top, ArrowWidth, RowHeight), Qt::AlignCenter,
+                             m_model->isExpanded(row.signal) ? u"▾"_s : u"▸"_s);
+        }
+        if (row.bit >= 0) textLeft += 10;
+        painter.setPen(row.bit >= 0 ? theme.mutedText : theme.text);
+        painter.drawText(QRect(textLeft, top, m_nameWidth - textLeft - 4, RowHeight), Qt::AlignVCenter | Qt::AlignLeft,
+                         nameMetrics.elidedText(m_model->label(row), Qt::ElideLeft, m_nameWidth - textLeft - 4));
+
+        // The value at the cursor (or at the newest tick)
+        if (at) {
+            painter.setFont(valueFont);
+            painter.setPen(theme.text);
+            const QRect valueRect(m_nameWidth + ScopeSpacing, top, m_valueWidth, RowHeight);
+            painter.drawText(valueRect, Qt::AlignVCenter | Qt::AlignRight,
+                             QFontMetrics(valueFont).elidedText(m_model->valueText(row, *at), Qt::ElideLeft, m_valueWidth));
+            painter.setFont(font());
+        }
+
+        painter.setPen(theme.waveGrid);
+        painter.drawLine(0, top + RowHeight - 1, width(), top + RowHeight - 1);
+        paintWaves(painter, row, top);
+    }
+    painter.restore();
+
+    // The cursors over everything, and the ticks between them
+    if (m_cursor2) paintCursor(painter, *m_cursor2, theme.waveCursor2);
+    if (m_cursor) paintCursor(painter, *m_cursor, theme.waveCursor);
+    if (m_cursor && m_cursor2) {
+        const u64 a = std::min(*m_cursor, *m_cursor2), b = std::max(*m_cursor, *m_cursor2);
+        const QString text = tr("Δ %1 ticks").arg(b - a);
+        const double x0 = std::max<double>(xOf(double(a)), waves.left()), x1 = std::min<double>(xOf(double(b)), waves.right());
+        const int textWidth = QFontMetrics(font()).horizontalAdvance(text) + 14;
+        const QRect pill(int((x0 + x1) / 2 - textWidth / 2.0), 3, textWidth, RulerHeight - 6);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(theme.button);
+        painter.drawRoundedRect(pill, 9, 9);
+        painter.setPen(theme.text);
+        painter.drawText(pill, Qt::AlignCenter, text);
+    }
+}
+
+void WaveformView::paintRuler(QPainter& painter)
+{
+    const Theme& theme = currentTheme();
+    const QRect waves = waveArea();
+    painter.fillRect(QRect(0, 0, width(), RulerHeight), theme.panel);
+    painter.setPen(theme.mutedText);
+    painter.drawText(QRect(6, 0, m_nameWidth - 6, RulerHeight), Qt::AlignVCenter | Qt::AlignLeft, tr("Signal"));
+    const WaveHistory& history = m_model->history();
+    const QString valueTitle = m_cursor ? tr("At %1").arg(*m_cursor) : history.isEmpty() ? tr("Value") : tr("At %1").arg(history.lastTick());
+    painter.drawText(QRect(m_nameWidth + ScopeSpacing, 0, m_valueWidth, RulerHeight), Qt::AlignVCenter | Qt::AlignRight, valueTitle);
+    painter.setPen(theme.border);
+    painter.drawLine(0, RulerHeight - 1, width(), RulerHeight - 1);
+    if (history.isEmpty()) return;
+
+    // Labels at least 70 pixels apart, at round ticks; a faint line down through the rows at each
+    const u64 step = niceStep(70 * m_ticksPerPixel);
+    const double firstVisible = std::max(0.0, tickAt(waves.left()));
+    u64 tick = u64(firstVisible / double(step)) * step;
+    painter.save();
+    painter.setClipRect(QRect(waves.left(), 0, waves.width(), height()));
+    for (; double(tick) <= tickAt(waves.right() + 1); tick += step) {
+        const int x = int(std::round(xOf(double(tick))));
+        painter.setPen(theme.waveGrid);
+        painter.drawLine(x, RulerHeight, x, waves.bottom());
+        painter.setPen(theme.border);
+        painter.drawLine(x, RulerHeight - 6, x, RulerHeight - 1);
+        painter.setPen(theme.mutedText);
+        painter.drawText(QRect(x + 3, 0, 80, RulerHeight - 3), Qt::AlignVCenter | Qt::AlignLeft, rulerText(tick));
+    }
+    painter.restore();
+}
+
+void WaveformView::paintCursor(QPainter& painter, u64 tick, const QColor& color)
+{
+    const QRect waves = waveArea();
+    const double x = xOf(double(tick));
+    if (x < waves.left() || x > waves.right()) return;
+    painter.setPen(QPen(color, 1.5));
+    painter.drawLine(QPointF(x, 0), QPointF(x, waves.bottom()));
+}
+
+void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
+{
+    const WaveHistory& history = m_model->history();
+    if (history.isEmpty()) return;
+    const Theme& theme = currentTheme();
+    const QRect waves = waveArea();
+    const std::vector<u32> nets = m_model->netsOf(row);
+    const bool bus = nets.size() > 1;
+    const double high = top + WaveMargin, low = top + RowHeight - 1 - WaveMargin, middle = (high + low) / 2;
+
+    const double startTick = std::max(double(history.firstTick()), std::floor(tickAt(waves.left())));
+    const u64 visStart = u64(std::max(0.0, startTick));
+    const u64 visEnd = std::min(history.lastTick(), u64(std::max(0.0, std::floor(tickAt(waves.right() + 1)))));
+    if (visStart > visEnd) return;
+
+    painter.save();
+    painter.setClipRect(QRect(waves.left(), top, waves.width(), RowHeight - 1));
+    painter.setRenderHint(QPainter::Antialiasing);
+    QColor fill = theme.wireHigh;
+    fill.setAlpha(bus ? 30 : 40);
+    QColor band = theme.wireHigh;
+    band.setAlpha(110);
+    const QPen line(theme.wireHigh, 1.5);
+    const QFontMetrics metrics(font());
+
+    std::optional<bool> previous;           // a 1-bit row's value at the end of the last segment drawn
+    u64 tick = visStart;
+    while (tick <= visEnd) {
+        const std::optional<u64> change = nextChange(nets, tick);
+        const u64 end = change ? std::min(*change, history.lastTick() + 1) : history.lastTick() + 1;
+        const double x0 = xOf(double(tick)), x1 = xOf(double(end));
+
+        if (x1 - x0 < MinSegmentPx && end <= visEnd) {
+            // Too many changes for the pixels: one band, then go on from a few pixels further
+            const u64 skipTo = std::max(end, u64(std::max(0.0, std::floor(tickAt(x0 + MinSegmentPx)))));
+            painter.fillRect(QRectF(x0, high, xOf(double(skipTo)) - x0, low - high), band);
+            previous.reset();
+            tick = skipTo;
+            continue;
+        }
+
+        if (bus) {
+            // A box from change to change, with the value in it if it fits
+            const double slant = std::min(3.0, (x1 - x0) / 2);
+            const QPolygonF box{{x0, middle}, {x0 + slant, high}, {x1 - slant, high}, {x1, middle}, {x1 - slant, low}, {x0 + slant, low}};
+            painter.setPen(line);
+            painter.setBrush(fill);
+            painter.drawPolygon(box);
+            const QString text = m_model->valueText(row, tick);
+            const double left = std::max(x0, double(waves.left())) + slant + 3;
+            const double right = std::min(x1, double(waves.right())) - slant - 3;
+            if (right - left > metrics.horizontalAdvance(text)) {
+                painter.setPen(theme.componentText);
+                painter.drawText(QRectF(left, high, right - left, low - high), Qt::AlignCenter, text);
+            }
+        } else {
+            // A level, with an edge where it changed
+            const bool value = history.bit(nets.empty() ? 0 : nets[0], tick);
+            if (value) painter.fillRect(QRectF(x0, high, x1 - x0, low - high), fill);
+            painter.setPen(line);
+            const double y = value ? high : low;
+            painter.drawLine(QPointF(x0, y), QPointF(x1, y));
+            if (previous && *previous != value) painter.drawLine(QPointF(x0, high), QPointF(x0, low));
+            previous = value;
+        }
+        tick = end;
+    }
+    painter.restore();
+}
+
+//----- Mouse and keys -----
+
+void WaveformView::wheelEvent(QWheelEvent* event)
+{
+    const double steps = event->angleDelta().y() / 120.0;
+    if (steps == 0) return;
+    const QPointF pos = event->position();
+    if (pos.x() >= waveArea().left() && !(event->modifiers() & Qt::ShiftModifier)) {
+        // Over the waves: zoom, keeping the tick under the pointer in place (or the newest one, when following)
+        const double x = m_follow ? waveArea().right() : pos.x();
+        zoomAround(x, std::pow(1.25, -steps));
+    } else {
+        scrollRows(int(-steps * RowHeight * 2));
+    }
+    event->accept();
+}
+
+void WaveformView::mousePressEvent(QMouseEvent* event)
+{
+    setFocus();
+    const QPoint pos = event->position().toPoint();
+    if (event->button() != Qt::LeftButton) return;
+
+    if (pos.x() < waveArea().left()) {
+        // Names and values: select a row; the arrow of a bus expands or collapses it
+        m_selected = rowAt(pos.y());
+        if (m_selected >= 0 && pos.x() < 4 + ArrowWidth) {
+            const WaveRow row = m_rows[m_selected];
+            if (row.bit < 0 && m_model->signalList()[row.signal].width() > 1) m_model->setExpanded(row.signal, !m_model->isExpanded(row.signal));
+        }
+        update();
+        return;
+    }
+    m_pressed = true;
+    m_panning = false;
+    m_pressPos = pos;
+    m_pressLeftTick = m_leftTick;
+    m_pressScrollY = m_scrollY;
+}
+
+void WaveformView::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!m_pressed) return;
+    const QPoint delta = event->position().toPoint() - m_pressPos;
+    if (!m_panning && delta.manhattanLength() < DragThreshold) return;
+    if (!m_panning) {
+        m_panning = true;
+        setCursor(Qt::ClosedHandCursor);
+    }
+    if (delta.x() != 0) setFollow(false);
+    m_leftTick = m_pressLeftTick - delta.x() * m_ticksPerPixel;
+    m_scrollY = m_pressScrollY - delta.y();
+    clampView();
+    update();
+}
+
+void WaveformView::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() != Qt::LeftButton || !m_pressed) return;
+    m_pressed = false;
+    if (m_panning) {
+        m_panning = false;
+        unsetCursor();
+        return;
+    }
+    // A click: a cursor on the tick under it
+    if (!m_model || m_model->history().isEmpty()) return;
+    const WaveHistory& history = m_model->history();
+    const double at = std::floor(tickAt(event->position().x()));
+    const u64 tick = u64(std::clamp(at, double(history.firstTick()), double(history.lastTick())));
+    if (event->modifiers() & Qt::ShiftModifier) setSecondCursorTick(tick);
+    else setCursorTick(tick);
+}
+
+void WaveformView::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    const QPoint pos = event->position().toPoint();
+    const int index = rowAt(pos.y());
+    if (pos.x() >= waveArea().left() || index < 0) return;
+    const WaveRow row = m_rows[index];
+    if (row.bit < 0 && m_model->signalList()[row.signal].width() > 1) m_model->setExpanded(row.signal, !m_model->isExpanded(row.signal));
+}
+
+void WaveformView::contextMenuEvent(QContextMenuEvent* event)
+{
+    const int index = rowAt(event->pos().y());
+    if (index < 0) return;
+    m_selected = index;
+    update();
+    showRowMenu(index, event->globalPos());
+}
+
+void WaveformView::showRowMenu(int index, const QPoint& globalPos)
+{
+    const WaveRow row = m_rows[index];
+    const int signal = row.signal;
+    const bool bus = m_model->signalList()[signal].width() > 1;
+
+    QMenu menu(this);
+    if (bus) {
+        QMenu* radixMenu = menu.addMenu(tr("Radix"));
+        auto* group = new QActionGroup(radixMenu);
+        for (const Radix radix : {Radix::Hex, Radix::Unsigned, Radix::Signed, Radix::Binary}) {
+            QAction* action = radixMenu->addAction(radixName(radix));
+            action->setCheckable(true);
+            action->setChecked(m_model->radix(signal) == radix);
+            group->addAction(action);
+            connect(action, &QAction::triggered, this, [this, signal, radix] { m_model->setRadix(signal, radix); });
+        }
+        const bool expanded = m_model->isExpanded(signal);
+        connect(menu.addAction(expanded ? tr("Collapse bits") : tr("Expand bits")), &QAction::triggered, this,
+                [this, signal, expanded] { m_model->setExpanded(signal, !expanded); });
+        menu.addSeparator();
+    }
+    connect(menu.addAction(tr("Move up")), &QAction::triggered, this, [this, signal] { m_model->move(signal, -1); });
+    connect(menu.addAction(tr("Move down")), &QAction::triggered, this, [this, signal] { m_model->move(signal, +1); });
+    menu.addSeparator();
+    connect(menu.addAction(tr("Remove from waveforms")), &QAction::triggered, this, [this, signal] { m_model->hide(signal); });
+    menu.exec(globalPos);
+}
+
+void WaveformView::keyPressEvent(QKeyEvent* event)
+{
+    if (!m_model) return;
+    if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) && m_selected >= 0) {
+        m_model->hide(m_rows[m_selected].signal);
+    } else if (event->key() == Qt::Key_Up && m_selected > 0) {
+        m_selected--;
+        update();
+    } else if (event->key() == Qt::Key_Down && m_selected + 1 < m_rows.size()) {
+        m_selected++;
+        update();
+    } else {
+        QWidget::keyPressEvent(event);
+    }
+}
+
+//===================== 5. WaveSignalTree ========================
+
+WaveSignalTree::WaveSignalTree(QTreeWidget* tree, WaveformModel* model, QObject* parent)
+    : QObject(parent), m_tree(tree), m_model(model)
+{
+    if (m_tree->columnCount() < 2) m_tree->setColumnCount(2);
+    connect(model, &WaveformModel::signalsChanged, this, &WaveSignalTree::refresh);
+    connect(m_tree, &QTreeWidget::itemChanged, this, &WaveSignalTree::itemChanged);
+    refresh();
+}
+
+void WaveSignalTree::refresh()
+{
+    QStringList keys;
+    for (const WaveSignal& signal : m_model->signalList()) keys.append(WaveformModel::keyOf(signal));
+    if (keys != m_builtFor || m_tree->topLevelItemCount() == 0) {
+        m_builtFor = keys;
+        rebuild();
+        return;
+    }
+    // Same signals: only the check boxes follow what is shown
+    const QScopedValueRollback<bool> filling(m_filling, true);
+    for (QTreeWidgetItemIterator it(m_tree); *it; ++it) {
+        const QVariant signal = (*it)->data(0, Qt::UserRole);
+        if (signal.isValid()) (*it)->setCheckState(0, m_model->isShown(signal.toInt()) ? Qt::Checked : Qt::Unchecked);
+    }
+}
+
+void WaveSignalTree::rebuild()
+{
+    const QScopedValueRollback<bool> filling(m_filling, true);
+
+    // Keep the instances that were open, open
+    QSet<QString> open;
+    for (QTreeWidgetItemIterator it(m_tree); *it; ++it) {
+        if ((*it)->isExpanded()) open.insert((*it)->data(0, Qt::UserRole + 1).toString());
+    }
+    const bool first = m_tree->topLevelItemCount() == 0 || open.isEmpty();
+    m_tree->clear();
+
+    const QList<WaveSignal>& signalList = m_model->signalList();
+    if (signalList.isEmpty()) {
+        auto* hint = new QTreeWidgetItem(m_tree, {tr("Start the simulation to list the signals.")});
+        hint->setFlags(Qt::NoItemFlags);
+        return;
+    }
+
+    const auto scopeFlags = Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate;
+    auto* top = new QTreeWidgetItem(m_tree, {m_model->topName().isEmpty() ? tr("Circuit") : m_model->topName()});
+    top->setFlags(scopeFlags);
+    top->setData(0, Qt::UserRole + 1, QString());
+    QHash<QString, QTreeWidgetItem*> scopes{{QString(), top}};
+
+    // The item of an instance path, made with its parents on first use: "u/h0" under "u"
+    std::function<QTreeWidgetItem*(const QString&, const QString&)> scopeItem = [&](const QString& path, const QString& module) {
+        if (QTreeWidgetItem* item = scopes.value(path)) return item;
+        const qsizetype slash = path.lastIndexOf(u'/');
+        QTreeWidgetItem* parent = slash < 0 ? top : scopeItem(path.left(slash), QString());
+        const QString instance = slash < 0 ? path : path.mid(slash + 1);
+        auto* item = new QTreeWidgetItem(parent, {module.isEmpty() ? instance : u"%1 (%2)"_s.arg(instance, module)});
+        item->setFlags(scopeFlags);
+        item->setData(0, Qt::UserRole + 1, path);
+        scopes.insert(path, item);
+        return item;
+    };
+
+    for (qsizetype i = 0; i < signalList.size(); i++) {
+        const WaveSignal& signal = signalList[i];
+        QTreeWidgetItem* parent = scopeItem(signal.scope, signal.module);
+        if (!signal.module.isEmpty() && parent->text(0) == signal.scope.mid(signal.scope.lastIndexOf(u'/') + 1)) {
+            parent->setText(0, u"%1 (%2)"_s.arg(parent->text(0), signal.module));   // made before its module was known
+        }
+        const QString name = signal.width() > 1 ? u"%1[%2:0]"_s.arg(signal.name).arg(signal.width() - 1) : signal.name;
+        auto* item = new QTreeWidgetItem(parent, {name, signal.output ? tr("out") : tr("in")});
+        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
+        item->setData(0, Qt::UserRole, int(i));
+        item->setCheckState(0, m_model->isShown(int(i)) ? Qt::Checked : Qt::Unchecked);
+        item->setToolTip(0, signal.scope.isEmpty() ? name : signal.scope + u'/' + name);
+    }
+
+    for (auto it = scopes.cbegin(); it != scopes.cend(); ++it) {
+        it.value()->setExpanded(first ? it.key().isEmpty() : open.contains(it.key()));
+    }
+    m_tree->resizeColumnToContents(1);
+}
+
+void WaveSignalTree::itemChanged(QTreeWidgetItem* item, int column)
+{
+    if (m_filling || column != 0) return;
+    const QVariant signal = item->data(0, Qt::UserRole);
+    if (!signal.isValid()) return;   // an instance: Qt checks its ports, which arrive here one by one
+    if (item->checkState(0) == Qt::Checked) m_model->show(signal.toInt());
+    else m_model->hide(signal.toInt());
 }
