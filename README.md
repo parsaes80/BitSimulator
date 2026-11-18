@@ -176,6 +176,25 @@ This project includes binaries from:
   License in ./licenses/GHDL-GPL-2.0-or-later.txt. The IEEE VHDL-2008 library sources in
   lib/ghdl/src/ieee2008 are under the Apache License 2.0 (the LICENSE file next to them).
 
+- Windows runtime libraries – the DLLs next to yosys.exe and yosys-abc.exe (third_party/oss-cad-suite/bin)
+  come unmodified from the OSS CAD Suite release 2025-11-29 (https://github.com/YosysHQ/oss-cad-suite-build),
+  which builds them with Fedora's MinGW packages. The DLLs next to ghdl.exe (third_party/ghdl/bin) come
+  unmodified from GHDL's v6.0.0 Windows build, which uses MSYS2's UCRT64 packages.
+  - GNU Readline 8.2 (libreadline8.dll, needed by yosys.exe) – GNU General Public License 3.0 or later.
+    License in ./licenses/GPL-3.0.txt. Source: https://ftp.gnu.org/gnu/readline/ and
+    https://src.fedoraproject.org/rpms/mingw-readline
+  - GNU termcap 1.3.1 (libtermcap-0.dll, needed by libreadline8.dll) – GNU General Public License 2.0 or later.
+    License in ./licenses/GPL-2.0.txt. Source: https://ftp.gnu.org/gnu/termcap/ and
+    https://src.fedoraproject.org/rpms/mingw-termcap
+  - GCC runtime: libgcc_s_seh-1.dll and libstdc++-6.dll in oss-cad-suite/bin (GCC 13, Fedora MinGW), and
+    libgcc_s_seh-1.dll in ghdl/bin (GCC 15.2.0, MSYS2) – GNU General Public License 3.0 or later with the
+    GCC Runtime Library Exception 3.1. Licenses in ./licenses/GPL-3.0.txt and
+    ./licenses/GCC-Runtime-Library-Exception-3.1.txt. Source: https://gcc.gnu.org/,
+    https://src.fedoraproject.org/rpms/mingw-gcc and https://github.com/msys2/MINGW-packages
+  - Under permissive licenses, with their notices in their sources: MinGW-w64 winpthreads
+    (libwinpthread-1.dll, MIT and BSD style), libffi 3.4 (libffi-8.dll, MIT), Tcl 8.6.12 (tcl86.dll,
+    Tcl/BSD style) and zlib 1.2.13 and 1.3.2 (zlib1.dll, zlib License).
+
 This project uses Qt under the terms of the LGPLv3, dynamically linked and unmodified. The source
 contains no Qt code. A binary release that includes the Qt libraries ships them unmodified; their
 source is available from https://download.qt.io/archive/qt/. License in ./licenses/Qt-LGPL3.txt,
