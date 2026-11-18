@@ -257,6 +257,7 @@ void Simulator::reportWaveChanges()
     WaveChanges report;
     report.runId = m_waveChanges.runId;
     report.lastTick = m_waveChanges.lastTick;
+    report.hasTicks = true;
     std::swap(report.changes, m_waveChanges.changes);
     m_waveChanges.hasTicks = false;
     sendWaveChanges(std::move(report));

@@ -24,6 +24,8 @@ set(PROJECT_SOURCES
     Toolbar.h
     PropertiesPanel.cpp
     PropertiesPanel.h
+    Waveform.cpp
+    Waveform.h
     Theme.cpp
     Theme.h
     simulator.cpp

@@ -1,6 +1,7 @@
 // The waveforms: what the simulator records for them, the history built from it, and the view.
 
 #include "TestSupport.h"
+#include "Waveform.h"
 #include "simulator.h"
 #include <QEventLoop>
 #include <QTimer>
@@ -58,6 +59,29 @@ bool recordedValue(const Run& run, u32 net, u64 tick)
         }
     }
     return value;
+}
+
+// `width` bits of `value`, lowest first
+std::vector<bool> bitsOf(u64 value, int width)
+{
+    std::vector<bool> bits(static_cast<size_t>(width));
+    for (int i = 0; i < width; i++) bits[size_t(i)] = i < 64 && ((value >> i) & 1);
+    return bits;
+}
+
+WaveChanges report(u32 runId, u64 lastTick, std::vector<WaveChange> changes)
+{
+    WaveChanges r;
+    r.runId = runId;
+    r.lastTick = lastTick;
+    r.hasTicks = true;
+    r.changes = std::move(changes);
+    return r;
+}
+
+WaveSignal signalOf(const QString& scope, const QString& name, bool output, std::vector<u32> nets)
+{
+    return WaveSignal{scope, scope.isEmpty() ? QString() : u"mod"_s, name, output, std::move(nets)};
 }
 
 ExportGraph startAndCapture(CircuitScene& scene)
@@ -187,6 +211,133 @@ private slots:
         scene.stopSim();
         QVERIFY(!run.reports.isEmpty());
         QCOMPARE(run.reports.last().lastTick, run.results.last().sourceTick);
+    }
+
+    //===================== The history ========================
+
+    void historyValuesAndChanges()
+    {
+        WaveHistory history;
+        history.start(5, {3, 7});
+        QVERIFY(history.isEmpty());
+        QVERIFY(history.add(report(5, 6, {{0, 3}, {2, 7}, {4, 3}})));
+        QVERIFY(history.add(report(5, 10, {{9, 3}})));
+        QVERIFY(!history.add(report(4, 12, {{11, 3}})));                // another run's report is ignored
+        QCOMPARE(history.lastTick(), u64(10));
+        QCOMPARE(history.changeCount(), size_t(4));
+
+        QCOMPARE(history.bit(3, 0), true);                               // changed at tick 0
+        QCOMPARE(history.bit(3, 3), true);
+        QCOMPARE(history.bit(3, 4), false);
+        QCOMPARE(history.bit(3, 9), true);
+        QCOMPARE(history.bit(7, 1), false);
+        QCOMPARE(history.bit(7, 2), true);
+        QCOMPARE(history.bit(0, 2), false);                              // net 0 is always 0
+        QCOMPARE(history.bit(WaveSignal::AlwaysOne, 2), true);
+        QCOMPARE(history.bit(5, 2), false);                              // not recorded
+
+        QCOMPARE(history.changesBetween(3, 1, 9), size_t(2));
+        QCOMPARE(history.changesBetween(3, 0, 0), size_t(1));
+        QCOMPARE(history.nextChange(3, 4), std::optional<u64>(9));
+        QCOMPARE(history.nextChange(3, 9), std::optional<u64>());
+    }
+
+    void droppingTheOldestKeepsTheRestRight()
+    {
+        WaveHistory history;
+        history.start(1, {2, 3});
+        history.setMaxChanges(100);
+        for (u64 tick = 0; tick < 400; tick += 10) {
+            std::vector<WaveChange> changes;
+            for (u64 t = tick; t < tick + 10; t++) {
+                changes.push_back({t, 2});                               // net 2 flips every tick
+                if (t % 7 == 0) changes.push_back({t, 3});               // net 3 every 7th
+            }
+            QVERIFY(history.add(report(1, tick + 9, changes)));
+        }
+        QVERIFY(history.changeCount() <= 100);
+        QVERIFY(history.firstTick() > 0);
+        QCOMPARE(history.lastTick(), u64(399));
+        for (u64 t = history.firstTick(); t <= 399; t++) {
+            QCOMPARE(history.bit(2, t), (t + 1) % 2 == 1);              // 1 after ticks 0, 2, 4, ...
+            QCOMPARE(history.bit(3, t), (t / 7 + 1) % 2 == 1);
+        }
+    }
+
+    //===================== Values as text ========================
+
+    void formatValueInEveryRadix()
+    {
+        QCOMPARE(formatValue(bitsOf(0x0F, 8), Radix::Hex), u"0f"_s);
+        QCOMPARE(formatValue(bitsOf(0x0F, 8), Radix::Binary), u"00001111"_s);
+        QCOMPARE(formatValue(bitsOf(0x0F, 8), Radix::Unsigned), u"15"_s);
+        QCOMPARE(formatValue(bitsOf(0x0F, 8), Radix::Signed), u"15"_s);
+        QCOMPARE(formatValue(bitsOf(0xF0, 8), Radix::Unsigned), u"240"_s);
+        QCOMPARE(formatValue(bitsOf(0xF0, 8), Radix::Signed), u"-16"_s);
+        QCOMPARE(formatValue(bitsOf(0b1000, 4), Radix::Signed), u"-8"_s);   // the most negative
+        QCOMPARE(formatValue(bitsOf(0x5, 3), Radix::Hex), u"5"_s);
+        QCOMPARE(formatValue(bitsOf(0, 12), Radix::Unsigned), u"0"_s);
+        QCOMPARE(formatValue(bitsOf(0x123, 10), Radix::Hex), u"123"_s);
+
+        // Wider than 64 bits: 70 ones
+        const std::vector<bool> ones(70, true);
+        QCOMPARE(formatValue(ones, Radix::Hex), u"3fffffffffffffffff"_s);
+        QCOMPARE(formatValue(ones, Radix::Unsigned), u"1180591620717411303423"_s);   // 2^70 - 1
+        QCOMPARE(formatValue(ones, Radix::Signed), u"-1"_s);
+        std::vector<bool> top(70, false);
+        top[69] = true;
+        QCOMPARE(formatValue(top, Radix::Signed), u"-590295810358705651712"_s);       // -2^69
+    }
+
+    //===================== Which signals are shown ========================
+
+    void theCircuitsInputsAndOutputsAreShownAndChoicesKept()
+    {
+        WaveformModel model;
+        const QList<WaveSignal> first{signalOf({}, u"a"_s, false, {1, 2}), signalOf({}, u"y"_s, true, {3}),
+                                      signalOf(u"u"_s, u"x"_s, false, {1})};
+        model.startRun(1, first, {1, 2, 3}, u"top"_s);
+        QCOMPARE(model.rows().size(), 2);                                  // a and y; u's port only when added
+        QCOMPARE(model.label(model.rows()[0]), u"a[1:0]"_s);
+        QCOMPARE(model.label(model.rows()[1]), u"y"_s);
+
+        model.show(2);
+        model.setRadix(0, Radix::Binary);
+        model.setExpanded(0, true);
+        QList<WaveRow> rows = model.rows();
+        QCOMPARE(rows.size(), 5);                                          // a, a[1], a[0], y, u/x
+        QCOMPARE(model.label(rows[1]), u"a[1]"_s);
+        QCOMPARE(model.label(rows[2]), u"a[0]"_s);
+        QCOMPARE(model.label(rows[4]), u"u/x"_s);
+
+        // Values: a = 2 then 3; a bit row is that bit
+        model.addChanges(report(1, 5, {{0, 2}, {3, 1}}));
+        QCOMPARE(model.valueText(rows[0], 0), u"10"_s);                    // binary, as chosen
+        QCOMPARE(model.valueText(rows[0], 4), u"11"_s);
+        QCOMPARE(model.valueText(rows[2], 4), u"1"_s);
+        QCOMPARE(model.valueText(rows[4], 2), u"0"_s);
+
+        // The next run of the same circuit, with a new input: the choices stay, the new input is added
+        model.hide(1);                                                     // y removed by hand
+        QList<WaveSignal> second = first;
+        second.append(signalOf({}, u"b"_s, false, {4}));
+        model.startRun(2, second, {1, 2, 3, 4}, u"top"_s);
+        rows = model.rows();
+        QCOMPARE(rows.size(), 5);                                          // a (expanded), u/x, b; not y
+        QCOMPARE(model.radix(0), Radix::Binary);
+        QCOMPARE(model.label(rows.last()), u"b"_s);
+        QVERIFY(!model.isShown(1));
+        QVERIFY(model.history().isEmpty());                                // a new run, a new history
+
+        model.move(3, -1);                                                 // b above u/x
+        QCOMPARE(model.label(model.rows().last()), u"u/x"_s);
+
+        // A new circuit: back to its inputs and outputs only
+        model.resetSignals();
+        QVERIFY(model.rows().isEmpty());
+        model.startRun(3, second, {1, 2, 3, 4}, u"top"_s);
+        QCOMPARE(model.rows().size(), 3);                                  // a, y, b
+        QCOMPARE(model.radix(0), Radix::Hex);
     }
 };
 
