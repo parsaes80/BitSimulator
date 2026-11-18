@@ -10,6 +10,7 @@
 #include <QPainter>
 #include <QScreen>
 #include <QScrollBar>
+#include <QSet>
 #include <QToolButton>
 #include <QWheelEvent>
 #include <cmath>
@@ -89,10 +90,55 @@ ComponentItem* CircuitScene::addComponent(const ItemProps& props, QPointF positi
     if (isLocked() || m_readOnly) return nullptr;
 
     ComponentItem* item = createComponent(props);
+    if (auto* source = dynamic_cast<SourceItem*>(item)) source->setName(automaticName(item));
+    else if (auto* display = dynamic_cast<DisplayItem*>(item)) display->setName(automaticName(item));
     item->setPos(position);
     addItem(item);
     circuitEdited();
     return item;
+}
+
+ComponentItem::EditResult CircuitScene::renameComponent(ComponentItem* item, const QString& name)
+{
+    if (m_readOnly) return std::unexpected(tr("The inside of a block cannot be edited."));
+    if (isLocked()) return std::unexpected(tr("Pause the simulation to edit the circuit."));
+
+    const QString given = name.simplified();
+    if (auto* source = dynamic_cast<SourceItem*>(item)) {
+        if (given == source->name()) return {};
+        source->setName(given.isEmpty() ? automaticName(item) : given);
+    } else if (auto* display = dynamic_cast<DisplayItem*>(item)) {
+        if (given == display->name()) return {};
+        display->setName(given.isEmpty() ? automaticName(item) : given);
+    } else {
+        return std::unexpected(tr("Only sources and displays have a name."));
+    }
+    circuitEdited();
+    return {};
+}
+
+QString CircuitScene::automaticName(const ComponentItem* item) const
+{
+    const bool isSource = dynamic_cast<const SourceItem*>(item);
+    if (!isSource && !dynamic_cast<const DisplayItem*>(item)) return {};
+    const QString stem = isSource ? tr("Source") : tr("Display");
+
+    // The numbers the other components of the same kind have, then the lowest one that is free
+    QSet<int> taken;
+    const QString prefix = stem + u' ';
+    for (QGraphicsItem* other : items()) {
+        if (other == item) continue;
+        QString otherName;
+        if (const auto* source = dynamic_cast<const SourceItem*>(other); source && isSource) otherName = source->name();
+        else if (const auto* display = dynamic_cast<const DisplayItem*>(other); display && !isSource) otherName = display->name();
+        if (!otherName.startsWith(prefix)) continue;
+        bool ok = false;
+        const int number = otherName.mid(prefix.size()).toInt(&ok);
+        if (ok) taken.insert(number);
+    }
+    int number = 1;
+    while (taken.contains(number)) number++;
+    return prefix + QString::number(number);
 }
 
 ComponentItem::EditResult CircuitScene::editComponent(ComponentItem* item, const ItemProps& props)

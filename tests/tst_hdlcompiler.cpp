@@ -442,11 +442,14 @@ private slots:
             if (!name.isEmpty()) QVERIFY2(item->boundingRect().width() > QFontMetricsF(font).horizontalAdvance(name), qPrintable(name));
         }
         CircuitScene drawn;
+        // Placed by hand, they get an automatic name, and are made wide enough for it too
         auto* manual = dynamic_cast<SourceItem*>(drawn.addComponent(SourceProps::counter(2), QPointF(80000, 50000)));
-        QVERIFY(manual && manual->name().isEmpty());
-        QCOMPARE(qRound(manual->shape().boundingRect().width()), 34);     // 30 wide, as before
+        QVERIFY(manual);
+        QCOMPARE(manual->name(), u"Source 1"_s);
+        QVERIFY(manual->boundingRect().width() > QFontMetricsF(font).horizontalAdvance(manual->name()));
         auto* display = dynamic_cast<DisplayItem*>(drawn.addComponent(DisplayProps{2, 0}, QPointF(80200, 50000)));
-        QVERIFY(display && display->name().isEmpty());
+        QVERIFY(display);
+        QCOMPARE(display->name(), u"Display 1"_s);
 
         // Every component is exactly the size dot was told (componentSize), named or not
         const auto sizeOf = [](ComponentItem* item) { return item->shape().boundingRect().adjusted(2, 2, -2, -2).size(); };

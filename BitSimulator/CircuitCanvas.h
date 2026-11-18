@@ -48,6 +48,10 @@ public:
     ComponentItem* addComponent(const ItemProps& props, QPointF position);
     // Changes a placed component; refused with a reason if a wired pin would disappear.
     ComponentItem::EditResult editComponent(ComponentItem* item, const ItemProps& props);
+    // Every source and display has a name: a compiled one the port's name from the code, one placed
+    // by hand an automatic one ("Source 3", the lowest number no other source has) until renamed.
+    // An empty name gives it an automatic one again. Refused for other components.
+    ComponentItem::EditResult renameComponent(ComponentItem* item, const QString& name);
     // Removes the selected wires, and the selected components that have no wires left.
     void deleteSelection();
     // Stops the simulation and empties the canvas.
@@ -118,6 +122,7 @@ private:
     void expandBlocks(ExportGraph& graph, const QList<BlockItem*>& blocks, const std::function<u32(PortItem*)>& pinNet);
     void setSimState(SimState state);
     void circuitEdited();              // call after every structural change
+    QString automaticName(const ComponentItem* item) const;   // "Source 3" / "Display 1"; empty for other kinds
     void cancelWireConnection();       // drop a wire that is still being dragged
     void resetValues();                // clear the values the last run left on the items
 

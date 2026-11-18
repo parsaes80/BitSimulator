@@ -342,6 +342,17 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     m_lockNotice->setWordWrap(true);
     m_lockNotice->hide();
 
+    // A selected source or display has a name, shown on it and in the waveforms. It is not a setting
+    // of the next component to place, so it sits outside the pages, which serve both.
+    m_nameRow = new QWidget;
+    auto* nameForm = makeForm(m_nameRow);
+    m_name = new QLineEdit;
+    m_name->setObjectName(u"componentName"_s);
+    m_name->setToolTip(tr("Shown on the component and in the waveforms. Leave it empty for an automatic name."));
+    nameForm->addRow(tr("Name"), m_name);
+    connect(m_name, &QLineEdit::editingFinished, this, &PropertiesPanel::renameSelected);
+    m_nameRow->hide();
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(14, 12, 14, 12);
     layout->setSpacing(8);
@@ -351,6 +362,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     layout->addSpacing(2);
     layout->addWidget(m_lockNotice);
     layout->addWidget(m_nextSection);
+    layout->addWidget(m_nameRow);
     layout->addWidget(m_pages);
     layout->addWidget(m_placeHint);
     layout->addWidget(m_message);
@@ -372,6 +384,7 @@ void PropertiesPanel::showSimState(SimState state)
 {
     m_locked = (state == SimState::Running);
     m_pages->setEnabled(!m_locked);
+    m_nameRow->setEnabled(!m_locked);
 
     m_lockNotice->setVisible(state != SimState::Stopped);
     m_lockNotice->setText(state == SimState::Running
@@ -399,6 +412,7 @@ void PropertiesPanel::refresh()
     // The "next component" heading and placing hint only make sense while nothing is selected
     m_nextSection->setVisible(selected.isEmpty());
     m_placeHint->setVisible(selected.isEmpty());
+    m_nameRow->hide();
 
     if (selected.isEmpty()) {
         // Nothing selected: say so, and offer the settings of what the active tool will place next
@@ -408,12 +422,17 @@ void PropertiesPanel::refresh()
         load(m_scene->toolProps());
     } else if (selected.size() == 1 && components.size() == 1) {
         m_item = components.first();
-        // A source or display of compiled code stands for one of the design's ports: name it
+        // A source is an input of the circuit and a display an output; both have a name
         const auto* source = dynamic_cast<SourceItem*>(m_item.data());
         const auto* display = dynamic_cast<DisplayItem*>(m_item.data());
-        if (source && !source->name().isEmpty()) m_subtitle->setText(tr("Input “%1” of the design").arg(source->name()));
-        else if (display && !display->name().isEmpty()) m_subtitle->setText(tr("Output “%1” of the design").arg(display->name()));
+        if (source) m_subtitle->setText(tr("Input “%1”").arg(source->name()));
+        else if (display) m_subtitle->setText(tr("Output “%1”").arg(display->name()));
         else m_subtitle->setText(tr("Selected component"));
+        if (source || display) {
+            const QSignalBlocker blocker(m_name);
+            m_name->setText(source ? source->name() : display->name());
+            m_nameRow->show();
+        }
         load(m_item->props());
     } else {
         m_item = nullptr;
@@ -457,6 +476,14 @@ void PropertiesPanel::commit(const ItemProps& props)
         showMessage({});
         m_scene->setToolProps(props);       // emits toolChanged, which reloads the editors
     }
+}
+
+void PropertiesPanel::renameSelected()
+{
+    if (m_locked || !m_item) return;
+    const auto result = m_scene->renameComponent(m_item, m_name->text());
+    refresh();                              // the subtitle, and an emptied field's automatic name
+    if (!result) showMessage(result.error());
 }
 
 template <typename Props, typename Change>

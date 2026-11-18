@@ -110,6 +110,9 @@ private:
     QLabel* m_info = nullptr;
     QLabel* m_message = nullptr;
     QLabel* m_lockNotice = nullptr;
+    QWidget* m_nameRow = nullptr;            // "Name" of a selected source or display
+    QLineEdit* m_name = nullptr;
+    void renameSelected();                   // applies the Name field to the selected source or display
 
     QComboBox* m_gateType = nullptr;
     QLabel* m_gateTypeLabel = nullptr;

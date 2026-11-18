@@ -42,6 +42,44 @@ u32 netOf(const PortItem* port)
 class TestScene : public QObject {
     Q_OBJECT
 private slots:
+    void sourcesAndDisplaysGetNames()
+    {
+        CircuitScene scene;
+        auto* s1 = add<SourceItem>(scene, SourceProps::counter(2), QPointF(80000, 50000));
+        auto* s2 = add<SourceItem>(scene, SourceProps::counter(2), QPointF(80000, 50200));
+        auto* s3 = add<SourceItem>(scene, SourceProps::counter(2), QPointF(80000, 50400));
+        auto* d1 = add<DisplayItem>(scene, DisplayProps{2, 0}, QPointF(80300, 50000));
+        QCOMPARE(s1->name(), u"Source 1"_s);
+        QCOMPARE(s2->name(), u"Source 2"_s);
+        QCOMPARE(s3->name(), u"Source 3"_s);
+        QCOMPARE(d1->name(), u"Display 1"_s);                            // numbered on their own
+
+        // Numbers are kept: deleting Source 2 renames nobody, and the next source gets the free 2
+        scene.clearSelection();
+        s2->setSelected(true);
+        scene.deleteSelection();
+        QCOMPARE(s3->name(), u"Source 3"_s);
+        auto* again = add<SourceItem>(scene, SourceProps::counter(2), QPointF(80000, 50600));
+        QCOMPARE(again->name(), u"Source 2"_s);
+
+        // Renaming; an empty name gives an automatic one again, with a free number
+        QVERIFY(scene.renameComponent(s1, u"  clk  "_s));
+        QCOMPARE(s1->name(), u"clk"_s);                                   // trimmed
+        QVERIFY(s1->boundingRect().width() > 0);
+        QVERIFY(scene.renameComponent(s1, QString()));
+        QCOMPARE(s1->name(), u"Source 1"_s);
+        QVERIFY(scene.renameComponent(d1, u"result"_s));
+        QCOMPARE(d1->name(), u"result"_s);
+
+        auto* gate = add<GateItem>(scene, GateProps{}, QPointF(80600, 50000));
+        QVERIFY(!scene.renameComponent(gate, u"g"_s));                    // only sources and displays
+
+        scene.startOrResumeSim();
+        QVERIFY(!scene.renameComponent(s1, u"x"_s));                      // not while running
+        QCOMPARE(s1->name(), u"Source 1"_s);
+        scene.stopSim();
+    }
+
     void repaintsOnlyWhatChanges()
     {
         CircuitCanvas canvas;

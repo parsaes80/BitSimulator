@@ -232,6 +232,41 @@ private slots:
         QVERIFY(app.canvas->isVisible());
     }
 
+    void nameFieldRenamesSourcesAndDisplays()
+    {
+        App app;
+        auto* name = app.editor_<QLineEdit>("componentName");
+        QVERIFY(!name->isVisible());                                     // nothing selected: no name
+
+        auto* source = add<SourceItem>(app, SourceProps::counter(2));
+        app.select(source);
+        QVERIFY(name->isVisible());
+        QCOMPARE(name->text(), u"Source 1"_s);
+
+        name->selectAll();
+        QTest::keyClicks(name, u"clk"_s);
+        QTest::keyClick(name, Qt::Key_Return);
+        QCOMPARE(source->name(), u"clk"_s);
+        QCOMPARE(name->text(), u"clk"_s);
+
+        name->selectAll();
+        QTest::keyClick(name, Qt::Key_Delete);
+        QTest::keyClick(name, Qt::Key_Return);
+        QCOMPARE(source->name(), u"Source 1"_s);                         // emptied: automatic again
+        QCOMPARE(name->text(), u"Source 1"_s);
+
+        auto* gate = add<GateItem>(app, GateProps{}, QPointF(0, 200));
+        app.select(gate);
+        QVERIFY(!name->isVisible());                                     // gates have no name
+
+        auto* display = add<DisplayItem>(app, DisplayProps{2, 0}, QPointF(0, 400));
+        app.select(display);
+        QCOMPARE(name->text(), u"Display 1"_s);
+        app.start->click();
+        QVERIFY(!name->isEnabled());                                     // locked while running
+        app.clear->click();
+    }
+
     void panelFloatsOverTheCanvas()
     {
         App app;
