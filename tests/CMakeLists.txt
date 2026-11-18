@@ -26,6 +26,10 @@ file(GLOB BITSIM_APP_SOURCES CONFIGURE_DEPENDS
 list(FILTER BITSIM_APP_SOURCES EXCLUDE REGEX "/main\\.cpp$")
 
 add_library(bitsim_under_test STATIC ${BITSIM_APP_SOURCES})
+# MainWindow.cpp includes the ui_BitSimulator.h that AUTOUIC makes from the .ui. The build does not
+# reliably notice that header changing, and a MainWindow compiled against an older layout than the
+# tests' crashes or reads nonsense; depending on the .ui itself makes sure it is compiled again.
+set_source_files_properties(${BITSIM_APP_SOURCE_DIR}/MainWindow.cpp PROPERTIES OBJECT_DEPENDS ${BITSIM_APP_SOURCE_DIR}/BitSimulator.ui)
 target_link_libraries(bitsim_under_test PUBLIC Qt6::Widgets)
 
 # MainWindow.h includes the generated ui_BitSimulator.h, so the tests need the folder it is generated into
@@ -48,6 +52,8 @@ function(bitsim_add_test name)
     # The theme images (theme.qrc) go into each test program: in a static library they would need Q_INIT_RESOURCE
     add_executable(${name} ${name}.cpp TestSupport.h ${BITSIM_APP_SOURCE_DIR}/theme/theme.qrc)
     set_target_properties(${name} PROPERTIES AUTOUIC OFF)
+    # The test includes MainWindow.h and so ui_BitSimulator.h too: the same as for MainWindow.cpp above
+    set_source_files_properties(${name}.cpp PROPERTIES OBJECT_DEPENDS ${BITSIM_APP_SOURCE_DIR}/BitSimulator.ui)
     target_link_libraries(${name} PRIVATE bitsim_under_test Qt6::Test)
     add_dependencies(${name} copy_yosys_bundle copy_graphviz_dot)
 

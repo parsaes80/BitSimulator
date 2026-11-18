@@ -104,6 +104,7 @@ void MainWindow::setup()
 
     //----- Toolbar: Start/Pause, Clear and the speed slider -----
     connect(ui.startButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
+    connect(ui.waveStartButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);   // the same, on the Waveforms tab
     connect(ui.clearButton, &QPushButton::clicked, this, &MainWindow::clearCircuit);
     connect(ui.slider, &QSlider::valueChanged, this, &MainWindow::updateTimerPeriod);
     connect(scene, &CircuitScene::simStateChanged, this, &MainWindow::showSimState);
@@ -298,15 +299,18 @@ void MainWindow::toggleSimulation()
 
 void MainWindow::showSimState(SimState state)
 {
-    // One button: "Start" or "Pause". The style sheet (Theme.cpp) colors it through the #startButton[running="true"] rule.
+    // One button, on the circuit's toolbar and again on the Waveforms tab: "Start" or "Pause". The style
+    // sheet (Theme.cpp) colors it through the [running="true"] rule.
     const bool running = (state == SimState::Running);
-    ui.startButton->setText(running ? tr("Pause") : tr("Start"));
-    ui.startButton->setProperty("running", running);
-    ui.startButton->style()->unpolish(ui.startButton);   // a style sheet only re-reads a property on a re-polish
-    ui.startButton->style()->polish(ui.startButton);
-    ui.startButton->setToolTip(running ? tr("Freeze the simulation")
-                                       : state == SimState::Paused ? tr("Continue the simulation")
-                                                                   : tr("Run the circuit from the first tick"));
+    for (QPushButton* button : {ui.startButton, ui.waveStartButton}) {
+        button->setText(running ? tr("Pause") : tr("Start"));
+        button->setProperty("running", running);
+        button->style()->unpolish(button);   // a style sheet only re-reads a property on a re-polish
+        button->style()->polish(button);
+        button->setToolTip(running ? tr("Freeze the simulation")
+                                   : state == SimState::Paused ? tr("Continue the simulation")
+                                                               : tr("Run the circuit from the first tick"));
+    }
 }
 
 void MainWindow::clearCircuit()

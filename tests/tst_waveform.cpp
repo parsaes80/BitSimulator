@@ -521,6 +521,28 @@ private slots:
         QVERIFY(!(tree->topLevelItem(0)->flags() & Qt::ItemIsEnabled));   // the hint
     }
 
+    void theTabsStartButtonIsTheSameAsTheCircuits()
+    {
+        App app;
+        auto* waveStart = child<QPushButton>(&app.window, "waveStartButton");
+        app.scene->addComponent(SourceProps::counter(2), app.centre);
+        QCOMPARE(waveStart->text(), u"Start"_s);
+
+        waveStart->click();                                                // starts the run
+        QCOMPARE(app.scene->simState(), SimState::Running);
+        QCOMPARE(waveStart->text(), u"Pause"_s);
+        QCOMPARE(app.start->text(), u"Pause"_s);                          // both buttons say so
+        QVERIFY(waveStart->property("running").toBool());                  // the amber Pause color
+
+        app.start->click();                                                // the circuit's button pauses it
+        QCOMPARE(app.scene->simState(), SimState::Paused);
+        QCOMPARE(waveStart->text(), u"Start"_s);
+        QVERIFY(!waveStart->property("running").toBool());
+        waveStart->click();                                                // and this one continues it
+        QCOMPARE(app.scene->simState(), SimState::Running);
+        app.clear->click();
+    }
+
     //===================== The signal tree ========================
 
     void theTreeChecksShowAndHideSignals()

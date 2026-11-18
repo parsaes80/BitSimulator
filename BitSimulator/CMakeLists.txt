@@ -63,6 +63,11 @@ endif()
 
 target_include_directories(BitSimulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# main.cpp and MainWindow.cpp include ui_BitSimulator.h, which AUTOUIC makes from the .ui. Should the
+# build miss that header changing, the two would disagree about MainWindow's layout and the app would
+# crash; depending on the .ui itself makes sure both are compiled again after it changes.
+set_source_files_properties(main.cpp MainWindow.cpp PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/BitSimulator.ui)
+
 target_link_libraries(BitSimulator PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

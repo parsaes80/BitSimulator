@@ -161,30 +161,30 @@ QPushButton:disabled {
     color: @disabledText;
 }
 
-/* Start / Pause: teal while it says Start, amber while it says Pause */
-#startButton {
+/* Start / Pause, on the circuit's toolbar and the Waveforms tab's: teal while it says Start, amber while it says Pause */
+#startButton, #waveStartButton {
     background-color: @accent;
     border-color: @accent;
     color: @onAccent;
     font-weight: bold;
 }
 
-#startButton:hover {
+#startButton:hover, #waveStartButton:hover {
     background-color: @accentHover;
     border-color: @accentHover;
 }
 
-#startButton:pressed {
+#startButton:pressed, #waveStartButton:pressed {
     background-color: @accentPressed;
 }
 
-#startButton[running="true"] {
+#startButton[running="true"], #waveStartButton[running="true"] {
     background-color: @pause;
     border-color: @pause;
     color: @onPause;
 }
 
-#startButton[running="true"]:hover {
+#startButton[running="true"]:hover, #waveStartButton[running="true"]:hover {
     background-color: @pauseHover;
     border-color: @pauseHover;
 }

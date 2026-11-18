@@ -110,7 +110,7 @@ Every port of every block is recorded from the first tick, so a port added later
 | Radix (hex, unsigned, signed, binary), expand a bus into bits, move, remove | Right-click a row |
 | Expand or collapse a bus | Click its arrow, or double-click its name |
 
-While the simulation runs, **Follow** keeps the newest tick in view; dragging turns it off and the button turns it back on. When the run stops, its waveforms stay until the next Start. The next run of the same circuit keeps the signals and their settings; compiling or clearing starts over with the new circuit's inputs and outputs.
+The tab has its own **Start / Pause** button, the same as the one on the circuit's toolbar, so a run can be started, paused and continued without leaving the waveforms. While the simulation runs, **Follow** keeps the newest tick in view; dragging turns it off and the button turns it back on. When the run stops, its waveforms stay until the next Start. The next run of the same circuit keeps the signals and their settings; compiling or clearing starts over with the new circuit's inputs and outputs.
 
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
