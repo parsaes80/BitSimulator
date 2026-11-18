@@ -444,7 +444,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     const u64 current = value();
     const QString text = QString::number(current);
 
-    // Gray with all pins 0, red with all 1, and in between by how many are 1 (only while values are shown)
+    // Gray with all pins 0, teal with all 1, and in between by how many are 1 (only while values are shown)
     const u64 pins = m_props.bits >= 64 ? current : current & ((u64(1) << m_props.bits) - 1);
     const double ones = sim_values_visible ? double(std::popcount(pins)) / m_props.bits : 0.0;
     const QColor fill = theme.sourceFill(ones);

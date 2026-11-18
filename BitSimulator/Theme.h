@@ -54,7 +54,7 @@ struct Theme {
     QColor mux;
     QColor reg;
     QColor source;          // gray: a source with all pins 0 (see sourceOutline)
-    QColor sourceLit;       // red: a source with all pins 1, like a lit LED
+    QColor sourceLit;       // teal: a source with all pins 1, like the wires it drives
     QColor display;
     QColor block;           // submodule blocks and the module ports inside them
     QColor inversion;       // the bubble at the output of a NAND, NOR and XNOR gate
@@ -80,7 +80,7 @@ struct Theme {
     QColor fillFor(const QColor& outline) const;
     QColor gateColor(GType type) const;
 
-    // A source shows how many of its pins are 1: `ones` from 0 (none: gray, `source`) to 1 (all: red,
+    // A source shows how many of its pins are 1: `ones` from 0 (none: gray, `source`) to 1 (all: teal,
     // `sourceLit`), in a straight line. A 1-pin source goes all the way at once; one of 4 pins moves it
     // a quarter of the way.
     QColor sourceOutline(double ones) const;

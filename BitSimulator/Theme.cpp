@@ -56,7 +56,7 @@ Theme makeTheme(ColorScheme scheme)
     t.mux           = pick(0xf59e5b, 0xdd6f16);
     t.reg           = pick(0x7aa2f7, 0x3567d6);
     t.source        = pick(0x9aa6ad, 0x7d878d);
-    t.sourceLit     = pick(0xef4444, 0xc62828);
+    t.sourceLit     = pick(0x2dd4bf, 0x0d9488);   // the teal of a wire carrying 1
     t.display       = pick(0xef4444, 0xc62828);
     t.block         = pick(0xf0abfc, 0xa21caf);
     t.inversion     = pick(0xef4444, 0xc62828);
@@ -683,7 +683,7 @@ QColor Theme::sourceOutline(double ones) const
 
 QColor Theme::sourceFill(double ones) const
 {
-    // From the tinted body of a gray source to solid red
+    // From the tinted body of a gray source to solid teal
     return mix(fillFor(source), sourceLit, ones);
 }
 

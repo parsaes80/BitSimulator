@@ -76,12 +76,12 @@ private slots:
         QFETCH(ColorScheme, scheme);
         const Theme& theme = themeFor(scheme);
         QCOMPARE(theme.sourceOutline(0), theme.source);                     // all pins 0: gray
-        QCOMPARE(theme.sourceOutline(1), theme.sourceLit);                  // all 1: red, a lit LED
+        QCOMPARE(theme.sourceOutline(1), theme.sourceLit);                  // all 1: teal, like a wire carrying 1
         QCOMPARE(theme.sourceFill(0), theme.fillFor(theme.source));
         QCOMPARE(theme.sourceFill(1), theme.sourceLit);
         QVERIFY(theme.source.saturation() < 40);                            // gray, not a color
 
-        // In a straight line: each pin at 1 moves it the same step closer to red
+        // In a straight line: each pin at 1 moves it the same step closer to teal
         const QColor lit = theme.sourceLit;
         const auto distance = [&](const QColor& c) {
             return std::abs(c.red() - lit.red()) + std::abs(c.green() - lit.green()) + std::abs(c.blue() - lit.blue());
@@ -96,7 +96,7 @@ private slots:
             previous = now;
         }
 
-        // The number stays readable: light text on the gray body, the other text color on solid red
+        // The number stays readable: light text on the gray body, the other text color on solid teal
         QCOMPARE(theme.textOn(theme.sourceFill(0)), theme.componentText);
         QCOMPARE(theme.textOn(theme.sourceFill(1)), theme.canvas);
     }
