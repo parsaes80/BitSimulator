@@ -173,5 +173,7 @@ This project includes binaries from:
   License in ./licenses/GHDL-GPL-2.0-or-later.txt. The IEEE VHDL-2008 library sources in
   lib/ghdl/src/ieee2008 are under the Apache License 2.0 (the LICENSE file next to them).
 
-This project uses Qt under the terms of LGPLv3. No Qt code or binaries
-are distributed; only dynamically linked. License in ./licenses/Qt-LGPL3.txt
+This project uses Qt under the terms of the LGPLv3, dynamically linked and unmodified. The source
+contains no Qt code. A binary release that includes the Qt libraries ships them unmodified; their
+source is available from https://download.qt.io/archive/qt/. License in ./licenses/Qt-LGPL3.txt,
+together with ./licenses/GPL-3.0.txt, which the LGPLv3 builds on.
