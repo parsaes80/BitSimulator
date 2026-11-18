@@ -19,11 +19,11 @@ struct ToolPaths {
     QString yosys;   // yosys for Windows: the OSS CAD Suite; for Linux: yosys_bundle
     QString sv2v;    // third_party/sv2v
     QString dot;     // Graphviz, built from third_party/graphviz
-    QString ghdl;    // VHDL; next to yosys. Not in the Windows bundle yet: VHDL then reports that.
+    QString ghdl;    // VHDL. For Windows: GHDL's own build in third_party/ghdl, since the OSS CAD Suite for Windows has none; for Linux: yosys_bundle
 };
 // Windows paths
 inline const ToolPaths WindowsToolPaths{".\\oss-cad-suite\\bin\\yosys.exe", ".\\sv2v.exe", ".\\dot.exe",
-                                        ".\\oss-cad-suite\\bin\\ghdl.exe"};
+                                        ".\\ghdl\\bin\\ghdl.exe"};
 // Linux paths
 inline const ToolPaths LinuxToolPaths{"./yosys_bundle/bin/yosys", "./sv2v", "./dot", "./yosys_bundle/bin/ghdl"};
 // The paths for the system the app is running on

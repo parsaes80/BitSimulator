@@ -63,7 +63,7 @@ You can also write **Verilog** code in the **Compile file** tab of the program. 
 
 To compile a whole project instead, open the **Compile Dir** tab and press **Select path...** (or type a folder and press Enter). Every Verilog (`.v`) and SystemVerilog (`.sv`) file in the folder and its subfolders is listed with a checkbox; uncheck the files to leave out, such as testbenches. **Compile directory** compiles the checked files. As in the editor, the top module is found automatically, and submodules in other files become blocks. `` `include `` files are found next to the file that includes them or anywhere in the project folder.
 
-**VHDL** works the same way, on Linux for now: write or paste it in the **Compile file** tab (it is recognized by its `entity ... is` declarations), or compile a folder with `.vhd` / `.vhdl` files. GHDL turns it into Verilog first. It reads VHDL-2008 and allows the Synopsys packages such as `std_logic_unsigned`. The top entity is found automatically (the entity no other entity uses), and the entities it uses become blocks named after them; an entity used with different generics becomes one block type per set of values. A folder can mix both languages: a Verilog module can use a VHDL entity by its name. All the VHDL of a design must sit under one top entity, so leave out VHDL testbenches. On Windows, VHDL needs `ghdl.exe` in `third_party/oss-cad-suite/bin`, which is not bundled yet; until then compiling VHDL says so.
+**VHDL** works the same way: write or paste it in the **Compile file** tab (it is recognized by its `entity ... is` declarations), or compile a folder with `.vhd` / `.vhdl` files. GHDL turns it into Verilog first. It reads VHDL-2008 and allows the Synopsys packages such as `std_logic_unsigned`. The top entity is found automatically (the entity no other entity uses), and the entities it uses become blocks named after them; an entity used with different generics becomes one block type per set of values. A folder can mix both languages: a Verilog module can use a VHDL entity by its name. All the VHDL of a design must sit under one top entity, so leave out VHDL testbenches.
 ![Image](https://github.com/user-attachments/assets/56b2722c-8d40-4972-800e-267351b7e81e)
 
 ## Submodules: blocks
@@ -96,7 +96,7 @@ endmodule
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
 
-Everything the app runs besides itself is in `third_party/`: `yosys_bundle` (yosys for Linux), `oss-cad-suite` (yosys for Windows) and `graphviz`; the build copies or builds them next to the executable.
+Everything the app runs besides itself is in `third_party/`: `yosys_bundle` (yosys for Linux), `oss-cad-suite` (yosys for Windows), `ghdl` (ghdl for Windows) and `graphviz`; the build copies or builds them next to the executable.
 
 Graphviz is a git submodule in `third_party/graphviz`. Clone with `git clone --recursive`, or run `git submodule update --init --depth 1` after cloning; if you forget, the first CMake run fetches it.
 
@@ -167,9 +167,12 @@ This project includes binaries from:
   BitSimulator's change to it is third_party/graphviz-support/ns-compact-arrays.patch.
   License in ./licenses/Graphviz-EPL-2.0.txt
 
-- GHDL – Licensed under the GNU General Public License 2.0 or later. Turns VHDL into Verilog (Linux only so far).
-  The unmodified ghdl binary and its VHDL libraries are in third_party/yosys_bundle (bin/ghdl, lib/ghdl).
+- GHDL – Licensed under the GNU General Public License 2.0 or later. Turns VHDL into Verilog.
+  Linux: the unmodified ghdl binary and its VHDL libraries are in third_party/yosys_bundle (bin/ghdl, lib/ghdl).
   Its source: https://github.com/ghdl/ghdl, version 6.0.0-dev, commit ed0da3cfa.
+  Windows: the unmodified ghdl.exe and its VHDL libraries are in third_party/ghdl (bin/ghdl.exe, lib/ghdl),
+  taken from GHDL's own Windows build ghdl-mcode-6.0.0-ucrt64.zip, because the OSS CAD Suite for Windows
+  does not include ghdl. Its source: https://github.com/ghdl/ghdl/releases/tag/v6.0.0, version 6.0.0, commit e589c698c.
   License in ./licenses/GHDL-GPL-2.0-or-later.txt. The IEEE VHDL-2008 library sources in
   lib/ghdl/src/ieee2008 are under the Apache License 2.0 (the LICENSE file next to them).
 

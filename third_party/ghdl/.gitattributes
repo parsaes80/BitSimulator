@@ -1,0 +1,3 @@
+# Keep every file byte for byte: ghdl's .cf files hold a SHA-1 of each VHDL library source, and a
+# line-ending conversion on checkout makes ghdl refuse them ("has changed and must be reanalysed").
+* -text

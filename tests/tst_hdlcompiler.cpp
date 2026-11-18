@@ -157,7 +157,7 @@ int terminalValue(const QGraphicsScene* scene, const QString& name)
     return value;
 }
 
-// VHDL needs ghdl, which only the Linux tool bundle has so far
+// VHDL needs ghdl. Both bundles have it, but a build without it should skip these tests rather than fail.
 bool ghdlAvailable()
 {
     return QFile::exists(toolPaths().ghdl);
