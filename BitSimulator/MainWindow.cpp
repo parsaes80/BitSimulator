@@ -156,7 +156,7 @@ void MainWindow::setupHdlEditor()
     ui.hdlEditor->setFont(font);
     ui.hdlEditor->setTabStopDistance(4 * QFontMetricsF(font).horizontalAdvance(u' '));
     ui.hdlEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
-    ui.hdlEditor->setPlaceholderText(tr("Enter your Verilog code here..."));
+    ui.hdlEditor->setPlaceholderText(tr("Enter your Verilog or VHDL code here..."));
 }
 
 void MainWindow::setupPropertiesPanel()
@@ -337,21 +337,21 @@ void MainWindow::scanCompileDir()
         return;
     }
 
-    // Every Verilog and SystemVerilog file under the folder, and the folders holding them or
+    // Every Verilog, SystemVerilog and VHDL file under the folder, and the folders holding them or
     // their headers (searched for `include). Stops after a few seconds on a huge folder.
     constexpr qint64 MaxScanMs = 3000;
     QElapsedTimer timer;
     timer.start();
     QStringList sources;
     QSet<QString> includeDirs;
-    QDirIterator it(root.absolutePath(), {u"*.v"_s, u"*.sv"_s, u"*.vh"_s, u"*.svh"_s},
+    QDirIterator it(root.absolutePath(), {u"*.v"_s, u"*.sv"_s, u"*.vh"_s, u"*.svh"_s, u"*.vhd"_s, u"*.vhdl"_s},
                     QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
     bool stopped = false;
     while (it.hasNext()) {
         const QFileInfo file(it.next());
         includeDirs.insert(file.absolutePath());
         const QString suffix = file.suffix().toLower();
-        if (suffix == u"v" || suffix == u"sv") sources.append(file.absoluteFilePath());
+        if (suffix == u"v" || suffix == u"sv" || suffix == u"vhd" || suffix == u"vhdl") sources.append(file.absoluteFilePath());
         if (timer.elapsed() > MaxScanMs) { stopped = true; break; }
     }
     std::ranges::sort(sources, [&root](const QString& a, const QString& b) {
@@ -385,7 +385,7 @@ void MainWindow::updateCompileDirStatus()
     QString text;
     if (m_scannedDir.isEmpty()) text = tr("No folder chosen yet.");
     else if (!QDir(m_scannedDir).exists()) text = tr("This folder does not exist.");
-    else if (total == 0) text = tr("No .v or .sv files in this folder.");
+    else if (total == 0) text = tr("No Verilog or VHDL files in this folder.");
     else text = tr("%1 of %2 files selected").arg(checked).arg(total);
     ui.compileDirCount->setText(text);
     ui.compileDirButton->setEnabled(checked > 0 && !m_compiling);

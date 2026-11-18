@@ -157,6 +157,26 @@ int terminalValue(const QGraphicsScene* scene, const QString& name)
     return value;
 }
 
+// VHDL needs ghdl, which only the Linux tool bundle has so far
+bool ghdlAvailable()
+{
+    return QFile::exists(toolPaths().ghdl);
+}
+constexpr const char* MissingGhdl = "ghdl is not bundled for this system yet";
+
+// An entity with a half adder below it, and a 2-bit adder of its own
+const QString vhdlCalculator = u"library ieee;\nuse ieee.std_logic_1164.all;\n"
+    "entity half_adder is\n  port (a, b : in std_logic; s, c : out std_logic);\nend entity;\n"
+    "architecture rtl of half_adder is\nbegin\n  s <= a xor b;\n  c <= a and b;\nend architecture;\n\n"
+    "library ieee;\nuse ieee.std_logic_1164.all;\nuse ieee.numeric_std.all;\n"
+    "entity Calc is\n"
+    "  port (a, b : in std_logic_vector(1 downto 0); sum : out std_logic_vector(2 downto 0); hs, hc : out std_logic);\n"
+    "end entity;\n"
+    "architecture rtl of Calc is\nbegin\n"
+    "  u_ha : entity work.half_adder port map (a => a(0), b => b(0), s => hs, c => hc);\n"
+    "  sum <= std_logic_vector(resize(unsigned(a), 3) + resize(unsigned(b), 3));\n"
+    "end architecture;\n"_s;
+
 } // namespace
 
 class TestHdlCompiler : public QObject {
@@ -321,7 +341,7 @@ private slots:
 
         const CompileRun nothing = compileFiles({});
         QVERIFY(nothing.finished && !nothing.ok);
-        QVERIFY(nothing.errors.join(u' ').contains(u"No Verilog files"_s));
+        QVERIFY(nothing.errors.join(u' ').contains(u"No Verilog or VHDL files"_s));
     }
 
     void aSyntaxErrorIsReported()
@@ -690,6 +710,148 @@ private slots:
             "endmodule\n"_s);
         QVERIFY(run.finished && !run.ok);
         QVERIFY2(run.errors.join(u' ').contains(u"async set and reset"_s), qPrintable(run.errors.join(u'\n')));
+    }
+
+    //===================== VHDL ========================
+
+    void vhdlIsRecognized()
+    {
+        QVERIFY(isVhdlFile(u"/a/alu.vhd"_s));
+        QVERIFY(isVhdlFile(u"/a/ALU.VHDL"_s));
+        QVERIFY(!isVhdlFile(u"/a/alu.v"_s));
+        QVERIFY(!isVhdlFile(u"/a/alu.vh"_s));
+
+        QVERIFY(looksLikeVhdl(vhdlCalculator));
+        QVERIFY(looksLikeVhdl(u"ENTITY x IS\nEND;"_s));                          // VHDL ignores case
+        QVERIFY(!looksLikeVhdl(hierarchicalVerilog));
+        QVERIFY(!looksLikeVhdl(u"// the entity is a counter\nmodule m; endmodule\n"_s));
+
+        QCOMPARE(vhdlEntityOfModule(u"half_adder_Brtl"_s), u"half_adder"_s);
+        QCOMPARE(vhdlEntityOfModule(u"add_n_Bbehav_4"_s), u"add_n"_s);         // with a generic's value
+        QCOMPARE(vhdlEntityOfModule(u"calc"_s), u"calc"_s);                     // the top keeps its name
+    }
+
+    void vhdlFromTheEditorBecomesBlocksAndRuns()
+    {
+        if (!ghdlAvailable()) QSKIP(MissingGhdl);
+        const CompileRun run = compile(vhdlCalculator);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        QCOMPARE(run.design.top, u"Calc"_s);                                    // the top keeps its case
+        QCOMPARE(run.design.modules.size(), 2);
+        QCOMPARE(run.count(ModuleRef{u"half_adder"_s}), 1);                     // the entity's name, not ghdl's
+        QCOMPARE(run.count(GType::XOR, u"half_adder"_s), 1);
+        QCOMPARE(run.count(GType::AND, u"half_adder"_s), 1);
+        QCOMPARE(run.count(IOType::IN), 2);                                      // a, b
+        QCOMPARE(run.count(IOType::OUT), 3);                                     // sum, hs, hc
+
+        CircuitScene scene;
+        scene.receiveDesign(run.design);
+        BlockItem* ha = blockNamed(&scene, u"u_ha"_s);
+        QVERIFY(ha);
+        QCOMPARE(ha->blockProps().module, u"half_adder"_s);
+
+        auto* a = findItem<SourceItem>(&scene, [](SourceItem* item) { return item->name() == u"a"_s; });
+        auto* b = findItem<SourceItem>(&scene, [](SourceItem* item) { return item->name() == u"b"_s; });
+        const auto display = [&](const QString& name) { return findItem<DisplayItem>(&scene, [&](DisplayItem* d) { return d->name() == name; }); };
+        DisplayItem* sum = display(u"sum"_s);
+        DisplayItem* hs = display(u"hs"_s);
+        DisplayItem* hc = display(u"hc"_s);
+        QVERIFY(a && b && sum && hs && hc);
+        QVERIFY(scene.editComponent(a, SourceProps::counter(2, 1)));
+        QVERIFY(scene.editComponent(b, SourceProps::counter(2, 4)));
+
+        ExportGraph graph;
+        connect(&scene, &CircuitScene::startSimSIG, this, [&graph](const ExportGraph& g) { graph = g; });
+        scene.startOrResumeSim();
+        const QList<SimResult> results = simulate(graph, 32);
+        QCOMPARE(results.size(), 32);
+        for (SimResult result : results) {                                       // every combination of a and b
+            result.runId = graph.runId;
+            scene.receiveResult(result);
+            const int x = int(a->value()), y = int(b->value());
+            QVERIFY2(sum->getValue() == x + y, qPrintable(u"%1 + %2 gave %3"_s.arg(x).arg(y).arg(sum->getValue())));
+            QCOMPARE(hs->getValue(), (x ^ y) & 1);
+            QCOMPARE(hc->getValue(), x & y & 1);
+        }
+        scene.stopSim();
+    }
+
+    void anEntityWithTwoSetsOfGenericsKeepsBothModules()
+    {
+        if (!ghdlAvailable()) QSKIP(MissingGhdl);
+        const CompileRun run = compile(u"library ieee;\nuse ieee.std_logic_1164.all;\nuse ieee.std_logic_unsigned.all;\n"
+            "entity add_n is\n  generic (N : integer := 4);\n"
+            "  port (a, b : in std_logic_vector(N-1 downto 0); s : out std_logic_vector(N-1 downto 0));\nend entity;\n"
+            "architecture behav of add_n is\nbegin\n  s <= a + b;\nend architecture;\n"
+            "library ieee;\nuse ieee.std_logic_1164.all;\n"
+            "entity two is\n  port (a4, b4 : in std_logic_vector(3 downto 0); a8, b8 : in std_logic_vector(7 downto 0);\n"
+            "        s4 : out std_logic_vector(3 downto 0); s8 : out std_logic_vector(7 downto 0));\nend entity;\n"
+            "architecture rtl of two is\nbegin\n"
+            "  u4 : entity work.add_n generic map (N => 4) port map (a4, b4, s4);\n"
+            "  u8 : entity work.add_n generic map (N => 8) port map (a8, b8, s8);\nend architecture;\n"_s);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));                  // std_logic_unsigned needs -fsynopsys
+        QCOMPARE(run.design.top, u"two"_s);
+        QCOMPARE(run.design.modules.size(), 3);                                  // one module per set of generics
+        QStringList blocks;
+        for (const NetNode& node : run.nodes()) {
+            if (const auto* ref = std::get_if<ModuleRef>(&node.type)) blocks << ref->module;
+        }
+        QCOMPARE(blocks.size(), 2);
+        QVERIFY(blocks[0] != blocks[1]);
+        for (const QString& block : blocks) QVERIFY2(block.startsWith(u"add_n_B"_s), qPrintable(block));
+    }
+
+    void aTopEntityNamedWithBKeepsItsName()
+    {
+        // "_B" is also ghdl's mark for a used entity's module; the top's name must not be cut there
+        if (!ghdlAvailable()) QSKIP(MissingGhdl);
+        const CompileRun run = compile(u"library ieee;\nuse ieee.std_logic_1164.all;\n"
+            "entity inv_Block is\n  port (a : in std_logic; y : out std_logic);\nend entity;\n"
+            "architecture rtl of inv_Block is\nbegin\n  y <= not a;\nend architecture;\n"
+            "library ieee;\nuse ieee.std_logic_1164.all;\n"
+            "entity reg_Bank is\n  port (a : in std_logic; y : out std_logic);\nend entity;\n"
+            "architecture rtl of reg_Bank is\nbegin\n  u : entity work.inv_Block port map (a, y);\nend architecture;\n"_s);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        QCOMPARE(run.design.top, u"reg_Bank"_s);
+        QCOMPARE(run.design.modules.size(), 2);
+        // A used entity comes out of ghdl in lower case ("inv_block_Brtl"), so its first "_B" is ghdl's
+        QCOMPARE(run.count(ModuleRef{u"inv_block"_s}), 1);
+    }
+
+    void aVerilogTopCanUseAVhdlEntity()
+    {
+        if (!ghdlAvailable()) QSKIP(MissingGhdl);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString root = dir.path();
+        writeFile(root + "/vhdl/half_adder.vhd", u"library ieee;\nuse ieee.std_logic_1164.all;\n"
+            "entity half_adder is\n  port (a, b : in std_logic; s, c : out std_logic);\nend entity;\n"
+            "architecture rtl of half_adder is\nbegin\n  s <= a xor b;\n  c <= a and b;\nend architecture;\n"_s);
+        writeFile(root + "/cpu.v", u"module cpu(input wire x, input wire y, output wire s, output wire c);\n"
+            "  half_adder u0(.a(x), .b(y), .s(s), .c(c));\nendmodule\n"_s);
+
+        const CompileRun run = compileFiles({root + "/vhdl/half_adder.vhd", root + "/cpu.v"});
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        QCOMPARE(run.design.top, u"cpu"_s);
+        QCOMPARE(run.count(ModuleRef{u"half_adder"_s}), 1);
+        QCOMPARE(run.count(GType::XOR, u"half_adder"_s), 1);
+    }
+
+    void vhdlErrorsAreReported()
+    {
+        if (!ghdlAvailable()) QSKIP(MissingGhdl);
+        const CompileRun syntax = compile(u"entity bad is\n  port (a : in bit)\nend;\n"_s);
+        QVERIFY(syntax.finished && !syntax.ok);
+        QCOMPARE(syntax.graphs, 0);
+        QVERIFY2(syntax.errors.join(u'\n').contains(u"code.vhd:2:"_s), qPrintable(syntax.errors.join(u'\n')));   // file and line
+
+        // Two separate designs: ghdl cannot tell which is the top
+        const CompileRun twoTops = compile(u"entity one is\n  port (a : in bit; y : out bit);\nend;\n"
+            "architecture rtl of one is begin y <= a; end;\n"
+            "entity other is\n  port (a : in bit; y : out bit);\nend;\n"
+            "architecture rtl of other is begin y <= not a; end;\n"_s);
+        QVERIFY(twoTops.finished && !twoTops.ok);
+        QVERIFY2(twoTops.errors.join(u'\n').contains(u"exactly one top entity"_s), qPrintable(twoTops.errors.join(u'\n')));
     }
 
     void emptyTextFailsCleanly()

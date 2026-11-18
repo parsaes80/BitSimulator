@@ -19,11 +19,13 @@ struct ToolPaths {
     QString yosys;   // yosys for Windows: the OSS CAD Suite; for Linux: yosys_bundle
     QString sv2v;    // third_party/sv2v
     QString dot;     // Graphviz, built from third_party/graphviz
+    QString ghdl;    // VHDL; next to yosys. Not in the Windows bundle yet: VHDL then reports that.
 };
 // Windows paths
-inline const ToolPaths WindowsToolPaths{".\\oss-cad-suite\\bin\\yosys.exe", ".\\sv2v.exe", ".\\dot.exe"};
+inline const ToolPaths WindowsToolPaths{".\\oss-cad-suite\\bin\\yosys.exe", ".\\sv2v.exe", ".\\dot.exe",
+                                        ".\\oss-cad-suite\\bin\\ghdl.exe"};
 // Linux paths
-inline const ToolPaths LinuxToolPaths{"./yosys_bundle/bin/yosys", "./sv2v", "./dot"};
+inline const ToolPaths LinuxToolPaths{"./yosys_bundle/bin/yosys", "./sv2v", "./dot", "./yosys_bundle/bin/ghdl"};
 // The paths for the system the app is running on
 inline const ToolPaths& toolPaths()
 {
@@ -153,6 +155,34 @@ inline const QList<int>& portBits(const NetNode& node)
     return node.ports.isEmpty() ? none : node.ports.first().bits;
 }
 
+//===================== VHDL ========================
+
+// A VHDL file, by its extension: .vhd or .vhdl, in any case
+inline bool isVhdlFile(const QString& path)
+{
+    using namespace Qt::StringLiterals;
+    return path.endsWith(u".vhd"_s, Qt::CaseInsensitive) || path.endsWith(u".vhdl"_s, Qt::CaseInsensitive);
+}
+
+// Whether the editor's text is VHDL: it declares an entity ("entity counter is"). Verilog has no entities.
+inline bool looksLikeVhdl(const QString& code)
+{
+    using namespace Qt::StringLiterals;
+    static const QRegularExpression entity(u"^\\s*entity\\s+\\w+\\s+is\\b"_s,
+                                           QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption);
+    return entity.match(code).hasMatch();
+}
+
+// The entity a module in ghdl's Verilog was made from. ghdl names the module of a used entity
+// "<entity>_B<architecture>" in lower case but for the B, plus "_<value>" per generic: "add_n_Bbehav_4".
+// Only for those: the top entity's module has the entity's name as it was declared, which may contain "_B".
+inline QString vhdlEntityOfModule(const QString& module)
+{
+    using namespace Qt::StringLiterals;
+    const qsizetype marker = module.indexOf(u"_B"_s);
+    return marker > 0 ? module.left(marker) : module;
+}
+
 // Whether a port name says it is a reset: "rst" or "reset" as a word of the name ("rst", "sys_reset",
 // "arst"), also active-low ("rst_n", "resetn", "rst_b"). Not "first" or "burst".
 inline bool isResetName(const QString& name)
@@ -226,10 +256,10 @@ public:
 
 public:
     // Both find the top module automatically: the module no other module uses.
-    // The HDL editor's text
+    // The HDL editor's text: VHDL if it declares an entity (see looksLikeVhdl), otherwise Verilog
     void receiveCode(const QString& code);
-    // Verilog/SystemVerilog files (absolute paths). `includeDirs` are searched for `include files
-    // besides each file's own folder.
+    // Verilog, SystemVerilog and VHDL files (absolute paths), mixed if need be (see isVhdlFile).
+    // `includeDirs` are searched for Verilog `include files besides each file's own folder.
     void receiveFiles(const QStringList& files, const QStringList& includeDirs);
 
 signals:
@@ -238,15 +268,22 @@ signals:
     void sendDesign(const NetDesign& design);   // every module, laid out; the canvas shows the top one
 
 private:
-    // The steps after the code or files are in place: sv2v, yosys, reading the netlist, layout, then
-    // sendDesign(). False after error() said what went wrong.
+    // The steps after the code or files are in place: ghdl for any VHDL, sv2v, yosys, reading the
+    // netlist, layout, then sendDesign(). False after error() said what went wrong.
     bool compile(const QStringList& files, const QStringList& includeDirs);
+    // ghdl turns the VHDL files into one Verilog file, `output`: a module per entity, named like the
+    // entity where it can be. `verilogFiles` are the design's other files, whose module names win.
+    bool convertVhdl(const QStringList& vhdlFiles, const QStringList& verilogFiles, const QString& output);
     // Lays every module out at once: one dot process per module, all started together, so a design
     // takes as long as its slowest module instead of all of them one after another
     bool layoutDesign(NetDesign& design);
 
-    bool runTool(const QString& name, const QString& program, const QStringList& arguments, int timeoutMs);
-    bool checkFinished(QProcess& process, const QString& name);   // a finished tool succeeded; error() if not
+    // Runs a tool and waits for it. Its standard output goes to `outputFile`, if given. If it fails, the
+    // message (the tool's own, with file and line) goes to error(), or to `failure` if that is given.
+    bool runTool(const QString& name, const QString& program, const QStringList& arguments, int timeoutMs,
+                 const QString& outputFile = {}, QString* failure = nullptr);
+    // A finished tool succeeded; if not, its message goes to error(), or to `failure` if that is given
+    bool checkFinished(QProcess& process, const QString& name, QString* failure = nullptr);
     bool writeTextFile(const QString& fileName, const QString& text);   // error() if it cannot
 
     // A module with fewer cells (gates, multiplexers, flip-flops, blocks) gets dot's full layout; a
@@ -260,6 +297,7 @@ private:
     QString yosysPath = toolPaths().yosys;
     QString sv2vPath = toolPaths().sv2v;
     QString dotPath = toolPaths().dot;
+    QString ghdlPath = toolPaths().ghdl;
 };
 
 

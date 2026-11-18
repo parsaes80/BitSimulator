@@ -596,7 +596,7 @@
         <item>
          <widget class="QLabel" name="hdlEditorHint">
           <property name="text">
-           <string>Write or paste Verilog code. The top module is found automatically.</string>
+           <string>Put your System Verilog, Verilog or VHDL code in the editor. The top module is found automatically.</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>
@@ -658,7 +658,7 @@
         <item>
          <widget class="QLabel" name="compileDirHint">
           <property name="text">
-           <string>Choose a folder: every Verilog (.v) and SystemVerilog (.sv) file in it and its subfolders is listed. Uncheck the files to leave out, such as testbenches. The top module is found automatically.</string>
+           <string>Choose a folder: every Verilog (.v), SystemVerilog (.sv) and VHDL (.vhd, .vhdl) file in it and its subfolders is listed. Uncheck the files to leave out, such as testbenches. The top module is found automatically.</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>

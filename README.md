@@ -6,7 +6,7 @@ An interactive **digital circuit simulator** and **Verilog synthesiser**.
 
 **Bit Simulator** is designed to simulate any digital circuit, also it also has the ability to compile **Verilog** code in program and import the schematic of the synthesised circuit, meaning its a full **Verilog simulator**. 
 
-This application is using **C++** and the **Qt framework** for the GUI layer. It is also using **sv2v** to turn SystemVerilog into plain Verilog and the **Yosys** open source synthesiser to compile it. For the layout of the components after the synthesis its using the **Graphviz** library. 
+This application is using **C++** and the **Qt framework** for the GUI layer. It is also using **sv2v** to turn SystemVerilog into plain Verilog, **GHDL** to turn VHDL into Verilog, and the **Yosys** open source synthesiser to compile it. For the layout of the components after the synthesis its using the **Graphviz** library. 
 
 # Running Bit Simulator
 
@@ -62,6 +62,8 @@ Running the simulation:
 You can also write **Verilog** code in the **Compile file** tab of the program. Pressing **Compile** at the bottom right of the tab turns your Verilog code into a fully synthesized circuit and shows it on the canvas, where you can simulate it. Compiling stops a running simulation. If the code compiles, the new circuit replaces the one in the Schematic Editor; if it has an error, the error is shown and the current circuit is kept. The top module can have any name: it is found automatically (the module no other module uses). Modules it uses that are written in the same text become blocks (see below).
 
 To compile a whole project instead, open the **Compile Dir** tab and press **Select path...** (or type a folder and press Enter). Every Verilog (`.v`) and SystemVerilog (`.sv`) file in the folder and its subfolders is listed with a checkbox; uncheck the files to leave out, such as testbenches. **Compile directory** compiles the checked files. As in the editor, the top module is found automatically, and submodules in other files become blocks. `` `include `` files are found next to the file that includes them or anywhere in the project folder.
+
+**VHDL** works the same way, on Linux for now: write or paste it in the **Compile file** tab (it is recognized by its `entity ... is` declarations), or compile a folder with `.vhd` / `.vhdl` files. GHDL turns it into Verilog first. It reads VHDL-2008 and allows the Synopsys packages such as `std_logic_unsigned`. The top entity is found automatically (the entity no other entity uses), and the entities it uses become blocks named after them; an entity used with different generics becomes one block type per set of values. A folder can mix both languages: a Verilog module can use a VHDL entity by its name. All the VHDL of a design must sit under one top entity, so leave out VHDL testbenches. On Windows, VHDL needs `ghdl.exe` in `third_party/oss-cad-suite/bin`, which is not bundled yet; until then compiling VHDL says so.
 ![Image](https://github.com/user-attachments/assets/56b2722c-8d40-4972-800e-267351b7e81e)
 
 ## Submodules: blocks
@@ -156,14 +158,20 @@ This project includes binaries from:
 
 - Yosys – Licensed under the ISC License.
   Copyright (C) 2012-2025 Claire Xenia Wolf.
-  License in ./Licenses/Yosys-ISC.txt
+  License in ./licenses/Yosys-ISC.txt
 
 - sv2v – Licensed under the BSD 3-Clause License. Converts SystemVerilog (packages, imports, enums, ...) to the Verilog yosys reads.
-  Binaries in third_party/sv2v. License in ./Licenses/sv2v-BSD-3.txt
+  Binaries in third_party/sv2v. License in ./licenses/sv2v-BSD-3.txt
 
 - Graphviz – Licensed under the Eclipse Public License 2.0. Built from source (third_party/graphviz);
   BitSimulator's change to it is third_party/graphviz-support/ns-compact-arrays.patch.
-  License in ./Licenses/Graphviz-EPL-2.0.txt
+  License in ./licenses/Graphviz-EPL-2.0.txt
+
+- GHDL – Licensed under the GNU General Public License 2.0 or later. Turns VHDL into Verilog (Linux only so far).
+  The unmodified ghdl binary and its VHDL libraries are in third_party/yosys_bundle (bin/ghdl, lib/ghdl).
+  Its source: https://github.com/ghdl/ghdl, version 6.0.0-dev, commit ed0da3cfa.
+  License in ./licenses/GHDL-GPL-2.0-or-later.txt. The IEEE VHDL-2008 library sources in
+  lib/ghdl/src/ieee2008 are under the Apache License 2.0 (the LICENSE file next to them).
 
 This project uses Qt under the terms of LGPLv3. No Qt code or binaries
 are distributed; only dynamically linked. License in ./licenses/Qt-LGPL3.txt

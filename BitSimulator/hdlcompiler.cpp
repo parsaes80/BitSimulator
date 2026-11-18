@@ -255,14 +255,15 @@ void centreInScene(NetModule& module)
 
 void HDLCompiler::receiveCode(const QString& code)
 {
-    // The editor's text goes through the same steps as a folder's files, as code.v
-    finished(writeTextFile(u"code.v"_s, code) && compile({u"code.v"_s}, {}));
+    // The editor's text goes through the same steps as a folder's files, as code.v or code.vhd
+    const QString file = looksLikeVhdl(code) ? u"code.vhd"_s : u"code.v"_s;
+    finished(writeTextFile(file, code) && compile({file}, {}));
 }
 
 void HDLCompiler::receiveFiles(const QStringList& files, const QStringList& includeDirs)
 {
     if (files.isEmpty()) {
-        error(u"No Verilog files were chosen."_s);
+        error(u"No Verilog or VHDL files were chosen."_s);
         finished(false);
         return;
     }
@@ -271,12 +272,20 @@ void HDLCompiler::receiveFiles(const QStringList& files, const QStringList& incl
 
 bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDirs)
 {
+    // 0. ghdl turns any VHDL into Verilog, vhdl.v, which then goes along with the Verilog files
+    QStringList verilogFiles, vhdlFiles;
+    for (const QString& file : files) (isVhdlFile(file) ? vhdlFiles : verilogFiles).append(file);
+    if (!vhdlFiles.isEmpty()) {
+        if (!convertVhdl(vhdlFiles, verilogFiles, u"vhdl.v"_s)) return false;
+        verilogFiles.append(u"vhdl.v"_s);
+    }
+
     // 1. sv2v turns the files into one plain Verilog file, converted.v. Yosys's own reader supports only
     //    part of SystemVerilog (for example no "import pkg::*"); sv2v handles packages, imports, enums,
     //    structs and `include files, in whatever order the files come.
     QStringList sv2vArguments;
     for (const QString& dir : includeDirs) sv2vArguments << u"--incdir="_s + dir;
-    sv2vArguments << u"--write=converted.v"_s << files;
+    sv2vArguments << u"--write=converted.v"_s << verilogFiles;
     if (!runTool(u"sv2v"_s, sv2vPath, sv2vArguments, 60000)) return false;
 
     // 2. Yosys synthesizes it to gates. The top module is found automatically (the module no other
@@ -440,36 +449,105 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
 //===================== Running the tools ========================
 
 // Runs a tool and waits for it; false (after error() said why) if it failed or ran out of time
-bool HDLCompiler::runTool(const QString& name, const QString& program, const QStringList& arguments, int timeoutMs)
+bool HDLCompiler::runTool(const QString& name, const QString& program, const QStringList& arguments, int timeoutMs,
+                          const QString& outputFile, QString* failure)
 {
     QElapsedTimer timer;
     timer.start();
     QProcess process;
+    if (!outputFile.isEmpty()) process.setStandardOutputFile(outputFile);
     process.start(program, arguments);
     if (!process.waitForFinished(timeoutMs) && process.state() != QProcess::NotRunning) {
         process.kill();
         process.waitForFinished();
-        error(u"%1 took longer than %2 seconds and was stopped."_s.arg(name).arg(timeoutMs / 1000));
+        const QString message = u"%1 took longer than %2 seconds and was stopped."_s.arg(name).arg(timeoutMs / 1000);
+        if (failure) *failure = message;
+        else error(message);
         return false;
     }
-    if (!checkFinished(process, name)) return false;
+    if (!checkFinished(process, name, failure)) return false;
     qDebug() << name << "took" << timer.elapsed() << "ms";
     return true;
 }
 
-bool HDLCompiler::checkFinished(QProcess& process, const QString& name)
+bool HDLCompiler::checkFinished(QProcess& process, const QString& name, QString* failure)
 {
+    QString message;
     if (process.error() == QProcess::FailedToStart) {
-        error(name + " did not run: " + process.errorString());
-        return false;
-    }
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        message = name + " did not run: " + process.errorString();
+    } else if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
         // The tools write their own messages (with file and line) to their error output
-        const QString message = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
-        error(message.isEmpty() ? name + " failed with exit code " + QString::number(process.exitCode()) : message);
+        message = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+        if (message.isEmpty()) message = name + " failed with exit code " + QString::number(process.exitCode());
+    } else {
+        return true;
+    }
+    if (failure) *failure = message;
+    else error(message);
+    return false;
+}
+
+bool HDLCompiler::convertVhdl(const QStringList& vhdlFiles, const QStringList& verilogFiles, const QString& output)
+{
+    if (!QFile::exists(ghdlPath)) {
+        error(u"VHDL needs ghdl, which is not bundled for this system yet (it would be %1)."_s.arg(ghdlPath));
         return false;
     }
-    return true;
+
+    // --std=08 reads VHDL-2008; -fsynopsys allows the common std_logic_unsigned / std_logic_arith
+    // packages; -frelaxed accepts older code that 2008 is strict about. "-e" without a name: ghdl finds
+    // the top entity itself, the one no other entity uses, and makes a module of it and of every
+    // entity below it. Its messages go to its error output; the Verilog to its standard output.
+    QStringList arguments{u"synth"_s, u"--std=08"_s, u"-fsynopsys"_s, u"-frelaxed"_s, u"--out=verilog"_s};
+    arguments << vhdlFiles << u"-e"_s;
+    QString failure;
+    if (!runTool(u"ghdl"_s, ghdlPath, arguments, 60000, output, &failure)) {
+        if (failure.contains(u"no top unit found"_s)) {
+            failure += u"\n\nghdl needs exactly one top entity: one that no other entity uses. Leave out entities "
+                       "that are not part of the design, such as testbenches, or a second, separate design."_s;
+        }
+        error(failure);
+        return false;
+    }
+
+    // ghdl names the module of a used entity "<entity>_B<architecture>"; give it the entity's own name,
+    // so the block says "alu" and a Verilog module can use the entity by its name. Kept as it is when
+    // an entity became several modules (one per set of generics) or the name is a Verilog module's.
+    QFile file(output);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        error("Could not read the Verilog ghdl wrote: " + file.errorString());
+        return false;
+    }
+    QString verilog = QString::fromUtf8(file.readAll());
+    file.close();
+
+    static const QRegularExpression moduleName(u"^\\s*module\\s+([A-Za-z_][A-Za-z0-9_$]*)"_s, QRegularExpression::MultilineOption);
+    const auto namesIn = [](const QString& text) {
+        QSet<QString> names;
+        for (auto it = moduleName.globalMatch(text); it.hasNext();) names.insert(it.next().captured(1));
+        return names;
+    };
+    QSet<QString> taken;
+    for (const QString& path : verilogFiles) {
+        QFile source(path);
+        if (source.open(QIODevice::ReadOnly | QIODevice::Text)) taken.unite(namesIn(QString::fromUtf8(source.readAll())));
+    }
+    const QSet<QString> modules = namesIn(verilog);
+    QHash<QString, int> perEntity;
+    for (const QString& module : modules) perEntity[vhdlEntityOfModule(module)]++;
+    taken.unite(modules);
+
+    for (const QString& module : modules) {
+        const QString entity = vhdlEntityOfModule(module);
+        if (entity == module || perEntity.value(entity) != 1 || taken.contains(entity)) continue;
+        // Only a module that is used: the top entity keeps the name it was declared with, which can
+        // contain "_B" itself ("reg_Bank")
+        const QRegularExpression use(u"(?<![\\w$\\\\])"_s + QRegularExpression::escape(module) + u"(?![\\w$])"_s);
+        if (verilog.count(use) < 2) continue;
+        verilog.replace(use, entity);
+        taken.insert(entity);
+    }
+    return writeTextFile(output, verilog);
 }
 
 bool HDLCompiler::writeTextFile(const QString& fileName, const QString& text)
