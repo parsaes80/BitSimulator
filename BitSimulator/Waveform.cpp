@@ -2,6 +2,7 @@
 #include <QActionGroup>
 #include <QContextMenuEvent>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -254,10 +255,12 @@ QList<WaveRow> WaveformModel::rows() const
     for (const Shown& shown : m_shown) {
         const int signal = int(m_keys.indexOf(shown.key));
         if (signal < 0) continue;
-        result.append({signal, -1});
         const int width = m_signals[signal].width();
+        result.append({signal, -1, width});
         if (shown.expanded && width > 1) {
-            for (int bit = width - 1; bit >= 0; bit--) result.append({signal, bit});   // the top bit first
+            // The top part first; words start at multiples of the word size from bit 0
+            const int size = std::clamp(shown.wordBits, 1, width);
+            for (int bit = (width - 1) / size * size; bit >= 0; bit -= size) result.append({signal, bit, std::min(size, width - bit)});
         }
     }
     return result;
@@ -320,13 +323,31 @@ void WaveformModel::setExpanded(int signal, bool expanded)
     emit signalsChanged();
 }
 
+int WaveformModel::wordBits(int signal) const
+{
+    const int index = shownIndex(signal);
+    return index < 0 ? 1 : m_shown[index].wordBits;
+}
+
+void WaveformModel::splitIntoWords(int signal, int bits)
+{
+    const int index = shownIndex(signal);
+    if (index < 0 || bits < 1) return;
+    Shown& shown = m_shown[index];
+    if (shown.expanded && shown.wordBits == bits) return;
+    shown.expanded = true;
+    shown.wordBits = bits;
+    emit signalsChanged();
+}
+
 std::vector<u32> WaveformModel::netsOf(const WaveRow& row) const
 {
     if (row.signal < 0 || row.signal >= m_signals.size()) return {};
     const WaveSignal& signal = m_signals[row.signal];
     if (row.bit < 0) return signal.nets;
     if (row.bit >= signal.width()) return {};
-    return {signal.nets[size_t(row.bit)]};
+    const auto first = signal.nets.begin() + row.bit;
+    return {first, first + std::min(std::max(row.width, 1), signal.width() - row.bit)};
 }
 
 std::vector<bool> WaveformModel::bitsAt(const WaveRow& row, u64 tick) const
@@ -350,7 +371,7 @@ QString WaveformModel::label(const WaveRow& row) const
     if (row.signal < 0 || row.signal >= m_signals.size()) return {};
     const WaveSignal& signal = m_signals[row.signal];
     const QString name = signal.scope.isEmpty() ? signal.name : signal.scope + u'/' + signal.name;
-    if (row.bit >= 0) return u"%1[%2]"_s.arg(name).arg(row.bit);
+    if (row.bit >= 0) return u"%1[%2]"_s.arg(name).arg(row.bit / std::max(1, wordBits(row.signal)));   // a bit, or a word's index
     if (signal.width() > 1) return u"%1[%2:0]"_s.arg(name).arg(signal.width() - 1);
     return name;
 }
@@ -916,8 +937,42 @@ void WaveformView::showRowMenu(int index, const QPoint& globalPos)
             connect(action, &QAction::triggered, this, [this, signal, radix] { m_model->setRadix(signal, radix); });
         }
         const bool expanded = m_model->isExpanded(signal);
-        connect(menu.addAction(expanded ? tr("Collapse bits") : tr("Expand bits")), &QAction::triggered, this,
+        connect(menu.addAction(expanded ? tr("Collapse") : tr("Expand")), &QAction::triggered, this,
                 [this, signal, expanded] { m_model->setExpanded(signal, !expanded); });
+
+        // Split into: bits, the usual word sizes that fit, or any size. A register file comes out
+        // of the netlist as one wide port (32 registers of 32 bits = 1024 bits); its words are the registers.
+        const int width = m_model->signalList()[signal].width();
+        const int current = expanded ? m_model->wordBits(signal) : 0;
+        QMenu* splitMenu = menu.addMenu(tr("Split into"));
+        auto* sizes = new QActionGroup(splitMenu);
+        bool listed = false;
+        auto addSize = [&](int bits, const QString& text) {
+            QAction* action = splitMenu->addAction(text);
+            action->setCheckable(true);
+            action->setChecked(bits == current);
+            listed |= bits == current;
+            sizes->addAction(action);
+            connect(action, &QAction::triggered, this, [this, signal, bits] { m_model->splitIntoWords(signal, bits); });
+        };
+        addSize(1, tr("Bits"));
+        for (const int bits : {8, 16, 32, 64}) {
+            if (bits < width) addSize(bits, tr("%1-bit words").arg(bits));
+        }
+        if (width > 2) {
+            splitMenu->addSeparator();
+            const QString other = current > 1 && !listed ? tr("%1-bit words (other size…)").arg(current) : tr("Other size…");
+            QAction* action = splitMenu->addAction(other);
+            action->setCheckable(true);
+            action->setChecked(current > 1 && !listed);
+            sizes->addAction(action);
+            connect(action, &QAction::triggered, this, [this, signal, width, current] {
+                bool ok = false;
+                const int bits = QInputDialog::getInt(this, tr("Split into words"), tr("Bits per word:"),
+                                                      current > 1 ? current : std::min(8, width - 1), 2, width - 1, 1, &ok);
+                if (ok) m_model->splitIntoWords(signal, bits);
+            });
+        }
         menu.addSeparator();
     }
     connect(menu.addAction(tr("Move up")), &QAction::triggered, this, [this, signal] { m_model->move(signal, -1); });

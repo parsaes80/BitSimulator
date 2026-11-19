@@ -80,10 +80,12 @@ QString radixName(Radix radix);
 
 //===================== 3. WaveformModel ========================
 
-// One row of the waveform: a signal, or a single bit of a bus that was expanded
+// One row of the waveform: a signal, or one part of a bus that was expanded: a single bit, or a
+// word of a bus split into words (a register file that reached the netlist as one wide port)
 struct WaveRow {
     int signal = -1;         // index in WaveformModel::signalList()
-    int bit = -1;            // -1: the whole signal; otherwise this bit of it
+    int bit = -1;            // -1: the whole signal; otherwise the part's lowest bit
+    int width = 1;           // the part's bits (the top word of a split may be narrower than the rest)
 };
 
 class WaveformModel : public QObject {
@@ -117,15 +119,20 @@ public:
     void move(int signal, int by);               // up (-1) or down (+1) among the shown signals
     Radix radix(int signal) const;
     void setRadix(int signal, Radix radix);
+    // An expanded bus shows its parts under it: single bits, or words of wordBits() bits. Collapsing
+    // keeps the word size for the next expand.
     bool isExpanded(int signal) const;
     void setExpanded(int signal, bool expanded);
+    int wordBits(int signal) const;               // 1 = single bits
+    void splitIntoWords(int signal, int bits);    // expands it into words of `bits` bits (1 = bits)
 
     //----- Values -----
     // The bits of a row after a tick, lowest first (one for a bit row)
     std::vector<bool> bitsAt(const WaveRow& row, u64 tick) const;
     // The text of a row's value after a tick, in its signal's radix
     QString valueText(const WaveRow& row, u64 tick) const;
-    // The row's label: "a[3:0]" for the circuit's own, "u/h0/s" for a block's port, "a[2]" for a bit
+    // The row's label: "a[3:0]" for the circuit's own, "u/h0/s" for a block's port, "a[2]" for a bit,
+    // "regs[2]" for the third word of a split
     QString label(const WaveRow& row) const;
     // The nets a row is made of, lowest bit first
     std::vector<u32> netsOf(const WaveRow& row) const;
@@ -142,6 +149,7 @@ private:
         QString key;
         Radix radix = Radix::Hex;
         bool expanded = false;
+        int wordBits = 1;
     };
     int shownIndex(int signal) const;            // index in m_shown, or -1
 
@@ -165,7 +173,7 @@ class QTreeWidgetItem;
 // pixels from xOf(t) to xOf(t + 1); its value is the value after that tick.
 //   Wheel over the waves: zoom around the pointer. Wheel over the names: scroll the rows.
 //   Left-drag: pan. Click: the cursor. Shift+click: a second cursor; the ruler shows the ticks between.
-//   Right-click a row: radix, expand or collapse a bus, move, remove. Delete removes the selected row.
+//   Right-click a row: radix, expand or collapse a bus, split it into words, move, remove. Delete removes the selected row.
 class WaveformView : public QWidget {
     Q_OBJECT
 public:

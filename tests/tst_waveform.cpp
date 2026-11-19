@@ -342,6 +342,53 @@ private slots:
         QCOMPARE(model.radix(0), Radix::Hex);
     }
 
+    void aBusCanBeSplitIntoWords()
+    {
+        // An 8-bit port, bit i on net i + 1, as a 1024-bit register file port would be on a smaller scale
+        WaveformModel model;
+        const QList<WaveSignal> signalList{signalOf(u"rf"_s, u"regs"_s, true, {1, 2, 3, 4, 5, 6, 7, 8})};
+        model.startRun(1, signalList, {1, 2, 3, 4, 5, 6, 7, 8}, u"top"_s);
+        model.show(0);
+
+        // Words of 3 bits: bits 0-2, 3-5 and the 2-bit top word 6-7, the top word first
+        model.splitIntoWords(0, 3);
+        QVERIFY(model.isExpanded(0));
+        QList<WaveRow> rows = model.rows();
+        QCOMPARE(rows.size(), 4);
+        QCOMPARE(model.label(rows[0]), u"rf/regs[7:0]"_s);
+        QCOMPARE(model.label(rows[1]), u"rf/regs[2]"_s);
+        QCOMPARE(model.label(rows[2]), u"rf/regs[1]"_s);
+        QCOMPARE(model.label(rows[3]), u"rf/regs[0]"_s);
+        QCOMPARE(model.netsOf(rows[1]), (std::vector<u32>{7, 8}));
+        QCOMPARE(model.netsOf(rows[2]), (std::vector<u32>{4, 5, 6}));
+        QCOMPARE(model.netsOf(rows[3]), (std::vector<u32>{1, 2, 3}));
+
+        // regs = 0x87 after tick 0: word 0 = 7, word 1 = 0, word 2 = 2; in the signal's radix
+        model.addChanges(report(1, 3, {{0, 1}, {0, 2}, {0, 3}, {0, 8}}));
+        QCOMPARE(model.valueText(rows[0], 1), u"87"_s);
+        QCOMPARE(model.valueText(rows[1], 1), u"2"_s);
+        QCOMPARE(model.valueText(rows[2], 1), u"0"_s);
+        QCOMPARE(model.valueText(rows[3], 1), u"7"_s);
+        model.setRadix(0, Radix::Binary);
+        QCOMPARE(model.valueText(rows[3], 1), u"111"_s);
+
+        // Collapsing keeps the word size for the next expand, and the next run of the circuit keeps it too
+        model.setExpanded(0, false);
+        QCOMPARE(model.rows().size(), 1);
+        model.startRun(2, signalList, {1, 2, 3, 4, 5, 6, 7, 8}, u"top"_s);
+        model.setExpanded(0, true);
+        QCOMPARE(model.rows().size(), 4);
+        QCOMPARE(model.wordBits(0), 3);
+
+        // Back to single bits, which are labelled by bit
+        model.splitIntoWords(0, 1);
+        rows = model.rows();
+        QCOMPARE(rows.size(), 9);
+        QCOMPARE(model.label(rows[1]), u"rf/regs[7]"_s);
+        QCOMPARE(model.netsOf(rows[1]), (std::vector<u32>{8}));
+        QCOMPARE(model.label(rows[8]), u"rf/regs[0]"_s);
+    }
+
     //===================== The view ========================
 
     void theViewMapsTicksToPixelsAndZooms()
