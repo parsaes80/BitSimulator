@@ -261,6 +261,37 @@
              </widget>
             </item>
             <item row="0" column="13">
+             <widget class="QPushButton" name="resetButton">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>60</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>75</width>
+                <height>60</height>
+               </size>
+              </property>
+              <property name="toolTip">
+               <string>End the run and clear its values and waveforms; Start then runs the circuit from the first tick</string>
+              </property>
+              <property name="text">
+               <string>Reset</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="14">
              <widget class="QPushButton" name="clearButton">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -601,7 +632,7 @@
           <item>
            <widget class="QPushButton" name="waveZoomIn">
             <property name="toolTip">
-             <string>Zoom in (or turn the mouse wheel over the waves)</string>
+             <string>Zoom in (or Ctrl+mouse wheel)</string>
             </property>
             <property name="text">
              <string>Zoom in</string>
@@ -611,7 +642,7 @@
           <item>
            <widget class="QPushButton" name="waveZoomOut">
             <property name="toolTip">
-             <string>Zoom out (or turn the mouse wheel over the waves)</string>
+             <string>Zoom out (or Ctrl+mouse wheel)</string>
             </property>
             <property name="text">
              <string>Zoom out</string>
@@ -645,6 +676,13 @@
            </widget>
           </item>
           <item>
+           <widget class="QFrame" name="waveToolbarSeparator">
+            <property name="frameShape">
+             <enum>QFrame::Shape::VLine</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QPushButton" name="waveStartButton">
             <property name="toolTip">
              <string>Run the circuit from the first tick</string>
@@ -655,9 +693,22 @@
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="waveResetButton">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>End the run and clear its values and waveforms; Start then runs the circuit from the first tick</string>
+            </property>
+            <property name="text">
+             <string>Reset</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QLabel" name="waveHint">
             <property name="text">
-             <string>Click: cursor · Shift+click: second cursor · Drag: pan · Wheel: zoom · Right-click a row: radix, remove</string>
+             <string>Click: cursor · Shift+click: second cursor · Drag: pan · Wheel: time · Shift+wheel: rows · Ctrl+wheel: zoom · Right-click a row: radix, split, remove</string>
             </property>
             <property name="muted" stdset="0">
              <bool>true</bool>

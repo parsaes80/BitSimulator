@@ -1,4 +1,4 @@
-// Start, Pause, Clear and Compile on the real main window, with the simulator running in its own
+// Start, Pause, Reset, Clear and Compile on the real main window, with the simulator running in its own
 // thread exactly as in the application.
 //
 // The tests that press Compile need yosys and Graphviz dot; they are skipped if those are missing.
@@ -252,6 +252,45 @@ private slots:
         app.editor_<QSpinBox>("displayInputs")->setValue(3);
         QCOMPARE(circuit.out->getInputPorts().size(), 3);
         QCOMPARE(app.scene->simState(), SimState::Stopped);
+    }
+
+    //===================== Reset ========================
+
+    void resetEndsTheRunAndKeepsTheCircuit()
+    {
+        App app;
+        ClockCircuit circuit(app);
+        auto* reset = app.window.findChild<QPushButton*>(u"resetButton"_s);
+        QVERIFY(reset);
+        QVERIFY(!reset->isEnabled());                                    // nothing to reset before a run
+        const int itemCount = int(app.scene->items().size());
+
+        // While running: back to the editing view, the circuit untouched, no values left
+        app.start->click();
+        QVERIFY(reset->isEnabled());
+        QVERIFY(QTest::qWaitFor([&] { return circuit.step() >= 3; }, 5000));
+        reset->click();
+        QCOMPARE(app.scene->simState(), SimState::Stopped);
+        QCOMPARE(app.start->text(), u"Start"_s);
+        QVERIFY(!reset->isEnabled());
+        QCOMPARE(int(app.scene->items().size()), itemCount);
+        QCOMPARE(circuit.step(), 0);
+        QTest::qWait(250);                                               // results still on their way are ignored
+        for (PortItem* port : itemsOfType<PortItem>(app.scene)) QVERIFY(!port->getValue());
+        QCOMPARE(circuit.out->getValue(), 0);
+
+        // While paused, the same; the next Start is a fresh run from the first tick
+        app.start->click();
+        QVERIFY(QTest::qWaitFor([&] { return circuit.step() >= 3; }, 5000));
+        app.start->click();
+        QCOMPARE(app.scene->simState(), SimState::Paused);
+        QVERIFY(reset->isEnabled());
+        reset->click();
+        QCOMPARE(app.scene->simState(), SimState::Stopped);
+        app.start->click();
+        QTest::qWait(130);
+        QCOMPARE(app.scene->simState(), SimState::Running);
+        QVERIFY2(circuit.step() <= 2, qPrintable(u"step %1"_s.arg(circuit.step())));
     }
 
     //===================== Clear ========================

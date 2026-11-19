@@ -104,6 +104,9 @@ public:
     void resetSignals();
     // The run ended (the simulator reports its last ticks itself); its history stays until the next run
     void stopRun();
+    // Reset: forget the run's history, also the reports of it still on their way; the shown signals
+    // and their settings stay for the next run
+    void clearHistory();
 
     const QList<WaveSignal>& signalList() const { return m_signals; }
     const WaveHistory& history() const { return m_history; }
@@ -171,7 +174,7 @@ class QTreeWidgetItem;
 
 // The shown signals, one row each: name | value at the cursor | the waves. A tick t covers the
 // pixels from xOf(t) to xOf(t + 1); its value is the value after that tick.
-//   Wheel over the waves: zoom around the pointer. Wheel over the names: scroll the rows.
+//   Wheel: back and forward in time. Shift+wheel: scroll the rows. Ctrl+wheel: zoom around the pointer.
 //   Left-drag: pan. Click: the cursor. Shift+click: a second cursor; the ruler shows the ticks between.
 //   Right-click a row: radix, expand or collapse a bus, split it into words, move, remove. Delete removes the selected row.
 class WaveformView : public QWidget {
@@ -229,6 +232,7 @@ private:
     void layoutParts();                    // the columns' widths and the scroll bars' places
     void clampView();                      // keeps the view on the recorded ticks
     void updateScrollBars();
+    void scrollTime(double pixels);        // positive: forward in time
     void scrollRows(int pixels);
     int rowsHeight() const { return int(m_rows.size()) * RowHeight; }
     std::optional<u64> nextChange(const std::vector<u32>& nets, u64 tick) const;   // of any of the nets

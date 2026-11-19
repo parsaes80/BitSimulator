@@ -191,6 +191,15 @@ QPushButton:disabled {
     border-color: @pauseHover;
 }
 
+/* The faint line between the Waveforms tab's view buttons and its Start / Reset */
+#waveToolbarSeparator {
+    border: none;
+    background-color: @border;
+    min-width: 1px;
+    max-width: 1px;
+    margin: 6px 4px;
+}
+
 /* Light / dark mode: a round icon button showing the mode it switches to (MainWindow sets the icon) */
 #themeButton {
     background-color: transparent;

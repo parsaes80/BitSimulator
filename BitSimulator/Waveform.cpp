@@ -239,6 +239,14 @@ void WaveformModel::stopRun()
     emit signalsChanged();
 }
 
+void WaveformModel::clearHistory()
+{
+    m_history = WaveHistory{};   // run id 0: takes no reports
+    m_running = false;
+    emit signalsChanged();
+    emit historyGrew();
+}
+
 int WaveformModel::shownIndex(int signal) const
 {
     if (signal < 0 || signal >= m_keys.size()) return -1;
@@ -431,11 +439,11 @@ void WaveformView::setModel(WaveformModel* model)
 
 void WaveformView::signalsChanged()
 {
-    const bool newRun = m_model && m_model->isRunning() && m_model->history().isEmpty();
     m_rows = m_model ? m_model->rows() : QList<WaveRow>{};
     if (m_selected >= m_rows.size()) m_selected = -1;
-    if (newRun || !m_model || !m_model->hasRun()) {
-        // A run starts from tick 0: no cursors, follow the newest tick at the starting zoom
+    if (!m_model || m_model->history().isEmpty()) {
+        // No ticks (a run about to start from tick 0, a reset, a new circuit): no cursors, follow the
+        // newest tick at the starting zoom
         m_cursor.reset();
         m_cursor2.reset();
         m_leftTick = 0;
@@ -597,6 +605,15 @@ int WaveformView::rowAt(int y) const
     if (y < RulerHeight) return -1;
     const int row = (y - RulerHeight + m_scrollY) / RowHeight;
     return row < m_rows.size() ? row : -1;
+}
+
+void WaveformView::scrollTime(double pixels)
+{
+    if (pixels == 0) return;
+    setFollow(false);   // like a drag: moving through the run stops following its end
+    m_leftTick += pixels * m_ticksPerPixel;
+    clampView();
+    update();
 }
 
 void WaveformView::scrollRows(int pixels)
@@ -831,15 +848,22 @@ void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
 
 void WaveformView::wheelEvent(QWheelEvent* event)
 {
-    const double steps = event->angleDelta().y() / 120.0;
+    // Positive: the wheel turned up (or left). Some platforms turn Shift+wheel into a sideways turn.
+    const QPoint delta = event->angleDelta();
+    const double steps = (delta.y() != 0 ? delta.y() : delta.x()) / 120.0;
     if (steps == 0) return;
-    const QPointF pos = event->position();
-    if (pos.x() >= waveArea().left() && !(event->modifiers() & Qt::ShiftModifier)) {
-        // Over the waves: zoom, keeping the tick under the pointer in place (or the newest one, when following)
-        const double x = m_follow ? waveArea().right() : pos.x();
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    if (modifiers & Qt::ControlModifier) {
+        // Zoom, keeping the tick under the pointer in place (or the newest one, when following, or
+        // when the pointer is over the names)
+        const QRect waves = waveArea();
+        const double x = m_follow || event->position().x() < waves.left() ? waves.right() : event->position().x();
         zoomAround(x, std::pow(1.25, -steps));
-    } else {
+    } else if (modifiers & Qt::ShiftModifier) {
         scrollRows(int(-steps * RowHeight * 2));
+    } else {
+        // Through time: up goes back, down goes forward, an eighth of the view per notch
+        scrollTime(-steps * waveArea().width() / 8.0);
     }
     event->accept();
 }

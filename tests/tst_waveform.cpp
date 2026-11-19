@@ -458,12 +458,62 @@ private slots:
         QVERIFY(qAbs(view.leftTick() - (left - 120 * view.ticksPerPixel())) < 1e-6);
         QCOMPARE(view.cursorTick(), std::optional<u64>(30));             // a drag is not a click
 
-        // The wheel over the waves zooms in
+        QCOMPARE(view.cursorTick(), std::optional<u64>(30));
+    }
+
+    void theWheelMovesThroughTimeShiftScrollsCtrlZooms()
+    {
+        // 40 one-bit signals over 200 ticks: more rows than fit, more ticks than shown
+        WaveformModel model;
+        QList<WaveSignal> list;
+        std::vector<u32> nets;
+        for (u32 i = 1; i <= 40; i++) {
+            list.append(signalOf({}, u"s%1"_s.arg(i), false, {i}));
+            nets.push_back(i);
+        }
+        model.startRun(1, list, nets, {});
+        model.addChanges(report(1, 199, {{10, 1}}));
+        WaveformView view;
+        view.setModel(&model);
+        view.resize(900, 300);
+        view.setFollow(false);
+        view.zoomToFit();
+        view.zoomAround(view.waveArea().center().x(), 0.25);                // the middle quarter of the run on screen
+        const QPoint at(view.waveArea().left() + 200, WaveformView::RulerHeight + WaveformView::RowHeight / 2);
+        const auto turn = [&](int angle, Qt::KeyboardModifiers modifiers) {
+            QWheelEvent wheel(at, view.mapToGlobal(at), {}, QPoint(0, angle), Qt::NoButton, modifiers, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(&view, &wheel);
+        };
+
+        // Plain wheel: down goes forward in time, up back; neither zooms
         const double zoom = view.ticksPerPixel();
-        QWheelEvent wheel(QPointF(waves.left() + 200, y), view.mapToGlobal(QPointF(waves.left() + 200, y)), {}, QPoint(0, 120),
-                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-        QCoreApplication::sendEvent(&view, &wheel);
+        const double left = view.leftTick();
+        turn(-120, Qt::NoModifier);
+        QVERIFY(view.leftTick() > left);
+        QCOMPARE(view.ticksPerPixel(), zoom);
+        turn(120, Qt::NoModifier);
+        QVERIFY(qAbs(view.leftTick() - left) < 1e-6);
+
+        // Shift+wheel: the rows scroll; time stays
+        const int topRow = view.rowAt(WaveformView::RulerHeight + 1);
+        turn(-120, Qt::ShiftModifier);
+        QVERIFY(view.rowAt(WaveformView::RulerHeight + 1) > topRow);
+        QVERIFY(qAbs(view.leftTick() - left) < 1e-6);
+
+        // Ctrl+wheel: zooms in around the pointer, then back out
+        const double tickAtPointer = view.tickAt(at.x());
+        turn(120, Qt::ControlModifier);
         QVERIFY(view.ticksPerPixel() < zoom);
+        QVERIFY(qAbs(view.tickAt(at.x()) - tickAtPointer) < 1e-6);
+        turn(-120, Qt::ControlModifier);
+        QVERIFY(qAbs(view.ticksPerPixel() - zoom) < 1e-9);
+
+        // Going back in time while following the run's end stops following
+        view.setFollow(true);
+        const double end = view.leftTick();
+        turn(120, Qt::NoModifier);
+        QVERIFY(!view.follows());
+        QVERIFY(view.leftTick() < end);
     }
 
     void aHighLevelIsDrawnWhereTheSignalIsOne()
@@ -588,6 +638,58 @@ private slots:
         waveStart->click();                                                // and this one continues it
         QCOMPARE(app.scene->simState(), SimState::Running);
         app.clear->click();
+    }
+
+    void resetClearsTheWaveformsAndKeepsTheSignals()
+    {
+        App app;
+        auto* model = app.window.findChild<WaveformModel*>();
+        auto* view = child<WaveformView>(&app.window, "waveView");
+        auto* status = child<QLabel>(&app.window, "waveStatus");
+        auto* waveReset = child<QPushButton>(&app.window, "waveResetButton");
+        auto* reset = child<QPushButton>(&app.window, "resetButton");
+        auto* source = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(2), app.centre));
+        auto* display = dynamic_cast<DisplayItem*>(app.scene->addComponent(DisplayProps{2, 0}, app.centre + QPointF(200, 0)));
+        QVERIFY(connectPorts(app.scene, source->getOutputPorts()[0], display->getInputPorts()[0]));
+        child<QSlider>(&app.window, "slider")->setValue(10000);          // the fastest speed
+        QVERIFY(!waveReset->isEnabled() && !reset->isEnabled());           // nothing to reset yet
+
+        // A run, with a radix chosen and a cursor placed
+        app.start->click();
+        QVERIFY(waveReset->isEnabled() && reset->isEnabled());
+        QTRY_VERIFY(model->history().lastTick() > 20);
+        model->setRadix(0, Radix::Binary);
+        view->setCursorTick(5);
+
+        // Reset on the Waveforms tab: the run ends and its waveforms go; the signals and their settings stay
+        waveReset->click();
+        QCOMPARE(app.scene->simState(), SimState::Stopped);
+        QVERIFY(model->history().isEmpty());
+        QCOMPARE(model->rows().size(), 2);
+        QCOMPARE(model->radix(0), Radix::Binary);
+        QVERIFY(!view->cursorTick());
+        QVERIFY(status->text().isEmpty());
+        QVERIFY(!waveReset->isEnabled() && !reset->isEnabled());
+        QTest::qWait(200);                                                  // the run's last reports, still on their way, are dropped
+        QVERIFY(model->history().isEmpty());
+
+        // An edit during a pause ends the run but keeps its waveforms; Reset can still clear them
+        app.start->click();
+        QTRY_VERIFY(model->history().lastTick() > 5);
+        app.start->click();
+        QVERIFY(app.scene->renameComponent(display, u"out"_s));
+        QCOMPARE(app.scene->simState(), SimState::Stopped);
+        QVERIFY(!model->history().isEmpty());
+        QVERIFY(reset->isEnabled());
+        reset->click();                                                     // the circuit toolbar's does the same
+        QVERIFY(model->history().isEmpty());
+
+        // The next Start records from tick 0 again
+        app.start->click();
+        QTRY_VERIFY(!model->history().isEmpty());
+        QCOMPARE(model->history().firstTick(), u64(0));
+        app.clear->click();
+        QVERIFY(!waveReset->isEnabled());                                   // Clear left nothing to reset
     }
 
     //===================== The signal tree ========================

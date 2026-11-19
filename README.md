@@ -55,7 +55,7 @@ Running the simulation:
 - **Start** runs the circuit. The button then turns into **Pause**.
 - While the simulation is running the circuit is read-only: you cannot place, wire, delete or edit components. You can still move them, pan and zoom.
 - **Pause** freezes the simulation with its values still shown. Pressing **Start** again continues from where it stopped.
-- If you change the circuit while it is paused, that run ends and the next **Start** begins again from the first tick.
+- **Reset** ends the run, running or paused, and keeps the circuit: every value goes back to 0, the run's waveforms are cleared, and the next **Start** begins again from the first tick with every flip-flop at its starting value. Changing the circuit while it is paused also ends the run, but keeps its waveforms.
 - **Clear** stops the simulation and empties the Schematic Editor.
 
 ![Image](https://github.com/user-attachments/assets/598f7088-9dfa-43cf-8e53-41b766eee1a3)
@@ -101,10 +101,10 @@ Every port of every block is recorded from the first tick, so a port added later
 
 | Action | Control |
 |---|---|
-| Zoom in / out around the pointer | Mouse wheel over the waves, or the Zoom in / Zoom out buttons |
+| Move back and forward in time | Mouse wheel, drag with the left mouse button, or the scroll bars |
+| Scroll the rows up and down | Shift+mouse wheel, or the scroll bar |
+| Zoom in / out around the pointer | Ctrl+mouse wheel, or the Zoom in / Zoom out buttons |
 | See the whole run | Fit |
-| Move through the run | Drag with the left mouse button, or the scroll bars |
-| Scroll the rows | Mouse wheel over the names |
 | Cursor (the values column shows the values at it) | Click |
 | Second cursor, to measure the ticks between them | Shift+click |
 | Radix (hex, unsigned, signed, binary), expand or collapse, move, remove | Right-click a row |
@@ -113,7 +113,7 @@ Every port of every block is recorded from the first tick, so a port added later
 
 Arrays such as a register file reach the netlist as one wide port: `output logic [31:0] regs_out [31:0]` becomes the 1024-bit `regs_out[1023:0]`. **Split into › 32-bit words** shows it as `regs_out[31]` … `regs_out[0]`, one register per row.
 
-The tab has its own **Start / Pause** button, the same as the one on the circuit's toolbar, so a run can be started, paused and continued without leaving the waveforms. While the simulation runs, **Follow** keeps the newest tick in view; dragging turns it off and the button turns it back on. When the run stops, its waveforms stay until the next Start. The next run of the same circuit keeps the signals and their settings; compiling or clearing starts over with the new circuit's inputs and outputs.
+The tab has its own **Start / Pause** and **Reset** buttons, the same as the ones on the circuit's toolbar, so a run can be started, paused, continued and reset without leaving the waveforms. While the simulation runs, **Follow** keeps the newest tick in view; dragging turns it off and the button turns it back on. When the run stops, its waveforms stay until the next Start; **Reset** clears them at once (the signals shown and their settings stay). The next run of the same circuit keeps the signals and their settings; compiling or clearing starts over with the new circuit's inputs and outputs.
 
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  
@@ -170,7 +170,7 @@ In Qt Creator you can also switch `BITSIM_BUILD_TESTS` on under Projects > Build
 | `tst_simulator` | The simulation itself: every gate's truth table, multiplexers, flip-flops and latches, pause and continue |
 | `tst_scene` | Components and their pins, the editing rules, and how the drawing is turned into what the simulator runs |
 | `tst_panel` | The Properties panel, with simulated clicks and typing |
-| `tst_lifecycle` | Start, Pause, Clear and Compile with the simulator running in its own thread |
+| `tst_lifecycle` | Start, Pause, Reset, Clear and Compile with the simulator running in its own thread |
 | `tst_hdlcompiler` | Compiling Verilog, and blocks: simulating through them and opening them (needs yosys, sv2v and Graphviz; skipped if they are missing) |
 | `tst_theme` | Light and dark mode, the style sheet's colors, the canvas dots |
 | `tst_waveform` | The waveforms: what the simulator records, the history, the view's zoom, pan and cursors, and the signal tree |

@@ -102,12 +102,15 @@ void MainWindow::setup()
     connect(ui.muxButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<MuxProps>); });
     connect(ui.displayButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<DisplayProps>); });
 
-    //----- Toolbar: Start/Pause, Clear and the speed slider -----
+    //----- Toolbar: Start/Pause, Reset, Clear and the speed slider -----
     connect(ui.startButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
     connect(ui.waveStartButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);   // the same, on the Waveforms tab
+    connect(ui.resetButton, &QPushButton::clicked, this, &MainWindow::resetSimulation);
+    connect(ui.waveResetButton, &QPushButton::clicked, this, &MainWindow::resetSimulation);     // the same, on the Waveforms tab
     connect(ui.clearButton, &QPushButton::clicked, this, &MainWindow::clearCircuit);
     connect(ui.slider, &QSlider::valueChanged, this, &MainWindow::updateTimerPeriod);
     connect(scene, &CircuitScene::simStateChanged, this, &MainWindow::showSimState);
+    connect(m_waveModel, &WaveformModel::signalsChanged, this, [this, scene] { showSimState(scene->simState()); });   // Reset's state
     showSimState(scene->simState());
 
     //----- HDL Editor tab: Compile sends the editor's text to the compiler -----
@@ -311,6 +314,18 @@ void MainWindow::showSimState(SimState state)
                                    : state == SimState::Paused ? tr("Continue the simulation")
                                                                : tr("Run the circuit from the first tick"));
     }
+    // A stopped circuit is already reset, unless its waveforms are still there
+    const bool canReset = state != SimState::Stopped || !m_waveModel->history().isEmpty();
+    ui.resetButton->setEnabled(canReset);
+    ui.waveResetButton->setEnabled(canReset);
+}
+
+void MainWindow::resetSimulation()
+{
+    // The run ends as it does for an edit during a pause; its waveforms go too. The circuit stays.
+    ui.camera->getScene()->stopSim();
+    m_waveModel->clearHistory();
+    updateWaveStatus();
 }
 
 void MainWindow::clearCircuit()

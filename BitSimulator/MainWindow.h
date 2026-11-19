@@ -27,6 +27,7 @@ private:
     // Connected explicitly in setup(); nothing here relies on Qt's on_<object>_<signal> name matching
     void toggleSimulation();                 // the Start/Pause button
     void showSimState(SimState state);       // makes that button say Start or Pause
+    void resetSimulation();                  // the Reset buttons: end the run, clear its waveforms
     void clearCircuit();
     void compileHdl();                       // HDL Editor tab: the editor's text
     void compileFinished(bool ok);
