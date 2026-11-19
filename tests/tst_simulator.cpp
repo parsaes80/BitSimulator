@@ -103,8 +103,8 @@ private slots:
             const QList<SimResult> results = run(graph, 6);
             QCOMPARE(results.size(), 6);
             for (int tick = 0; tick < results.size(); tick++) {
-                // Asynchronous: 1 from the tick after the reset. Synchronous: waits for a clock edge, which never comes.
-                QCOMPARE(bool(results[tick].netValues[4]), async && tick >= 3);
+                // Asynchronous: 1 from the tick of the reset on. Synchronous: waits for a clock edge, which never comes.
+                QCOMPARE(bool(results[tick].netValues[4]), async && tick >= 2);
             }
         }
     }
@@ -308,9 +308,6 @@ private slots:
             const auto& nets = results[tick].netValues;
             const bool a = nets[in1], b = nets[in2], clock = nets[clk], enable = nets[en];
 
-            // The output pin shows what was stored before this tick
-            if (bool(nets[out]) != stored) QFAIL(qPrintable(u"tick %1: output pin shows %2 but %3 was stored"_s.arg(tick).arg(nets[out]).arg(stored)));
-
             const bool before = stored;
             const bool enabled = !hasEnable || enable;
             if (hasClock) {
@@ -335,6 +332,8 @@ private slots:
             }
             changes += (stored != before);
 
+            // The output pin shows the new value in the same tick, as at a clock edge in an HDL simulator
+            if (bool(nets[out]) != stored) QFAIL(qPrintable(u"tick %1: output pin shows %2 but %3 was stored"_s.arg(tick).arg(nets[out]).arg(stored)));
             if (bool(results[tick].registerValues[0]) != stored) {
                 QFAIL(qPrintable(u"tick %1 (in1=%2 in2=%3 clk=%4 en=%5): register holds %6, expected %7"_s
                     .arg(tick).arg(a).arg(b).arg(clock).arg(enable).arg(bool(results[tick].registerValues[0])).arg(stored)));

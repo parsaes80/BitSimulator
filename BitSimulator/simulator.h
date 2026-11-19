@@ -35,6 +35,16 @@ private:
     void processGates(u32 changedNetId);
     void processMuxes(u32 changedNetId);
     void processRegisters(bool firstTick);   // firstTick: only note the clock levels, there is no edge yet
+    // Works off the event queue from `head` until nothing changes (or the tick's step limit is reached)
+    void settle(size_t& head, int& steps);
+    // Puts every flip-flop's and latch's stored value on its output; false if none changed
+    bool driveRegisterOutputs();
+
+    // Within one tick, the flip-flops and latches act as often as their outputs set off further
+    // changes (a flip-flop clocked by another, a latch following a latch); a loop that never settles
+    // stops after this many rounds and goes on in the next tick
+    static constexpr int MaxRegisterRounds = 256;
+    static constexpr int MaxPropagationSteps = 100000;   // gate and mux evaluations per tick
 
     // Worklist + per-net "already queued" flag replaces std::set: O(1) dedup, no per-event allocation
     inline void enqueue(u32 netId) {

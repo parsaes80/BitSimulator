@@ -219,6 +219,7 @@ struct Register {
 	bool resetValue = false;    // D and T: what InID2 sets the register to
 	bool storedValue = false;
 	bool prevClkState = false;
+	bool toggledThisTick = false;   // a JK latch with J = K = 1 toggles at most once per tick
 	Register() = default;
     Register(RType t, u32 inId, u32 inId2, u32 outId, u32 clkId, u32 enId, bool asyncReset = false, bool resetValue = false)
         : inID(inId), InID2(inId2), outID(outId), clkID(clkId), enableID(enId), regType(t), asyncReset(asyncReset), resetValue(resetValue) {}

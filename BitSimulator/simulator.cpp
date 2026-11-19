@@ -153,12 +153,20 @@ void Simulator::processRegisters(bool firstTick) {
             }
         } else if (!hasEnable || enable) {
             // Latch: follows its inputs while enabled (always, without an enable pin); a latch whose
-            // enable pin is wired but low holds its value
+            // enable pin is wired but low holds its value. A JK latch with J = K = 1 has no stable value
+            // (each toggle sets off the next); it toggles once per tick, so its output shows that.
             switch (reg.regType) {
             case RType::D:
             case RType::T: reg.storedValue = input1; break;
-            case RType::SR:
-            case RType::JK: reg.storedValue = setOrReset(reg.regType, reg.storedValue, input1, input2); break;
+            case RType::SR: reg.storedValue = setOrReset(reg.regType, reg.storedValue, input1, input2); break;
+            case RType::JK:
+                if (!(input1 && input2)) {
+                    reg.storedValue = setOrReset(reg.regType, reg.storedValue, input1, input2);
+                } else if (!reg.toggledThisTick) {
+                    reg.storedValue = !reg.storedValue;
+                    reg.toggledThisTick = true;
+                }
+                break;
             }
         }
     }
@@ -173,15 +181,6 @@ void Simulator::tick() {
             enqueue(i);
         }
         m_firstTick = false;
-    }
-
-    for (auto& reg : m_registers) {
-        if(!reg.outID){continue;} // dont't write to net 0
-        bool oldValue = m_nets[reg.outID];
-        if(oldValue != reg.storedValue){
-            m_nets[reg.outID] = reg.storedValue;  // Output the stored value
-            enqueue(reg.outID);
-        }
     }
 
     // Every source puts its value for this tick on its pins (bit i on pin i)
@@ -199,28 +198,25 @@ void Simulator::tick() {
         }
     }
 
-    int propagationStep = 0;
-    int maxSteps = 100000;
-
-    // FIFO worklist; nets enqueued while processing are appended and picked up by the same loop
+    // The gates settle on the new source values. Then, as at a clock edge in an HDL simulator, every
+    // flip-flop and latch samples what settled, and only after all have sampled do their outputs change
+    // and settle in turn. That can set off more (a flip-flop clocked by another one), so it repeats until
+    // no output changes. A new value is thus seen in the same tick as the edge that made it.
+    for (auto& reg : m_registers) reg.toggledThisTick = false;
     size_t head = 0;
-    while (head < m_eventQueue.size() && propagationStep < maxSteps) {
-        u32 changedNetId = m_eventQueue[head++];
-        m_inQueue[changedNetId] = 0;
-
-        processGates(changedNetId);
-
-        processMuxes(changedNetId);
-
-        propagationStep++;
+    int propagationSteps = 0;
+    settle(head, propagationSteps);
+    for (int round = 0; round < MaxRegisterRounds; round++) {
+        processRegisters(firstTick);
+        if (!driveRegisterOutputs()) break;
+        settle(head, propagationSteps);
     }
-    // The queue now lists every net that changed in this tick, also any left over after maxSteps
+
+    // The queue now lists every net that changed in this tick, also any left over after the step limit
     recordWaveChanges(tick);
 
-    // Drop processed entries; anything left after hitting maxSteps carries over to the next tick
+    // Drop processed entries; anything left after hitting the step limit carries over to the next tick
     m_eventQueue.erase(m_eventQueue.begin(), m_eventQueue.begin() + head);
-
-    processRegisters(firstTick);
 
     SimResult result;
     result.runId = m_runId;
@@ -231,6 +227,31 @@ void Simulator::tick() {
     result.netValues = m_nets;
     // Recorded above, before the result: whatever the result sets off (a pause, say) finds this tick in the waveforms
     sendResult(std::move(result));
+}
+
+void Simulator::settle(size_t& head, int& steps)
+{
+    // FIFO worklist; nets enqueued while processing are appended and picked up by the same loop
+    while (head < m_eventQueue.size() && steps < MaxPropagationSteps) {
+        const u32 changedNetId = m_eventQueue[head++];
+        m_inQueue[changedNetId] = 0;
+        processGates(changedNetId);
+        processMuxes(changedNetId);
+        steps++;
+    }
+}
+
+bool Simulator::driveRegisterOutputs()
+{
+    bool changed = false;
+    for (const auto& reg : m_registers) {
+        if (!reg.outID) continue;   // don't write to net 0
+        if (m_nets[reg.outID] == u8(reg.storedValue)) continue;
+        m_nets[reg.outID] = reg.storedValue;
+        enqueue(reg.outID);
+        changed = true;
+    }
+    return changed;
 }
 
 void Simulator::recordWaveChanges(u64 tick)

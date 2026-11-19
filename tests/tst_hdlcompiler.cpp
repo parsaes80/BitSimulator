@@ -525,7 +525,11 @@ private slots:
         insideU.buildModule(run.design, u"add2"_s, false);
         insideH0.buildModule(run.design, u"ha"_s, false);
 
-        QSet<int> earlierSums{0};
+        // dff2 takes sum[1:0] on the clock's rising edge, and shows it in that same tick
+        auto* clk = findItem<SourceItem>(&scene, [](SourceItem* s) { return s->name() == u"clk"_s; });
+        QVERIFY(clk);
+        bool previousClock = false;
+        int held = 0;
         const QList<SimResult> results = simulate(graph, 64);
         QCOMPARE(results.size(), 64);
         for (SimResult result : results) {
@@ -536,7 +540,10 @@ private slots:
             QVERIFY2(sum->getValue() == expected, qPrintable(u"tick %1: %2 + %3 gave %4"_s.arg(tick).arg(a->value()).arg(b->value()).arg(sum->getValue())));
             QCOMPARE(acopy->getValue(), int(a->value()));                // passed straight through the block
             QCOMPARE(one->getValue(), 1);
-            QVERIFY2(earlierSums.contains(regq->getValue()), qPrintable(u"tick %1: the register holds %2"_s.arg(tick).arg(regq->getValue())));
+            const bool clock = clk->value() != 0;
+            if (clock && !previousClock && tick > 0) held = expected & 3;   // the first tick only notes the clock's level
+            previousClock = clock;
+            QVERIFY2(regq->getValue() == held, qPrintable(u"tick %1: the register holds %2, not %3"_s.arg(tick).arg(regq->getValue()).arg(held)));
 
             scene.showInstanceValues(u"u"_s, &insideU);
             scene.showInstanceValues(u"u/h0"_s, &insideH0);
@@ -545,7 +552,6 @@ private slots:
             QCOMPARE(terminalValue(&insideU, u"z"_s), expected);
             QCOMPARE(terminalValue(&insideH0, u"s"_s), expected & 1);
             QCOMPARE(terminalValue(&insideH0, u"c"_s), int(a->value() & b->value() & 1));
-            earlierSums.insert(expected & 3);
         }
         scene.stopSim();
     }
@@ -734,7 +740,7 @@ private slots:
         connect(&scene, &CircuitScene::startSimSIG, this, [&graph](const ExportGraph& g) { graph = g; });
         scene.startOrResumeSim();
 
-        // The Verilog, one tick at a time. A flip-flop shows a new value from the tick after it changed.
+        // The Verilog, one tick at a time. A flip-flop shows a new value in the tick of the edge that made it.
         struct State { int q1 = 0, q2 = 0, q3 = 0, q4 = 0, q5 = 0, q7 = 0, q8 = 0x81; } state;
         bool previousClock = false;
         for (SimResult result : simulate(graph, 120)) {
@@ -742,13 +748,6 @@ private slots:
             scene.receiveResult(result);
             const int tick = int(result.sourceTick);
             const QString at = u"tick %1"_s.arg(tick);
-            QVERIFY2(display("q1")->getValue() == state.q1, qPrintable(at + " q1"));
-            QVERIFY2(display("q2")->getValue() == state.q2, qPrintable(at + " q2"));
-            QVERIFY2(display("q3")->getValue() == state.q3, qPrintable(at + " q3"));
-            QVERIFY2(display("q4")->getValue() == state.q4, qPrintable(at + " q4"));
-            QVERIFY2(display("q5")->getValue() == state.q5, qPrintable(at + " q5"));
-            QVERIFY2(display("q7")->getValue() == state.q7, qPrintable(at + " q7"));
-            QVERIFY2(display("q8")->getValue() == state.q8, qPrintable(at + " q8"));
 
             const bool clock = tick & 1;
             const bool rising = tick > 0 && !previousClock && clock;     // no edge at power-up
@@ -764,6 +763,14 @@ private slots:
             if (falling) state.q5 = d;
             if (e) state.q7 = (d >> 1) & 1;
             if (rising) state.q8 = d;
+
+            QVERIFY2(display("q1")->getValue() == state.q1, qPrintable(at + " q1"));
+            QVERIFY2(display("q2")->getValue() == state.q2, qPrintable(at + " q2"));
+            QVERIFY2(display("q3")->getValue() == state.q3, qPrintable(at + " q3"));
+            QVERIFY2(display("q4")->getValue() == state.q4, qPrintable(at + " q4"));
+            QVERIFY2(display("q5")->getValue() == state.q5, qPrintable(at + " q5"));
+            QVERIFY2(display("q7")->getValue() == state.q7, qPrintable(at + " q7"));
+            QVERIFY2(display("q8")->getValue() == state.q8, qPrintable(at + " q8"));
         }
         scene.stopSim();
     }
