@@ -1,10 +1,4 @@
-# Profile-guided optimization, training run: lays out every circuit in GRAPHS with the
-# instrumented DOT, which records how often each part of it runs into PROFILE_DIR.
-#
-#   cmake -DDOT=<instrumented dot> -DGRAPHS=<folder of .dot files> -DPROFILE_DIR=<folder> -P train.cmake
-#
-# The circuits are what BitSimulator hands dot: yosys "show" output of a few designs,
-# laid out left to right, exactly like HDLCompiler does it.
+# PGO training: cmake -DDOT=<instrumented dot> -DGRAPHS=<.dot folder> -DPROFILE_DIR=<dir> -P train.cmake
 
 file(REMOVE_RECURSE ${PROFILE_DIR})   # profiles of an older build would not match this one
 file(MAKE_DIRECTORY ${PROFILE_DIR})

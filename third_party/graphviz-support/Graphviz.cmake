@@ -1,20 +1,4 @@
-# Builds Graphviz's `dot` from the third_party/graphviz submodule and puts it next to BitSimulator.
-#
-# Included from the top-level CMakeLists.txt after APP_DIR is set. It defines the target
-# `copy_graphviz_dot`; building it builds dot (the first time only) and copies it to APP_DIR.
-#
-# What is different from a stock Graphviz build, all for speed and none changing the layout algorithm:
-#   - ns-compact-arrays.patch: dot's network simplex runs its main loop on a compact copy of its
-#     data. It makes exactly the same choices, so layouts are byte for byte the same; it is about
-#     2x faster on circuits, where nearly all of dot's time goes into that loop.
-#   - Only dot, linked statically with its layout and output plugins built in: no Graphviz
-#     libraries, plugin files or config file to ship.
-#   - Release build with link-time optimization (Graphviz turns it on itself for Release).
-#   - With GCC: profile-guided optimization, trained on the circuits in training/.
-#   - No Pango/Cairo, and on Windows no GDI+ (no-gdiplus.patch): label sizes come from Graphviz's
-#     built-in font metrics, so dot needs no font libraries and does not depend on installed fonts.
-#     (Windows and Linux can still order tied nodes differently: Graphviz sorts with the C
-#     library's qsort, which breaks ties differently on each. That is the same with stock Graphviz.)
+# Builds a static, faster dot (ns-compact-arrays.patch, LTO, GCC PGO, no Pango) for copy_graphviz_dot
 
 include(ExternalProject)
 
@@ -25,7 +9,7 @@ set(GRAPHVIZ_PROFILE_DIR ${CMAKE_BINARY_DIR}/graphviz-profile)
 
 find_package(Git REQUIRED)
 
-# A clone made without --recursive has an empty submodule folder: fetch it
+# A clone without --recursive has an empty submodule folder
 if(NOT EXISTS ${GRAPHVIZ_SOURCE_DIR}/CMakeLists.txt)
     message(STATUS "Graphviz: fetching the third_party/graphviz submodule")
     execute_process(
@@ -38,7 +22,6 @@ if(NOT EXISTS ${GRAPHVIZ_SOURCE_DIR}/CMakeLists.txt)
     endif()
 endif()
 
-# The parts of Graphviz dot does not need, and the libraries it should not look for
 set(GRAPHVIZ_OPTIONS
     -DCMAKE_BUILD_TYPE=Release
     -DBUILD_SHARED_LIBS=OFF
@@ -67,7 +50,6 @@ set(GRAPHVIZ_OPTIONS
     -Dwith_digcola=OFF
     -Dwith_ipsepcola=OFF
 )
-# The same compilers as the app
 foreach(language C CXX)
     if(CMAKE_${language}_COMPILER)
         list(APPEND GRAPHVIZ_OPTIONS -DCMAKE_${language}_COMPILER=${CMAKE_${language}_COMPILER})
@@ -77,8 +59,7 @@ if(CMAKE_TOOLCHAIN_FILE)
     list(APPEND GRAPHVIZ_OPTIONS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
 endif()
 
-# Building Graphviz needs bison and flex. On Windows they come with Graphviz's small
-# build-utilities submodule (inside third_party/graphviz), fetched here when missing.
+# bison and flex: on Windows from Graphviz's build-utilities submodule
 if(WIN32)
     set(build_utilities windows/dependencies/graphviz-build-utilities)
     if(NOT EXISTS ${GRAPHVIZ_SOURCE_DIR}/${build_utilities}/winflexbison/win_bison.exe)
@@ -97,15 +78,12 @@ if(WIN32)
         -DFLEX_EXECUTABLE=${GRAPHVIZ_SOURCE_DIR}/${build_utilities}/winflexbison/win_flex.exe)
 endif()
 
-# Graphviz requires a getopt library when the C library has no getopt.h, which is the case with
-# MSVC (glibc and MinGW have one). Only Graphviz's other tools (gvpr, gc, acyclic, ...) use getopt;
-# dot does not, and no source file reads HAVE_GETOPT_H. So answer Graphviz's check up front:
-# that skips the search for a getopt library, which only those tools (never built here) would link.
+# MSVC has no getopt.h; only Graphviz tools we don't build use getopt, so skip the search
 if(MSVC)
     list(APPEND GRAPHVIZ_OPTIONS -DHAVE_GETOPT_H=1)
 endif()
 
-# Profile-guided optimization: GCC only (Clang and MSVC handle profiles differently)
+# PGO: GCC only
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     option(BITSIM_DOT_PGO "Build Graphviz dot with profile-guided optimization (about 10% faster)" ON)
 else()
@@ -113,7 +91,7 @@ else()
 endif()
 
 if(BITSIM_DOT_PGO)
-    # Both builds happen in the same folder: GCC finds a profile by the object file's path
+    # Both builds in one folder: GCC finds a profile by object path
     set(instrument_flags "-O2 -DNDEBUG -fprofile-generate -fprofile-dir=${GRAPHVIZ_PROFILE_DIR} -fprofile-update=single")
     set(optimize_flags "-O2 -DNDEBUG -fprofile-use -fprofile-dir=${GRAPHVIZ_PROFILE_DIR} -fprofile-partial-training -Wno-missing-profile")
     set(first_build_flags
@@ -149,7 +127,6 @@ ExternalProject_Add(graphviz_dot
 )
 
 if(BITSIM_DOT_PGO)
-    # Run the instrumented dot on sample circuits, then rebuild it with the recorded profile
     ExternalProject_Add_Step(graphviz_dot train
         COMMAND ${CMAKE_COMMAND} -DDOT=${GRAPHVIZ_DOT} -DGRAPHS=${GRAPHVIZ_SUPPORT_DIR}/training
                 -DPROFILE_DIR=${GRAPHVIZ_PROFILE_DIR} -P ${GRAPHVIZ_SUPPORT_DIR}/train.cmake
@@ -168,8 +145,7 @@ if(BITSIM_DOT_PGO)
     )
 endif()
 
-# Copy dot next to the app on every build (only when it changed), so it is there even after
-# the app's folder was cleaned
+# On every build, so dot survives a cleaned app folder
 add_custom_target(copy_graphviz_dot ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${APP_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GRAPHVIZ_DOT} ${APP_DIR}/

@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Builds BitSimulator with its tests in a separate build folder and runs them.
-#
-#   ./run_tests.sh                 run everything
-#   ./run_tests.sh -R simulator    only tests whose name matches (any ctest option works)
-#   ./run_tests.sh -V              show every single check
-#
-# Environment:
-#   QT_PREFIX         Qt installation to use, e.g. ~/Qt/6.12.0/gcc_64 (default: newest under ~/Qt, else the system Qt)
-#   BITSIM_TEST_DIR   build folder (default: build/tests, which .gitignore already covers)
-#   BITSIM_SHOW_GUI=1 show the windows while the GUI tests drive them (default: run without a display)
+# Builds and runs the tests (args go to ctest, e.g. -R simulator, -V)
+# Env: QT_PREFIX (Qt to use), BITSIM_TEST_DIR (default build/tests), BITSIM_SHOW_GUI=1
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +8,7 @@ build="${BITSIM_TEST_DIR:-$root/build/tests}"
 
 configure=(-S "$root" -B "$build" -DBITSIM_BUILD_TESTS=ON)
 
-# These only matter the first time; an existing build folder keeps its generator and build type
+# Only the first time; an existing build folder keeps its settings
 if [[ ! -f "$build/CMakeCache.txt" ]]; then
     configure+=(-DCMAKE_BUILD_TYPE=Release)
     if command -v ninja >/dev/null 2>&1; then configure+=(-G Ninja); fi

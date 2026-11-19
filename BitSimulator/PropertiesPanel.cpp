@@ -34,7 +34,7 @@ struct Overloaded : Ts... { using Ts::operator()...; };
 
 //===================== Source value text <-> numbers ========================
 
-// One number: decimal, 0x hex or 0b binary; "_" may group digits (0b1010_0101). Up to 64 bits.
+// Decimal, 0x or 0b; "_" may group digits (0b1010_0101); up to 64 bits
 std::expected<std::uint64_t, QString> parseNumber(const QString& input)
 {
     QString text = input.trimmed().toLower();
@@ -50,7 +50,7 @@ std::expected<std::uint64_t, QString> parseNumber(const QString& input)
     return value;
 }
 
-// A list of numbers separated by commas, semicolons, spaces or new lines.
+// Separated by commas, semicolons, spaces or new lines
 std::expected<QList<std::uint64_t>, QString> parseNumbers(const QString& text)
 {
     static const QRegularExpression separators(u"[,;\\s]+"_s);
@@ -72,7 +72,7 @@ std::expected<QList<bool>, QString> parseWaveform(const QString& text)
     for (const QChar c : text) {
         if (c == u'0') values.append(false);
         else if (c == u'1') values.append(true);
-        else if (c.isSpace() || c == u',' || c == u'-' || c == u'_') continue;      // separators are allowed
+        else if (c.isSpace() || c == u',' || c == u'-' || c == u'_') continue;
         else return std::unexpected(PropertiesPanel::tr("A waveform can only contain 0 and 1."));
     }
     if (values.isEmpty()) return std::unexpected(PropertiesPanel::tr("Enter at least one step."));
@@ -97,7 +97,7 @@ QString formatNumbers(const QList<std::uint64_t>& values)
     return parts.join(u", "_s);
 }
 
-// Shows a number in a line edit unless the text there already means it (so typing "0x1F" is not rewritten)
+// Unless the text already means it, so typing "0x1F" isn't rewritten
 void showNumber(QLineEdit* edit, std::uint64_t value)
 {
     const auto shown = parseNumber(edit->text());
@@ -110,7 +110,7 @@ QLabel* mutedLabel(const QString& text = {})
 {
     auto* label = new QLabel(text);
     label->setWordWrap(true);
-    label->setProperty("muted", true);     // colored by the QLabel[muted="true"] rule in Theme.cpp
+    label->setProperty("muted", true);     // see QLabel[muted="true"] in Theme.cpp
     return label;
 }
 
@@ -118,17 +118,17 @@ QSpinBox* makeSpin(int minimum, int maximum)
 {
     auto* spin = new QSpinBox;
     spin->setRange(minimum, maximum);
-    spin->setKeyboardTracking(false);     // typing "12" should not apply "1" first
-    // Qt ignores a spin box's style sheet padding when it places the text, so indent it here
+    spin->setKeyboardTracking(false);     // typing "12" shouldn't apply "1" first
+    // Qt ignores a spin box's QSS padding for the text
     if (auto* edit = spin->findChild<QLineEdit*>()) edit->setTextMargins(6, 0, 0, 0);
     return spin;
 }
 
-// Shows a value without triggering the spin box's valueChanged signal.
+// Without emitting valueChanged
 void showValue(QSpinBox* spin, int value)
 {
     const QSignalBlocker blocker(spin);
-    if (value > spin->maximum()) spin->setMaximum(value);    // e.g. a wide display made by the HDL compiler
+    if (value > spin->maximum()) spin->setMaximum(value);    // e.g. a wide display from the HDL compiler
     spin->setValue(value);
 }
 
@@ -142,7 +142,7 @@ QFormLayout* makeForm(QWidget* page)
     return form;
 }
 
-// A row of joined buttons where exactly one is chosen (like tabs). The group reports clicks via idClicked.
+// Joined buttons, exactly one chosen (like tabs); clicks via idClicked
 struct Segmented {
     QWidget* widget;
     QButtonGroup* group;
@@ -175,8 +175,7 @@ void check(QButtonGroup* group, int id)
     if (auto* button = group->button(id)) button->setChecked(true);
 }
 
-// A QStackedWidget is normally as tall as its tallest page. Ignoring the size of the hidden
-// pages makes it exactly as tall as the page being shown, so what follows sits right below it.
+// As tall as the shown page, not the tallest one
 void showPage(QStackedWidget* stack, QWidget* page)
 {
     for (int i = 0; i < stack->count(); i++) {
@@ -186,7 +185,7 @@ void showPage(QStackedWidget* stack, QWidget* page)
     stack->setCurrentWidget(page);
 }
 
-} // namespace
+}
 
 //===================== WaveformEditor ========================
 
@@ -232,7 +231,7 @@ void WaveformEditor::paintEvent(QPaintEvent*)
     QPainter painter(this);
     if (!isEnabled()) painter.setOpacity(0.45);
 
-    // The same colors as a wire on the canvas: a 1 is drawn like a wire carrying one
+    // A 1 is drawn like a wire carrying 1
     const Theme& theme = currentTheme();
     const QColor accent = theme.wireHigh;
     const QColor grid = theme.wireLow;
@@ -257,7 +256,7 @@ void WaveformEditor::paintEvent(QPaintEvent*)
         painter.setPen(QPen(accent, 2));
         const int levelY = value ? highY : lowY;
         painter.drawLine(x, levelY, x + WaveCellWidth, levelY);
-        if (column > 0 && m_values[i - 1] != value) painter.drawLine(x, highY, x, lowY);   // rising or falling edge
+        if (column > 0 && m_values[i - 1] != value) painter.drawLine(x, highY, x, lowY);   // an edge
 
         painter.setPen(value ? theme.componentText : theme.pin);
         painter.drawText(QRect(x, lowY + 2, WaveCellWidth, WaveRowHeight - 25), Qt::AlignCenter, value ? u"1"_s : u"0"_s);
@@ -285,7 +284,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
 {
     setObjectName(u"propertiesPanel"_s);
     setMinimumWidth(160);
-    setAttribute(Qt::WA_StyledBackground);   // so the style sheet (Theme.cpp) can paint the background
+    setAttribute(Qt::WA_StyledBackground);   // so the style sheet paints the background
 
     m_title = new QLabel;
     m_title->setObjectName(u"propertiesTitle"_s);
@@ -295,7 +294,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     m_title->setFont(titleFont);
     m_subtitle = mutedLabel();
 
-    // With nothing selected the editors below describe the next component to place, under their own heading
+    // Nothing selected: the editors describe the next component, under their own heading
     m_nextSection = new QWidget;
     auto* nextLayout = new QVBoxLayout(m_nextSection);
     nextLayout->setContentsMargins(0, 0, 0, 2);
@@ -319,7 +318,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     separator->setFrameShape(QFrame::HLine);
     separator->setFrameShadow(QFrame::Plain);
 
-    // One page per alternative of ItemProps, added in the same order, so a page index equals props.index()
+    // One page per ItemProps alternative, in order, so page index == props.index()
     m_pages = new QStackedWidget;
     m_pages->setObjectName(u"propertiesPages"_s);
     addPage(itemKind<GateProps>, buildGatePage());
@@ -342,8 +341,7 @@ PropertiesPanel::PropertiesPanel(CircuitScene* scene, QWidget* parent)
     m_lockNotice->setWordWrap(true);
     m_lockNotice->hide();
 
-    // A selected source or display has a name, shown on it and in the waveforms. It is not a setting
-    // of the next component to place, so it sits outside the pages, which serve both.
+    // Outside the pages: a name is not a setting of the next component
     m_nameRow = new QWidget;
     auto* nameForm = makeForm(m_nameRow);
     m_name = new QLineEdit;
@@ -409,20 +407,17 @@ void PropertiesPanel::refresh()
         if (auto* component = dynamic_cast<ComponentItem*>(item)) components.append(component);
     }
 
-    // The "next component" heading and placing hint only make sense while nothing is selected
     m_nextSection->setVisible(selected.isEmpty());
     m_placeHint->setVisible(selected.isEmpty());
     m_nameRow->hide();
 
     if (selected.isEmpty()) {
-        // Nothing selected: say so, and offer the settings of what the active tool will place next
         m_item = nullptr;
         m_title->setText(tr("Nothing selected"));
         m_subtitle->setText(tr("Click a component on the canvas to edit it."));
         load(m_scene->toolProps());
     } else if (selected.size() == 1 && components.size() == 1) {
         m_item = components.first();
-        // A source is an input of the circuit and a display an output; both have a name
         const auto* source = dynamic_cast<SourceItem*>(m_item.data());
         const auto* display = dynamic_cast<DisplayItem*>(m_item.data());
         if (source) m_subtitle->setText(tr("Input “%1”").arg(source->name()));
@@ -450,8 +445,8 @@ void PropertiesPanel::load(const ItemProps& props)
     const QScopedValueRollback<bool> loading(m_loading, true);
 
     m_shown = props;
-    if (m_item) m_title->setText(itemTitle(props));     // a selected component is named in the header
-    else m_nextTitle->setText(itemTitle(props));        // otherwise the header says "Nothing selected"
+    if (m_item) m_title->setText(itemTitle(props));
+    else m_nextTitle->setText(itemTitle(props));        // "Nothing selected"
     showPage(m_pages, m_kindPages[props.index()]);
 
     std::visit(Overloaded{
@@ -471,7 +466,7 @@ void PropertiesPanel::commit(const ItemProps& props)
     if (m_item) {
         const auto result = m_scene->editComponent(m_item, props);
         showMessage(result ? QString() : result.error());
-        load(m_item->props());              // shows the applied (or, if refused, the unchanged) state
+        load(m_item->props());              // the applied, or if refused the unchanged, state
     } else {
         showMessage({});
         m_scene->setToolProps(props);       // emits toolChanged, which reloads the editors
@@ -529,7 +524,7 @@ QWidget* PropertiesPanel::buildGatePage()
 
 void PropertiesPanel::loadGate(const GateProps& props)
 {
-    // For a new gate the type is picked with the toolbar buttons, so the choice is only shown for placed gates
+    // New gates get their type from the toolbar buttons
     const bool placed = !m_item.isNull();
     m_gateTypeLabel->setVisible(placed);
     m_gateType->setVisible(placed);
@@ -588,7 +583,7 @@ void PropertiesPanel::loadRegister(const RegisterProps& props)
     check(m_regTrigger, props.edgeTriggered ? 1 : 0);
     m_regEnable->setChecked(props.hasEnable);
 
-    // Name the pins on the left edge in the order they are drawn
+    // Left-edge pins in drawing order
     QStringList pins;
     switch (props.type) {
     case RType::SR: pins << u"S"_s << u"R"_s; break;
@@ -597,7 +592,7 @@ void PropertiesPanel::loadRegister(const RegisterProps& props)
     case RType::T:  pins << u"T"_s; break;
     }
     if (props.type == RType::D || props.type == RType::T) {
-        // Compiled Verilog can reset asynchronously, and to 1
+        // Compiled code can reset asynchronously, and to 1
         QString reset = props.asyncReset ? tr("asynchronous reset") : tr("reset");
         if (props.resetValue) reset += tr(" to 1");
         pins << reset;
@@ -639,7 +634,7 @@ void PropertiesPanel::loadMux(const MuxProps& props)
 
 namespace {
 
-// Which page of settings a source mode uses (counter, Gray code and walking one share one)
+// Counter, Gray code and walking one share a page
 enum SourcePage { SequencePage, RandomPage, ListPage, WaveformsPage, ConstantPage };
 
 SourcePage sourcePage(SourceMode mode)
@@ -677,7 +672,7 @@ QString sourceModeInfo(SourceMode mode)
     return {};
 }
 
-// The first values the source outputs, so the effect of each setting can be seen right away
+// The first values, so each setting's effect shows at once
 QString sourcePreview(const SourceProps& props)
 {
     if (props.mode == SourceMode::Constant)
@@ -691,7 +686,7 @@ QString sourcePreview(const SourceProps& props)
     return PropertiesPanel::tr("Steps: %1, ...").arg(values.join(u", "_s));
 }
 
-} // namespace
+}
 
 QWidget* PropertiesPanel::buildSourcePage()
 {
@@ -700,7 +695,6 @@ QWidget* PropertiesPanel::buildSourcePage()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(10);
 
-    // What every mode has: the mode itself, the number of output pins, and how long each value lasts
     auto* common = new QWidget;
     m_sourceForm = makeForm(common);
     m_sourceMode = new QComboBox;
@@ -721,7 +715,7 @@ QWidget* PropertiesPanel::buildSourcePage()
     m_sourceForm->addRow(QString(), m_sourceRepeat);
     layout->addWidget(common);
 
-    // Counter, Gray code and walking one
+    // Counter, Gray code, walking one
     auto* sequencePage = new QWidget;
     m_sequenceForm = makeForm(sequencePage);
     const auto direction = makeSegmented({{0, tr("Up")}, {1, tr("Down")}});
@@ -734,14 +728,12 @@ QWidget* PropertiesPanel::buildSourcePage()
     m_sequenceForm->addRow(tr("Start"), m_sourceStart);
     m_sequenceForm->addRow(tr("Step"), m_sourceStep);
 
-    // Random
     auto* randomPage = new QWidget;
     auto* randomForm = makeForm(randomPage);
     m_sourceSeed = makeSpin(0, std::numeric_limits<int>::max());
     m_sourceSeed->setObjectName(u"sourceSeed"_s);
     randomForm->addRow(tr("Seed"), m_sourceSeed);
 
-    // List
     auto* listPage = new QWidget;
     auto* listLayout = new QVBoxLayout(listPage);
     listLayout->setContentsMargins(0, 0, 0, 0);
@@ -755,7 +747,7 @@ QWidget* PropertiesPanel::buildSourcePage()
     listLayout->addWidget(m_sourceList);
     listLayout->addWidget(m_sourceListCount);
 
-    // Waveforms: one pattern row per pin, and a click editor for the chosen pin
+    // A pattern row per pin, and a click editor for the chosen pin
     auto* wavePage = new QWidget;
     auto* waveLayout = new QVBoxLayout(wavePage);
     waveLayout->setContentsMargins(0, 0, 0, 0);
@@ -778,7 +770,6 @@ QWidget* PropertiesPanel::buildSourcePage()
     waveLayout->addWidget(m_waveEditorLabel);
     waveLayout->addWidget(m_waveEditor);
 
-    // Constant
     auto* constantPage = new QWidget;
     auto* constantForm = makeForm(constantPage);
     m_sourceConstant = new QLineEdit;
@@ -794,7 +785,7 @@ QWidget* PropertiesPanel::buildSourcePage()
     layout->addWidget(m_sourcePreview);
     layout->addWidget(m_sourceInfo);
 
-    // A number field: apply the number when it parses, otherwise explain and keep the last valid one
+    // Applied when it parses; otherwise explained, keeping the last valid number
     const auto connectNumber = [this](QLineEdit* field, std::uint64_t SourceProps::* member) {
         connect(field, &QLineEdit::textEdited, this, [this, member](const QString& text) {
             if (const auto value = parseNumber(text)) {
@@ -860,7 +851,7 @@ void PropertiesPanel::setWavePinCount(int count)
         pinButton->setCheckable(true);
         pinButton->setFixedWidth(34);
         pinButton->setObjectName(u"sourcePin%1"_s.arg(pin));
-        pinButton->setProperty("wavePin", true);          // styled by the QToolButton[wavePin="true"] rule in Theme.cpp
+        pinButton->setProperty("wavePin", true);          // see QToolButton[wavePin="true"] in Theme.cpp
         pinButton->setToolTip(tr("Pin %1 (bit %1): edit its pattern with the steps below").arg(pin));
         m_wavePinGroup->addButton(pinButton, pin);
 
@@ -874,7 +865,7 @@ void PropertiesPanel::setWavePinCount(int count)
                     if (pin < p.waves.size()) p.waves[pin] = *wave;
                 });
             } else {
-                showMessage(wave.error());       // keep the last valid pattern until the text is fixed
+                showMessage(wave.error());       // keeps the last valid pattern
             }
         });
 
@@ -887,7 +878,7 @@ void PropertiesPanel::setWavePinCount(int count)
         delete m_wavePatterns.takeLast()->parentWidget();   // the row, with its pin button
     }
 
-    // As tall as the rows, up to about six of them; more rows scroll
+    // Up to about six rows; more scroll
     m_wavePins->adjustSize();
     m_wavePinsScroll->setFixedHeight(std::min(m_wavePins->sizeHint().height(), 180));
 }
@@ -914,7 +905,7 @@ void PropertiesPanel::loadSource(const SourceProps& props)
         m_sourceMode->setCurrentIndex(m_sourceMode->findData(static_cast<int>(props.mode)));
     }
 
-    // A list or constant needs enough pins for its largest value
+    // Enough pins for the largest value
     int minBits = 1;
     if (props.mode == SourceMode::List) minBits = bitsNeeded(props.values);
     if (props.mode == SourceMode::Constant) minBits = bitsNeeded(props.constant);
@@ -931,7 +922,6 @@ void PropertiesPanel::loadSource(const SourceProps& props)
 
     for (qsizetype page = 0; page < m_sourcePages.size(); page++) m_sourcePages[page]->setVisible(page == sourcePage(props.mode));
 
-    // Counter, Gray code, walking one
     check(m_sourceDirection, props.countDown ? 1 : 0);
     showNumber(m_sourceStart, props.start);
     showNumber(m_sourceStep, props.step);
@@ -940,14 +930,13 @@ void PropertiesPanel::loadSource(const SourceProps& props)
 
     showValue(m_sourceSeed, static_cast<int>(std::min<std::uint32_t>(props.seed, std::numeric_limits<int>::max())));
 
-    // List: leave the text alone while it already means the same list, so typing is not rewritten
+    // Left alone while it means the same list, so typing isn't rewritten
     if (parseNumbers(m_sourceList->toPlainText()) != props.values) {
         const QSignalBlocker blocker(m_sourceList);
         m_sourceList->setPlainText(formatNumbers(props.values));
     }
     m_sourceListCount->setText(props.values.size() == 1 ? tr("1 value") : tr("%1 values").arg(props.values.size()));
 
-    // Waveforms: a pattern row per pin
     setWavePinCount(props.bits);
     for (int pin = 0; pin < props.bits; pin++) {
         const QList<bool> wave = props.waves.value(pin);
@@ -1036,15 +1025,15 @@ void PropertiesPanel::loadBlock(const BlockProps& props)
 //===================== FloatingPanel ========================
 
 namespace {
-constexpr int PanelWidth = 270;          // pixels, or the area's width less the margins if that is narrower
-constexpr int PanelMargin = 12;          // from the area's sides at the start, and from its bottom when open
-constexpr int PanelMinContent = 120;     // an open box shows at least this much of its content
-} // namespace
+constexpr int PanelWidth = 270;          // or the area's width less the margins
+constexpr int PanelMargin = 12;          // from the sides at start, from the bottom when open
+constexpr int PanelMinContent = 120;     // content an open box shows at least
+}
 
 FloatingPanel::FloatingPanel(const QString& title, QWidget* content, QWidget* area, QWidget* parent)
     : QFrame(parent), m_area(area)
 {
-    //----- Title bar: the title, then the minimize button at the right -----
+    //----- Title bar -----
     m_titleBar = new QWidget;
     m_titleBar->setObjectName(u"panelTitleBar"_s);
     m_titleBar->setCursor(Qt::SizeAllCursor);
@@ -1072,7 +1061,7 @@ FloatingPanel::FloatingPanel(const QString& title, QWidget* content, QWidget* ar
     titleLayout->addStretch(1);
     titleLayout->addWidget(m_minimizeButton);
 
-    //----- Body: a line under the title bar, then the content -----
+    //----- Body: a line, then the content -----
     m_body = new QWidget;
     auto* separator = new QFrame;
     separator->setObjectName(u"panelSeparator"_s);
@@ -1091,7 +1080,7 @@ FloatingPanel::FloatingPanel(const QString& title, QWidget* content, QWidget* ar
     layout->addWidget(m_body, 1);
 
     m_titleBar->installEventFilter(this);
-    m_area->installEventFilter(this);          // follow the area when it is resized
+    m_area->installEventFilter(this);          // follows its resizes
     setMinimized(false);
 }
 
@@ -1099,7 +1088,7 @@ void FloatingPanel::setMinimized(bool minimized)
 {
     m_minimized = minimized;
     m_body->setVisible(!minimized);
-    m_minimizeButton->setText(minimized ? u"▾"_s : u"▴"_s);   // ▾ unfolds, ▴ folds up
+    m_minimizeButton->setText(minimized ? u"▾"_s : u"▴"_s);
     m_minimizeButton->setToolTip(minimized ? tr("Restore") : tr("Minimize"));
     place();
 }
@@ -1120,7 +1109,7 @@ void FloatingPanel::place()
     const QRect area = m_area->geometry();
     const int width = std::max(0, std::min(PanelWidth, area.width() - 2 * PanelMargin));
 
-    // Open, the box is 2/3 of the area high, shorter if it was moved down; minimized, just the title bar
+    // Open: 2/3 of the area, shorter if moved down; minimized: the title bar
     const int openHeight = area.height() * 2 / 3;
     const int shortest = m_minimized ? minimizedHeight() : std::min(openHeight, openMinimumHeight());
     const int top = std::clamp(m_offset.y(), 0, std::max(0, area.height() - shortest));
@@ -1138,11 +1127,11 @@ void FloatingPanel::moveTo(QPoint topLeft)
     const QRect area = m_area->geometry();
     const int x = std::clamp(topLeft.x(), 0, std::max(0, area.width() - width()));
 
-    // Keep the distance to whichever side the box is nearer to, so it stays there when the window is resized
+    // Keeps its distance to the nearer side when the window resizes
     m_fromRight = x + width() / 2 > area.width() / 2;
     m_offset = QPoint(m_fromRight ? area.width() - width() - x : x, topLeft.y());
     place();
-    m_offset.setY(y() - area.top());   // where it actually went, so the next drag starts from there
+    m_offset.setY(y() - area.top());   // where it actually went, for the next drag
 }
 
 bool FloatingPanel::eventFilter(QObject* watched, QEvent* event)

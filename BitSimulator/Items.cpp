@@ -18,11 +18,11 @@ PortItem::PortItem(PortType portType, QGraphicsItem* parent)
 
 void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    // Colors are chosen here instead of with setPen()/setBrush(), which would schedule another repaint
+    // Colors set here, not with setPen()/setBrush(), which would schedule another repaint
     const Theme& theme = currentTheme();
     const bool wired = !m_connections.isEmpty();
     QColor ring = theme.pin;
-    QColor fill = theme.canvas;              // hollow: nothing connected
+    QColor fill = theme.canvas;              // hollow: unconnected
     if (m_highlighted) {
         ring = fill = theme.snap;
     }
@@ -111,7 +111,7 @@ ComponentItem::EditResult ComponentItem::checkRemovable(const PortItem* port, bo
 void ComponentItem::resizePorts(QList<PortItem*>& ports, int count, PortType type)
 {
     while (ports.size() > count) {
-        delete ports.takeLast();          // callers have checked that it has no wires
+        delete ports.takeLast();          // callers checked it has no wires
     }
     while (ports.size() < count) {
         ports.append(new PortItem(type, this));
@@ -123,7 +123,7 @@ void ComponentItem::setOptionalPort(PortItem*& port, bool wanted, PortType type)
     if (wanted && !port) {
         port = new PortItem(type, this);
     } else if (!wanted && port) {
-        delete port;                      // callers have checked that it has no wires
+        delete port;                      // callers checked it has no wires
         port = nullptr;
     }
 }
@@ -170,7 +170,6 @@ void GateItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 {
     drawSelection(painter, option);
 
-    // A dark body, outlined in the gate's color
     const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing, true);
     painter->setPen(QPen(theme.gateColor(m_props.type), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
@@ -210,7 +209,6 @@ void drawGateSymbol(QPainter* painter, GType type, const QRectF& body)
     painter->drawPath(shape);
 
     if (type == GType::XOR || type == GType::XNOR) {
-        // The second curve on the input side
         const double offset = body.width() * 0.1;
         QPainterPath curve;
         curve.moveTo(-halfWidth - offset, -halfHeight * 0.9);
@@ -218,7 +216,6 @@ void drawGateSymbol(QPainter* painter, GType type, const QRectF& body)
         painter->strokePath(curve, painter->pen());
     }
     if (type == GType::NAND || type == GType::NOR || type == GType::XNOR) {
-        // The inverting bubble, in its own color whatever the gate's
         const Theme& theme = currentTheme();
         QPen pen = painter->pen();
         pen.setColor(theme.inversion);
@@ -232,7 +229,6 @@ void drawGateSymbol(QPainter* painter, GType type, const QRectF& body)
 
 void GateItem::layoutPorts()
 {
-    // The body grows with the number of inputs; a NOT gate has a fixed size
     const QSizeF size = componentSize(m_props);
     m_rect = QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height());
 
@@ -250,7 +246,7 @@ void GateItem::layoutPorts()
                          m_props.type == GType::NOR ||
                          m_props.type == GType::XNOR);
 
-    m_outputPort->setPos(hasNotBubble ? halfWidth + 14 : halfWidth, 0);   // make room for the bubble
+    m_outputPort->setPos(hasNotBubble ? halfWidth + 14 : halfWidth, 0);   // room for the bubble
 
     updateWires();
     update();
@@ -266,13 +262,12 @@ WireItem::WireItem(QPointF startpos, QPointF endpos, QGraphicsItem* parent)
 
 QRectF WireItem::boundingRect() const
 {
-    const qreal extra = m_pen.widthF() / 2 + 5;   // room for the pen and the glow of a wire carrying 1
+    const qreal extra = m_pen.widthF() / 2 + 5;   // pen and the glow of a 1
     return QRectF(localStartPos, localEndPos).normalized().adjusted(-extra, -extra, extra, extra);
 }
 
 QPainterPath WireItem::path() const
 {
-    // The vertical part sits halfway between the two ends
     const qreal midX = (localStartPos.x() + localEndPos.x()) / 2.0;
     QPainterPath path(localStartPos);
     path.lineTo(midX, localStartPos.y());
@@ -284,7 +279,7 @@ QPainterPath WireItem::path() const
 QPainterPath WireItem::shape() const
 {
     QPainterPathStroker stroker;
-    stroker.setWidth(10);   // a click this close to the wire selects it
+    stroker.setWidth(10);   // a click this close selects it
     return stroker.createStroke(path());
 }
 
@@ -320,7 +315,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     const QPainterPath path = this->path();
     painter->setRenderHint(QPainter::Antialiasing);
 
-    // A wire still being dragged keeps the pen the scene gave it
+    // A dragged wire keeps the pen the scene gave it
     if (!m_startPort || !m_endPort) {
         painter->strokePath(path, m_pen);
         return;
@@ -337,7 +332,6 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
         pen.setWidthF(3);
     }
     else if (sim_values_visible && m_value) {
-        // A soft halo under a wire that carries a 1
         QPen glow = pen;
         QColor haze = pen.color();
         haze.setAlpha(60);
@@ -364,13 +358,11 @@ void WireItem::setEnds(QPointF start, QPointF end)
 
 void WireItem::updateWirePosition()
 {  
-    prepareGeometryChange();   // the bounding rect follows the two ends
+    prepareGeometryChange();
 
-    // Get the scene positions of both ports
     QPointF startPos = m_startPort->mapToScene(QPointF(0, 0));
     QPointF endPos = m_endPort->mapToScene(QPointF(0, 0));
 
-    // Convert to this item's coordinate system
     localStartPos = mapFromScene(startPos);
     localEndPos = mapFromScene(endPos);
     
@@ -379,7 +371,7 @@ void WireItem::updateWirePosition()
 //===================== Port names ========================
 
 namespace {
-// The name of a module port on a source or display, in a strip across the top of it
+// A compiled port's name, in a strip across the top
 constexpr double NameHeight = 16;
 QFont nameFont()
 {
@@ -440,11 +432,11 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     font.setBold(true);
     painter->setFont(font);
 
-    // The value at the tick the simulator last reported (tick 0, the first value, when not running)
+    // Tick 0's value when not running
     const u64 current = value();
     const QString text = QString::number(current);
 
-    // Gray with all pins 0, teal with all 1, and in between by how many are 1 (only while values are shown)
+    // Gray at all 0, teal at all 1, in between by how many are 1
     const u64 pins = m_props.bits >= 64 ? current : current & ((u64(1) << m_props.bits) - 1);
     const double ones = sim_values_visible ? double(std::popcount(pins)) / m_props.bits : 0.0;
     const QColor fill = theme.sourceFill(ones);
@@ -458,8 +450,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     painter->setPen(textColor);
     drawName(painter, m_rect, m_name, textColor, nameLine);
 
-    // A wide source is a tall, narrow box: run a number that does not fit across it along its length,
-    // and shrink the font if it does not fit that way either
+    // A wide source is tall and narrow: a number that doesn't fit runs along it, smaller if needed
     const QRectF body = m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0);
     QRectF box = body;
     painter->save();
@@ -494,7 +485,6 @@ void SourceItem::setTick(u64 tick)
 
 void SourceItem::layoutPorts()
 {
-    // The body holds the value and the pins; a name strip goes on top of it
     const QSizeF size = componentSize(m_props, m_name);
     const double header = m_name.isEmpty() ? 0 : NameHeight;
     const double bodyHeight = size.height() - header;
@@ -561,7 +551,6 @@ void RegisterItem::layoutPorts()
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
 
-    // The clock pin exists only on flip-flops, the enable pin only when requested
     setOptionalPort(m_clkPort, m_props.edgeTriggered, PortType::IN);
     setOptionalPort(m_readEnbPort, m_props.hasEnable, PortType::IN);
 
@@ -569,7 +558,7 @@ void RegisterItem::layoutPorts()
     m_inputPortTwo->setPos(-halfWidth, -halfHeight / 2);
     if (m_clkPort) m_clkPort->setPos(-halfWidth, 0);
     if (m_readEnbPort) m_readEnbPort->setPos(-halfWidth, halfHeight / 2);
-    m_outputPort->setPos(halfWidth, 0); // Right side, center
+    m_outputPort->setPos(halfWidth, 0);
 
     updateWires();
     update();
@@ -579,7 +568,7 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 
     drawSelection(painter, option);
 
-    // A register that holds a 1 lights up like a wire carrying one
+    // Holding a 1, it lights up like a wire carrying 1
     const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(QPen(m_value ? theme.wireHigh : theme.reg, 2));
@@ -587,7 +576,6 @@ void RegisterItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
     painter->drawRoundedRect(m_rect, 3, 3);
     painter->setPen(m_value ? theme.canvas : theme.componentText);
 
-    // Label the register with its type so an edit in the properties panel is visible on the canvas
     const QString label = registerTypeName(m_props.type);
     QFont font = painter->font();
     font.setBold(true);
@@ -632,7 +620,6 @@ void MuxItem::layoutPorts()
     double halfWidth = m_rect.width() / 2;
     double halfHeight = m_rect.height() / 2;
 
-    // Data inputs down the left side
     double diffHeight = m_rect.height() / (m_inputDataPorts.size() + 1);
     double currHeight = -halfHeight;
     for (PortItem* inputPort : std::as_const(m_inputDataPorts)) {
@@ -640,7 +627,7 @@ void MuxItem::layoutPorts()
         inputPort->setPos(-halfWidth, currHeight);
     }
 
-    // Select lines along the bottom, from right to left
+    // Select lines along the bottom, right to left
     double diffWidth = m_rect.width() / (m_inputAddressPorts.size() + 1);
     double currWidth = halfWidth;
     for (PortItem* addressPort : std::as_const(m_inputAddressPorts)) {
@@ -648,7 +635,7 @@ void MuxItem::layoutPorts()
         addressPort->setPos(currWidth, halfHeight);
     }
 
-    m_outputPort->setPos(halfWidth, 0); // Right side, center
+    m_outputPort->setPos(halfWidth, 0);
 
     updateWires();
     update();
@@ -709,21 +696,18 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
 
-    // Casing, outlined in the display's color
     painter->setPen(QPen(theme.display, 2));
     painter->setBrush(theme.fillFor(theme.display));
     painter->drawRoundedRect(m_rect, 4, 4);
 
     drawName(painter, m_rect, m_name, theme.componentText, theme.display);
 
-    // The screen: as dark as the canvas
     const QRectF body = m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0);
     QRectF displayArea = body.adjusted(5, 5, -5, -5);
     painter->setPen(Qt::NoPen);
     painter->setBrush(theme.canvas);
     painter->drawRoundedRect(displayArea, 2, 2);
 
-    // The value
     painter->setPen(QPen(theme.display, 2));
     QFont font = painter->font();
     font.setBold(true);
@@ -734,7 +718,6 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     QString displayText = QString::number(m_value);
     painter->drawText(displayArea, Qt::AlignCenter, displayText);
 
-    // A small "DISPLAY" label at the bottom, unless the display has a name
     if (!m_name.isEmpty()) return;
     QFont labelFont = painter->font();
     labelFont.setBold(false);
@@ -754,7 +737,6 @@ void DisplayItem::setName(const QString& name)
 
 void DisplayItem::layoutPorts()
 {
-    // The body holds the screen and the pins; a name strip goes on top of it
     const QSizeF size = componentSize(m_props, m_name);
     const double header = m_name.isEmpty() ? 0 : NameHeight;
     const double bodyHeight = size.height() - header;
@@ -832,7 +814,6 @@ void BlockItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
     painter->setBrush(theme.fillFor(theme.block));
     painter->drawRoundedRect(m_rect, 6, 6);
 
-    // Instance name, and the module it is an instance of
     QFont font = painter->font();
     font.setBold(true);
     font.setPointSizeF(9);
@@ -846,7 +827,6 @@ void BlockItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
     painter->setPen(theme.pin);
     painter->drawText(QRectF(header.left(), header.top() + 15, header.width(), 13), Qt::AlignCenter, m_props.module);
 
-    // Port names next to their first pin
     font.setPointSizeF(7);
     painter->setFont(font);
     painter->setPen(theme.componentText);
@@ -882,8 +862,7 @@ void TerminalItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWi
     const Theme& theme = currentTheme();
     painter->setRenderHint(QPainter::Antialiasing);
 
-    // A tag pointing the way signals flow, left to right: input ports sit on the left of the
-    // module's contents, output ports on the right
+    // A tag pointing the way signals flow: inputs on the left, outputs on the right
     const QRectF r = m_rect;
     const double tip = std::min(14.0, r.height() / 2);
     QPainterPath shape;
@@ -911,8 +890,8 @@ QSizeF componentSize(const ItemProps& props, const QString& name)
 {
     const double header = name.isEmpty() ? 0 : NameHeight;
     struct Visitor {
-        double named;     // width the name needs (0 without one)
-        double header;    // height of the name strip
+        double named;     // 0 without a name
+        double header;
         QSizeF operator()(const GateProps& p) const
         {
             const GateProps gate = normalized(p);

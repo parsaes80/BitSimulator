@@ -23,7 +23,6 @@ using namespace Qt::StringLiterals;
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
-    // Create thread and Simulator
     simThread = new QThread(this);
     simObj = new Simulator(nullptr);
     compilerThread = new QThread(this);
@@ -53,11 +52,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
     ui.camera->getScene()->stopSim();
 
     if (simThread && simThread->isRunning()) {
-        // Run it in the simulator's own thread, which is the only one allowed to read its data
+        // Only the simulator's thread may read its data
         QMetaObject::invokeMethod(simObj, &Simulator::printRunDataInfo, Qt::BlockingQueuedConnection);
         simThread->quit();
 
-        if (!simThread->wait(3000)) {  // Wait up to 3 seconds
+        if (!simThread->wait(3000)) {
             qDebug() << "Thread didn't quit gracefully, terminating...";
             simThread->terminate();
             simThread->wait(1000);
@@ -71,12 +70,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::setup()
 {
     ui.setupUi(this);
-    // Always open on the circuit, whichever tab was showing when the .ui was last saved in Designer
+    // Whatever tab Designer last saved
     ui.tabWidget->setCurrentWidget(ui.CircuitTab);
     CircuitScene* scene = ui.camera->getScene();
 
-    // Set the slider up before connecting it, so its initial value is not sent to a simulator
-    // that has not started yet. 3350 maps to ~100 ms per tick, the simulator's own initial period.
+    // Set up before connecting, so a not-yet-started simulator gets no value; 3350 ~ 100 ms per tick
     ui.slider->setRange(1, 10000);
     ui.slider->setValue(3350);
 
@@ -92,7 +90,7 @@ void MainWindow::setup()
     ui.xnorButton->setGateType(GType::XNOR);
     ui.notButton->setGateType(GType::NOT);
 
-    //----- Toolbar: a component button makes that component the next one placed -----
+    //----- Toolbar -----
     for (GateButton* button : {ui.andButton, ui.orButton, ui.notButton, ui.nandButton,
                                ui.norButton, ui.xorButton, ui.xnorButton}) {
         connect(button, &QPushButton::clicked, scene, [scene, button] { scene->selectGateTool(button->getGateType()); });
@@ -102,26 +100,26 @@ void MainWindow::setup()
     connect(ui.muxButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<MuxProps>); });
     connect(ui.displayButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<DisplayProps>); });
 
-    //----- Toolbar: Start/Pause, Reset, Clear and the speed slider -----
+    //----- Start/Pause, Reset, Clear and the speed slider -----
     connect(ui.startButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
-    connect(ui.waveStartButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);   // the same, on the Waveforms tab
+    connect(ui.waveStartButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
     connect(ui.resetButton, &QPushButton::clicked, this, &MainWindow::resetSimulation);
-    connect(ui.waveResetButton, &QPushButton::clicked, this, &MainWindow::resetSimulation);     // the same, on the Waveforms tab
+    connect(ui.waveResetButton, &QPushButton::clicked, this, &MainWindow::resetSimulation);
     connect(ui.clearButton, &QPushButton::clicked, this, &MainWindow::clearCircuit);
     connect(ui.slider, &QSlider::valueChanged, this, &MainWindow::updateTimerPeriod);
     connect(scene, &CircuitScene::simStateChanged, this, &MainWindow::showSimState);
     connect(m_waveModel, &WaveformModel::signalsChanged, this, [this, scene] { showSimState(scene->simState()); });   // Reset's state
     showSimState(scene->simState());
 
-    //----- HDL Editor tab: Compile sends the editor's text to the compiler -----
+    //----- Compile file tab -----
     connect(ui.compileButton, &QPushButton::clicked, this, &MainWindow::compileHdl);
     connect(this, &MainWindow::sendCodeToCompiler, compiler, &HDLCompiler::receiveCode);
     setupHdlEditor();
 
-    //----- Compile Dir tab: choose a folder, check the files to use, compile them -----
+    //----- Compile Dir tab -----
     connect(ui.selectPathButton, &QPushButton::clicked, this, &MainWindow::chooseCompileDir);
     connect(ui.compileDirPath, &QLineEdit::editingFinished, this, [this] {
-        // Enter or leaving the field: list the folder that was typed (once, not on every keystroke)
+        // Once per edit, not on every keystroke
         if (ui.compileDirPath->text().trimmed() != m_scannedDir) scanCompileDir();
     });
     connect(ui.compileFilesDisplayer, &QListWidget::itemChanged, this, &MainWindow::updateCompileDirStatus);
@@ -129,16 +127,16 @@ void MainWindow::setup()
     connect(this, &MainWindow::sendFilesToCompiler, compiler, &HDLCompiler::receiveFiles);
     updateCompileDirStatus();
 
-    //----- HDL compiler thread: the compiled circuit goes to the canvas, the outcome to the window -----
+    //----- HDL compiler thread -----
     connect(compilerThread, &QThread::finished, compiler, &QObject::deleteLater);
     connect(compiler, &HDLCompiler::sendDesign, scene, &CircuitScene::receiveDesign);
 
-    //----- Blocks: the properties panel is for the circuit itself, so it hides inside a block -----
+    //----- The properties panel is for the circuit itself, so it hides inside a block -----
     connect(ui.camera, &CircuitCanvas::depthChanged, this, [this](int depth) { m_propertiesFrame->setVisible(depth == 0); });
     connect(compiler, &HDLCompiler::error, this, [this](const QString& message) { m_compileError = message; });
     connect(compiler, &HDLCompiler::finished, this, &MainWindow::compileFinished);
 
-    //----- Simulator thread: the canvas starts, pauses and stops it; results come back to the canvas -----
+    //----- Simulator thread -----
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
     connect(simThread, &QThread::finished, simObj, &QObject::deleteLater);
     connect(scene, &CircuitScene::startSimSIG, simObj, &Simulator::receiveCircuit);
@@ -155,7 +153,6 @@ void MainWindow::setup()
 
 void MainWindow::setupHdlEditor()
 {
-    // A monospace font, tabs four spaces wide, and no line wrapping
     QFont font(u"Courier"_s);
     font.setStyleHint(QFont::Monospace);
     font.setFixedPitch(true);
@@ -168,8 +165,6 @@ void MainWindow::setupHdlEditor()
 
 void MainWindow::setupPropertiesPanel()
 {
-    // The panel floats over the canvas, so the canvas keeps its full width below it. It starts in the
-    // top-right corner, 2/3 of the canvas high; the user can move and minimize it. Content taller than it scrolls.
     m_properties = new PropertiesPanel(ui.camera->getScene());
 
     auto* scroll = new QScrollArea;
@@ -179,8 +174,7 @@ void MainWindow::setupPropertiesPanel()
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    // A child of the canvas widget, not of its viewport: panning scrolls the viewport's children along.
-    // It stays over the viewport, the drawing area without the scroll bars.
+    // A child of the canvas, not its viewport, which pans its children
     m_propertiesFrame = new FloatingPanel(tr("Properties"), scroll, ui.camera->viewport(), ui.camera);
     m_propertiesFrame->setObjectName(u"propertiesFrame"_s);
 }
@@ -192,10 +186,10 @@ void MainWindow::setupWaveforms()
     m_waveModel = new WaveformModel(this);
     ui.waveView->setModel(m_waveModel);
     new WaveSignalTree(ui.waveSignalTree, m_waveModel, this);
-    ui.waveSplitter->setStretchFactor(1, 1);    // the waves get the room when the window grows
+    ui.waveSplitter->setStretchFactor(1, 1);
     ui.waveSplitter->setSizes({240, 1000});
 
-    // A run starts: its signals. It stops: its history stays. A new circuit (a compile, Clear): start over.
+    // A run's history stays after it stops; a new circuit starts over
     connect(scene, &CircuitScene::startSimSIG, m_waveModel, [this, scene](const ExportGraph& graph) {
         m_waveModel->startRun(graph.runId, scene->waveSignals(), graph.recordedNets, scene->design().top);
     });
@@ -209,7 +203,7 @@ void MainWindow::setupWaveforms()
     connect(ui.waveZoomIn, &QPushButton::clicked, ui.waveView, &WaveformView::zoomIn);
     connect(ui.waveZoomOut, &QPushButton::clicked, ui.waveView, &WaveformView::zoomOut);
     connect(ui.waveZoomFit, &QPushButton::clicked, ui.waveView, [this] {
-        ui.waveView->setFollow(false);          // fitting the whole run, not following its end
+        ui.waveView->setFollow(false);
         ui.waveView->zoomToFit();
     });
     connect(ui.waveFollow, &QPushButton::toggled, ui.waveView, &WaveformView::setFollow);
@@ -236,7 +230,7 @@ void MainWindow::updateWaveStatus()
 void MainWindow::setupColorScheme()
 {
     connect(ui.themeButton, &QPushButton::clicked, this, &MainWindow::toggleColorScheme);
-    // Follow the system setting, also when it changes while the app runs, until the user picks a mode
+    // Follows the system until the user picks a mode
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this] {
         if (m_followSystemScheme) setColorScheme(systemColorScheme());
     });
@@ -248,17 +242,15 @@ void MainWindow::setColorScheme(ColorScheme scheme)
     m_colorScheme = scheme;
     const bool dark = (scheme == ColorScheme::Dark);
 
-    // The button shows the mode it switches to
     ui.themeButton->setIcon(colorSchemeIcon(scheme));
     ui.themeButton->setToolTip(dark ? tr("Switch to light mode") : tr("Switch to dark mode"));
 
-    // The canvas, its components and the toolbar icons paint with the current theme; the widgets
-    // get the palette and the style sheet. Setting the style sheet re-styles and repaints every widget.
+    // Canvas items paint with the current theme; widgets get the palette and style sheet
     setCurrentTheme(scheme);
     const Theme& theme = currentTheme();
     applyPalette(*qApp, theme);
     setStyleSheet(themeStyleSheet(theme));
-    ui.camera->resetCachedContent();   // the cached dot grid has the old theme's colors
+    ui.camera->resetCachedContent();   // the cached dot grid has the old colors
     ui.camera->viewport()->update();
 }
 
@@ -269,26 +261,23 @@ void MainWindow::toggleColorScheme()
 }
 
 void MainWindow::updateTimerPeriod(int value) {
-    double minInput = 1.0;      // Slider minimum
-    double maxInput = 10000.0;  // Slider maximum
-    double minOutput = 1.0;     // Fastest speed (1ms)
-    double maxOutput = 1000.0;  // Slowest speed (1000ms)
+    double minInput = 1.0;
+    double maxInput = 10000.0;
+    double minOutput = 1.0;     // ms per tick
+    double maxOutput = 1000.0;
 
-    // Normalize input to [0, 1] range
     double normalizedInput = (value - minInput) / (maxInput - minInput);
 
-    // Invert so higher slider values = faster speed (lower ms)
+    // Higher slider = faster
     double invertedInput = 1.0 - normalizedInput;
 
-    // Apply logarithmic scaling
+    // Logarithmic
     double logMin = std::log(minOutput);
     double logMax = std::log(maxOutput);
     double logResult = logMin + invertedInput * (logMax - logMin);
 
-    // Convert back from log space
     int result = static_cast<int>(std::round(std::exp(logResult)));
 
-    // Clamp to valid range
     result = qBound(1, result, 10000);
 
     sendTimerPeriod(result);
@@ -297,24 +286,23 @@ void MainWindow::toggleSimulation()
 {
     CircuitScene* scene = ui.camera->getScene();
     if (scene->simState() == SimState::Running) scene->pauseSim();
-    else scene->startOrResumeSim();     // from Stopped: run from the first tick; from Paused: continue
+    else scene->startOrResumeSim();     // from Stopped: tick 0; from Paused: continue
 }
 
 void MainWindow::showSimState(SimState state)
 {
-    // One button, on the circuit's toolbar and again on the Waveforms tab: "Start" or "Pause". The style
-    // sheet (Theme.cpp) colors it through the [running="true"] rule.
+    // Colored by the [running="true"] rule in Theme.cpp
     const bool running = (state == SimState::Running);
     for (QPushButton* button : {ui.startButton, ui.waveStartButton}) {
         button->setText(running ? tr("Pause") : tr("Start"));
         button->setProperty("running", running);
-        button->style()->unpolish(button);   // a style sheet only re-reads a property on a re-polish
+        button->style()->unpolish(button);   // a style sheet re-reads a property only on a re-polish
         button->style()->polish(button);
         button->setToolTip(running ? tr("Freeze the simulation")
                                    : state == SimState::Paused ? tr("Continue the simulation")
                                                                : tr("Run the circuit from the first tick"));
     }
-    // A stopped circuit is already reset, unless its waveforms are still there
+    // A stopped circuit with no waveforms has nothing to reset
     const bool canReset = state != SimState::Stopped || !m_waveModel->history().isEmpty();
     ui.resetButton->setEnabled(canReset);
     ui.waveResetButton->setEnabled(canReset);
@@ -322,7 +310,7 @@ void MainWindow::showSimState(SimState state)
 
 void MainWindow::resetSimulation()
 {
-    // The run ends as it does for an edit during a pause; its waveforms go too. The circuit stays.
+    // Like an edit during a pause, but the waveforms go too
     ui.camera->getScene()->stopSim();
     m_waveModel->clearHistory();
     updateWaveStatus();
@@ -330,13 +318,12 @@ void MainWindow::resetSimulation()
 
 void MainWindow::clearCircuit()
 {
-    ui.camera->getScene()->resetCircuit();   // stops the simulation, then empties the canvas
+    ui.camera->getScene()->resetCircuit();
 }
 
 void MainWindow::beginCompile(const QString& message)
 {
-    // Stop first: the simulation must not be running when the compiled circuit replaces this one.
-    // The current circuit stays on the canvas until the new one has compiled successfully.
+    // The old circuit stays until the new one compiles
     ui.camera->getScene()->stopSim();
 
     m_compileError.clear();
@@ -360,7 +347,6 @@ void MainWindow::compileFinished(bool ok)
 
     if (ok) {
         statusBar()->showMessage(tr("Compiled. The new circuit is on the canvas."), 6000);
-        // From a compile tab nothing of the result would be visible: show it
         ui.tabWidget->setCurrentWidget(ui.CircuitTab);
         return;
     }
@@ -397,7 +383,7 @@ void MainWindow::scanCompileDir()
     m_scannedDir = path;
     m_compileIncludeDirs.clear();
     {
-        const QSignalBlocker blocker(ui.compileFilesDisplayer);   // filling the list is not a user's change
+        const QSignalBlocker blocker(ui.compileFilesDisplayer);   // filling it is not a user's change
         ui.compileFilesDisplayer->clear();
     }
     const QDir root(path);
@@ -406,8 +392,7 @@ void MainWindow::scanCompileDir()
         return;
     }
 
-    // Every Verilog, SystemVerilog and VHDL file under the folder, and the folders holding them or
-    // their headers (searched for `include). Stops after a few seconds on a huge folder.
+    // HDL files under the folder and the folders for `include; gives up after a few seconds
     constexpr qint64 MaxScanMs = 3000;
     QElapsedTimer timer;
     timer.start();

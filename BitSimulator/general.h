@@ -1,7 +1,5 @@
 #pragma once
-// What the simulator and the GUI share: number types and enums, a source's properties, and the
-// netlist the simulator runs (ExportGraph) with what it reports back (SimResult).
-// Plain data only: nothing here knows about the canvas or the window.
+// Types shared by the simulator and the GUI: enums, source properties, the netlist and its results.
 
 #include <QList>
 #include <algorithm>
@@ -29,21 +27,16 @@ enum class IOType : u8 {IN,OUT};
 
 //===================== 1. Source properties ========================
 
-// What a source component drives, tick by tick.
-//
-// A source has `bits` output pins (lowest bit on the top pin) and a mode that decides which
-// number it outputs at each simulation tick. The value is a pure function of the tick number
-// (sourceValueAt), so the simulator and the canvas compute the same thing independently, and a
-// counter or random source needs no stored list however wide it is.
+// A source's output is a pure function of the tick (sourceValueAt), so nothing is stored per step.
 
 enum class SourceMode : std::uint8_t {
-    Counter,      // start, start+step, start+2*step, ... (or downwards); wraps at the bit width
+    Counter,      // wraps at the bit width
     GrayCode,     // a counter in Gray code: one pin changes per step
-    WalkingOne,   // a single 1 moving across the pins: 0001, 0010, 0100, 1000, 0001, ...
-    Random,       // pseudo-random numbers over the full width; the same sequence on every run
-    List,         // a list of numbers, then it repeats
-    Waveforms,    // one 0/1 pattern per pin, each repeating on its own
-    Constant,     // always the same number
+    WalkingOne,   // 0001, 0010, 0100, 1000, 0001, ...
+    Random,       // the same sequence on every run
+    List,
+    Waveforms,    // one 0/1 pattern per pin
+    Constant,
 };
 inline constexpr SourceMode allSourceModes[] = {
     SourceMode::Counter, SourceMode::GrayCode, SourceMode::WalkingOne, SourceMode::Random,
@@ -61,15 +54,15 @@ struct SourceProps {
     int bits = 3;                                   // output pins
     int ticksPerStep = 1;                           // a new value every this many ticks (not for Constant)
 
-    // The settings of every mode are kept, so switching modes and back does not lose them
-    bool countDown = false;                         // Counter, Gray code; Walking one: from the top pin down
+    // Every mode's settings are kept, so switching modes loses nothing
+    bool countDown = false;                         // Counter, Gray code, Walking one
     std::uint64_t start = 0;                        // Counter, Gray code
     std::uint64_t step = 1;                         // Counter
     std::uint32_t seed = 1;                         // Random
     QList<std::uint64_t> values{2, 5};              // List
-    QList<QList<bool>> waves{{false, true}};        // Waveforms: one pattern per pin, lowest pin first
+    QList<QList<bool>> waves{{false, true}};        // Waveforms: one pattern per pin, lowest first
     std::uint64_t constant = 0;                     // Constant
-    bool repeat = true;                             // List, Waveforms: start again at the end; false: hold the last value
+    bool repeat = true;                             // List, Waveforms; false: hold the last value
 
     // Shorthands, mostly for tests and the HDL compiler
     static SourceProps waveform(const QList<bool>& pattern)
@@ -125,7 +118,7 @@ inline int bitsNeeded(const QList<std::uint64_t>& values)
     return values.isEmpty() ? 1 : bitsNeeded(*std::ranges::max_element(values));
 }
 
-// Mixes a 64-bit number into one that looks random (splitmix64). The same input always gives the same output.
+// splitmix64: a stateless hash that looks random
 inline std::uint64_t sourceHash(std::uint64_t x)
 {
     x += 0x9E3779B97F4A7C15ull;
@@ -134,14 +127,13 @@ inline std::uint64_t sourceHash(std::uint64_t x)
     return x ^ (x >> 31);
 }
 
-// The number the source outputs at `tick` (0 is the first tick of a run). Bit i drives pin i.
-// The entry of a list or pattern of `size` entries at step n: it starts again at the end, or without
-// repeat stays on the last entry
+// The entry used at step n: wraps around, or without repeat holds the last one
 inline qsizetype stepIndex(std::uint64_t n, qsizetype size, bool repeat)
 {
     const auto count = static_cast<std::uint64_t>(size);
     return static_cast<qsizetype>(repeat ? n % count : std::min(n, count - 1));
 }
+// The value at `tick` (0 = first tick of the run); bit i drives pin i
 
 inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
 {
@@ -181,8 +173,7 @@ inline std::uint64_t sourceValueAt(const SourceProps& p, std::uint64_t tick)
     return 0;
 }
 
-// Brings the properties into a consistent state: limits, enough pins for a list or constant,
-// one waveform per pin.
+// Clamps the limits; enough pins for a list or constant, one pattern per pin
 inline SourceProps normalized(SourceProps p)
 {
     p.ticksPerStep = std::clamp(p.ticksPerStep, 1, SourceLimits::maxTicksPerStep);
@@ -195,7 +186,7 @@ inline SourceProps normalized(SourceProps p)
     if (p.mode == SourceMode::Constant) bits = std::max(bits, bitsNeeded(p.constant));
     p.bits = bits;
 
-    // Waveforms: a pattern for every pin; patterns of pins that were removed are kept for when they come back
+    // Patterns of removed pins are kept for when they come back
     if (p.mode == SourceMode::Waveforms) {
         while (p.waves.size() < p.bits) p.waves.append(QList<bool>{false});
         for (QList<bool>& wave : p.waves) {
@@ -210,12 +201,12 @@ inline SourceProps normalized(SourceProps p)
 
 struct Register {
 	u32 inID;
-    u32 InID2; // R input in SR D T and K in JK case
+    u32 InID2; // R of SR, K of JK, reset of D and T
 	u32 outID;  
 	u32 clkID;
 	u32 enableID;
 	RType regType;
-	bool asyncReset = false;    // D and T: InID2 resets at once, not on the clock edge
+	bool asyncReset = false;    // D and T: InID2 resets without waiting for the clock
 	bool resetValue = false;    // D and T: what InID2 sets the register to
 	bool storedValue = false;
 	bool prevClkState = false;
@@ -233,9 +224,9 @@ struct Gate {
     Gate(GType t, std::vector<u32> inIds, u32 outId) : inIDs(std::move(inIds)), outID(outId), gateType(t) {}
 };
 
-// A source component: at every tick it computes sourceValueAt(props, tick) and drives bit i onto outIDs[i]
+// Drives sourceValueAt(props, tick) onto outIDs every tick
 struct Source {
-    std::vector<u32> outIDs;   // the net of each pin, lowest bit first; 0 = pin not connected
+    std::vector<u32> outIDs;   // lowest bit first; 0 = not connected
     SourceProps props;
     Source() = default;
     Source(std::vector<u32> outIDs, SourceProps props) : outIDs(std::move(outIDs)), props(std::move(props)) {}
@@ -258,33 +249,30 @@ struct ExportGraph
     std::vector<Mux> muxes;
 
     u32 numNets = 0;   // highest net id used by the components above
-    u32 runId = 0;     // identifies this run; the simulator copies it into every result
+    u32 runId = 0;     // copied into every result
 
-    // The nets the waveforms show (ports of the circuit and of its blocks): the simulator records
-    // every change of these, tick by tick, and reports them in WaveChanges. Sorted, no duplicates, no 0.
+    // The nets the waveforms show; sorted, unique, no 0
     std::vector<u32> recordedNets;
 };
 
-// One change of a recorded net: it flipped at this tick (its value after the tick's propagation)
 struct WaveChange {
     u64 tick = 0;
     u32 net = 0;
 };
 
-// What the simulator recorded since its last report. Every recorded net is 0 before its first change,
-// so a net's value at a tick is whether it changed an odd number of times up to that tick.
+// Recorded nets start at 0: a net's value is the parity of its changes so far
 struct WaveChanges {
     u32 runId = 0;
     u64 lastTick = 0;                  // the newest tick these changes cover
-    bool hasTicks = false;             // false: no tick has run since the last report
+    bool hasTicks = false;             // false: no tick since the last report
     std::vector<WaveChange> changes;   // in tick order
 };
 
 struct SimResult
 {
-    u32 runId = 0;     // which run produced this result; the canvas ignores results of older runs
+    u32 runId = 0;     // the canvas ignores results of older runs
     std::vector<u8> netValues;
-    u64 sourceTick = 0;   // the tick whose values the sources drove; the canvas shows each source's value at it
+    u64 sourceTick = 0;   // the tick the sources drove
 	std::vector<bool> registerValues;
 };
 

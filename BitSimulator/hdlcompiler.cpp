@@ -14,17 +14,14 @@
 
 using namespace Qt::StringLiterals;
 
-// A compile, in the order it happens: receiveCode / receiveFiles -> compile (sv2v, yosys, reading
-// the netlist) -> layoutDesign (dot) -> sendDesign. The helpers in the namespace below read yosys's
-// netlist and build what dot lays out.
+// receiveCode / receiveFiles -> compile (sv2v, yosys, netlist) -> layoutDesign (dot) -> sendDesign
 
 namespace {
 
-// One module of yosys's JSON netlist as nodes: its ports, its cells (gates, multiplexers, flip-flops)
-// and its submodule instances (blocks). Cell types the canvas has no component for go to `skipped`.
+// Ports, cells and instances of one module; cell types with no component go to `skipped`
 NetModule readModule(const QString& name, const QJsonObject& module, const QSet<QString>& moduleNames, QStringList& skipped)
 {
-    // A yosys bit is a net number from 2 up, or a constant: "1" is NetBit::One; "0", "x" and "z" are NetBit::Zero
+    // A net number from 2 up, or "1" (NetBit::One); "0", "x" and "z" are NetBit::Zero
     const auto bitsOf = [](const QJsonValue& value) {
         QList<int> bits;
         for (const QJsonValue& bit : value.toArray()) {
@@ -39,7 +36,7 @@ NetModule readModule(const QString& name, const QJsonObject& module, const QSet<
         {u"$_XNOR_"_s, GType::XNOR},
     };
 
-    // The flip-flops dfflegalize leaves (see compile), e.g. $_DFFE_PP1P_: enable, asynchronous reset to 1
+    // The kinds dfflegalize leaves, e.g. $_DFFE_PP1P_: enable, asynchronous reset to 1
     const auto flipFlopOf = [](const QString& type) -> std::optional<FlipFlop> {
         const auto resetTo = [&type](QLatin1String prefix) { return type.size() > prefix.size() && type[prefix.size()] == u'1'; };
         if (type == "$_DLATCH_P_"_L1) return FlipFlop{true, FlipFlop::Reset::None, false};
@@ -54,7 +51,7 @@ NetModule readModule(const QString& name, const QJsonObject& module, const QSet<
     result.name = name;
     bool usesOne = false;
 
-    // The module's ports: an input port drives its bits into the module, an output port reads them
+    // An input port drives its bits into the module; an output port reads them
     const QJsonObject ports = module["ports"_L1].toObject();
     for (auto it = ports.begin(); it != ports.end(); ++it) {
         const QJsonObject port = it.value().toObject();
@@ -67,7 +64,6 @@ NetModule readModule(const QString& name, const QJsonObject& module, const QSet<
         result.nodes.append(node);
     }
 
-    // Cells: gates, muxes, flip-flops and instances of other modules
     const QJsonObject cells = module["cells"_L1].toObject();
     for (auto it = cells.begin(); it != cells.end(); ++it) {
         const QJsonObject cell = it.value().toObject();
@@ -95,7 +91,6 @@ NetModule readModule(const QString& name, const QJsonObject& module, const QSet<
         result.nodes.append(node);
     }
 
-    // Inputs tied to 1 are wired to one constant-1 node
     if (usesOne) {
         NetNode one;
         one.id = u"$const1"_s;
@@ -106,7 +101,7 @@ NetModule readModule(const QString& name, const QJsonObject& module, const QSet<
     return result;
 }
 
-// For every bit: the node and output pin that drive it
+// bit -> (node, output pin) driving it
 QHash<int, std::pair<int, int>> driversOf(const NetModule& module)
 {
     QHash<int, std::pair<int, int>> drivers;
@@ -119,7 +114,6 @@ QHash<int, std::pair<int, int>> driversOf(const NetModule& module)
     return drivers;
 }
 
-// Every input pin of a node, as the bits it reads (gate inputs, mux data and select, register pins, ...)
 QList<int> inputBitsOf(const NetNode& node)
 {
     const NodePins pins = nodePins(node);
@@ -128,12 +122,10 @@ QList<int> inputBitsOf(const NetNode& node)
     return bits;
 }
 
-// The graph dot lays out: one record per node with its input pins on the left and output pins on the
-// right, at least as big as its component is drawn, and an edge from each driving pin to every pin it drives
+// One record per node (inputs left, outputs right), sized like its component; an edge per connection
 QString dotGraphOf(const NetModule& module, bool topLevel)
 {
-    // A module port is drawn with its name on it, so dot makes room for the name. In a record label
-    // {, }, |, <, >, quotes, backslashes and spaces have a meaning and are escaped.
+    // Record labels escape {, }, |, <, >, quotes, backslashes and spaces
     const auto label = [](const NetNode& node) {
         if (!std::holds_alternative<IOType>(node.type) || node.id.isEmpty()) return u"x"_s;
         QString escaped;
@@ -179,11 +171,7 @@ QString dotGraphOf(const NetModule& module, bool topLevel)
     return text;
 }
 
-// When even a fast dot takes too long: one column per logic level, inputs on the left, outputs on the
-// right. A node's level is one more than the highest level of the nodes driving it; module inputs and
-// the constant are level 0 and outputs get a last column of their own; flip-flop and block outputs
-// start new paths, so feedback loops end. Each column is as wide as its widest component, and
-// components are stacked by their real heights.
+// When even fast dot is too slow: one column per logic level; flip-flops and blocks break loops
 void layoutInColumns(NetModule& module, bool topLevel)
 {
     const int count = static_cast<int>(module.nodes.size());
@@ -235,7 +223,7 @@ void layoutInColumns(NetModule& module, bool topLevel)
     }
 }
 
-// The scene is 160000 x 100000 units; a module's drawing is centred in it
+// The scene is 160000 x 100000 units
 void centreInScene(NetModule& module)
 {
     if (module.nodes.isEmpty()) return;
@@ -249,13 +237,12 @@ void centreInScene(NetModule& module)
     for (NetNode& node : module.nodes) node.position += shift;
 }
 
-} // namespace
+}
 
 //===================== Compiling ========================
 
 void HDLCompiler::receiveCode(const QString& code)
 {
-    // The editor's text goes through the same steps as a folder's files, as code.v or code.vhd
     const QString file = looksLikeVhdl(code) ? u"code.vhd"_s : u"code.v"_s;
     finished(writeTextFile(file, code) && compile({file}, {}));
 }
@@ -272,7 +259,7 @@ void HDLCompiler::receiveFiles(const QStringList& files, const QStringList& incl
 
 bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDirs)
 {
-    // 0. ghdl turns any VHDL into Verilog, vhdl.v, which then goes along with the Verilog files
+    // 0. ghdl: any VHDL to Verilog (vhdl.v)
     QStringList verilogFiles, vhdlFiles;
     for (const QString& file : files) (isVhdlFile(file) ? vhdlFiles : verilogFiles).append(file);
     if (!vhdlFiles.isEmpty()) {
@@ -280,21 +267,13 @@ bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDi
         verilogFiles.append(u"vhdl.v"_s);
     }
 
-    // 1. sv2v turns the files into one plain Verilog file, converted.v. Yosys's own reader supports only
-    //    part of SystemVerilog (for example no "import pkg::*"); sv2v handles packages, imports, enums,
-    //    structs and `include files, in whatever order the files come.
+    // 1. sv2v: everything to plain Verilog; yosys's own reader misses packages, imports and more
     QStringList sv2vArguments;
     for (const QString& dir : includeDirs) sv2vArguments << u"--incdir="_s + dir;
     sv2vArguments << u"--write=converted.v"_s << verilogFiles;
     if (!runTool(u"sv2v"_s, sv2vPath, sv2vArguments, 60000)) return false;
 
-    // 2. Yosys synthesizes it to gates. The top module is found automatically (the module no other
-    //    module uses), and the hierarchy is kept: each submodule instance becomes a block.
-    //    dfflegalize turns yosys's many kinds of flip-flop into the few the simulator has (see FlipFlop):
-    //    inverters make every clock rising-edge and every enable and reset active-high, extra logic
-    //    handles a reset that only acts while enabled, and a flip-flop that powers up as 1 is stored
-    //    inverted, so all power up as 0. One with both an asynchronous set and reset cannot be turned
-    //    into these; yosys then stops with an error that says so.
+    // 2. yosys, keeping the hierarchy; dfflegalize leaves only the flip-flop kinds in FlipFlop
     const QString script = u"read_verilog converted.v\n"
         "synth -auto-top -noalumacc\n"
         "dfflegalize -cell $_DFF_P_ 0 -cell $_DFFE_PP_ 0 -cell $_DFF_PP?_ 0 -cell $_DFFE_PP?P_ 0 -cell $_SDFFCE_PP?P_ 0 -cell $_DLATCH_P_ 0\n"
@@ -304,7 +283,7 @@ bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDi
     if (!writeTextFile(u"compile.ys"_s, script)) return false;
     if (!runTool(u"Yosys"_s, yosysPath, {u"-s"_s, u"compile.ys"_s}, 100000)) return false;
 
-    // 3. Read yosys's netlist, every module of it
+    // 3. The netlist, every module
     QFile netlist(u"code_netlist.json"_s);
     if (!netlist.open(QIODevice::ReadOnly)) {
         error("Could not open the netlist yosys wrote: " + netlist.errorString());
@@ -337,29 +316,27 @@ bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDi
         qDebug() << "Cell types the canvas has no component for, left out:" << skipped;
     }
 
-    // 4. Lay every module out, and hand the design to the canvas
+    // 4. Layout
     if (!layoutDesign(design)) return false;
     sendDesign(design);
     return true;
 }
 
-// Every module gets its own dot process, and all of them start at once; then they are waited for
-// together, against one deadline. A module whose dot runs out of time gets the next faster layout in
-// a second round (again all at once): full dot, then fast dot, then columns by logic level.
+// All dots at once against one deadline; one that runs out retries faster: full, fast, columns
 bool HDLCompiler::layoutDesign(NetDesign& design)
 {
-    const auto cellsOf = [](const NetModule& module) {   // what yosys made: gates, muxes, flip-flops, blocks
+    const auto cellsOf = [](const NetModule& module) {   // gates, muxes, flip-flops, blocks
         return std::ranges::count_if(module.nodes, [](const NetNode& node) {
             return !std::holds_alternative<IOType>(node.type) && !std::holds_alternative<ConstOne>(node.type);
         });
     };
     struct Job {
         NetModule* module = nullptr;
-        bool topLevel = false;           // the top module's ports are sources and displays, not port tags
+        bool topLevel = false;
         bool fast = false;
-        QString graphFile, layoutFile;   // dot reads one and writes the other (a file: a pipe could fill up and stall it)
+        QString graphFile, layoutFile;   // files: a pipe could fill up and stall dot
         std::unique_ptr<QProcess> dot;
-        qint64 finishedMs = -1;          // when it finished, from the start of its round; -1 while running
+        qint64 finishedMs = -1;          // from the start of its round; -1 while running
     };
     std::vector<Job> jobs;
     jobs.reserve(design.modules.size());
@@ -373,22 +350,20 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
         if (!writeTextFile(job.graphFile, dotGraphOf(module, job.topLevel))) return false;
     }
 
-    constexpr int PollMs = 20;   // how often the waiting checks on each dot
+    constexpr int PollMs = 20;
     std::vector<Job*> round;
     for (Job& job : jobs) round.push_back(&job);
     while (!round.empty()) {
         for (Job* job : round) {
             QStringList arguments{u"-Tplain"_s, u"-o"_s, job->layoutFile, job->graphFile};
-            // Fast: dot's two slowest steps stop early. Crossing reduction (mclimit) does fewer passes and
-            // the positioning (nslimit) fewer improvement steps, so the layout is a little less tidy.
+            // Fast: fewer crossing-reduction and positioning passes; a little less tidy
             if (job->fast) arguments << u"-Gnslimit=0.1"_s << u"-Gmclimit=0.1"_s;
-            QFile::remove(job->layoutFile);   // never read a layout left by an earlier compile
+            QFile::remove(job->layoutFile);   // never read one left by an earlier compile
             job->dot = std::make_unique<QProcess>();
             job->finishedMs = -1;
             job->dot->start(dotPath, arguments);
         }
 
-        // Wait until every dot has finished or the time is up; note when each one finished
         QElapsedTimer clock;
         clock.start();
         for (bool waiting = true; waiting && clock.elapsed() < DotTimeoutMs;) {
@@ -399,7 +374,7 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
                 else waiting = true;
             }
         }
-        for (Job* job : round) {   // stop the ones that ran out of time first, so none outlives a failure below
+        for (Job* job : round) {   // stop the late ones first, so none outlives a failure below
             if (job->finishedMs >= 0) continue;
             job->dot->kill();
             job->dot->waitForFinished();
@@ -425,7 +400,7 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
             if (!checkFinished(*job->dot, name)) return false;
             qDebug() << name << "took" << job->finishedMs << "ms";
 
-            // -Tplain: "node <name> <x> <y> ..." in inches, y upwards. The canvas uses points, y downwards.
+            // -Tplain: "node <name> <x> <y> ..." in inches, y up; the canvas uses points, y down
             QFile layout(job->layoutFile);
             if (!layout.open(QIODevice::ReadOnly | QIODevice::Text)) {
                 error("Could not read the layout of " + module.name + ": " + layout.errorString());
@@ -448,7 +423,6 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
 
 //===================== Running the tools ========================
 
-// Runs a tool and waits for it; false (after error() said why) if it failed or ran out of time
 bool HDLCompiler::runTool(const QString& name, const QString& program, const QStringList& arguments, int timeoutMs,
                           const QString& outputFile, QString* failure)
 {
@@ -476,7 +450,6 @@ bool HDLCompiler::checkFinished(QProcess& process, const QString& name, QString*
     if (process.error() == QProcess::FailedToStart) {
         message = name + " did not run: " + process.errorString();
     } else if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        // The tools write their own messages (with file and line) to their error output
         message = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
         if (message.isEmpty()) message = name + " failed with exit code " + QString::number(process.exitCode());
     } else {
@@ -494,10 +467,7 @@ bool HDLCompiler::convertVhdl(const QStringList& vhdlFiles, const QStringList& v
         return false;
     }
 
-    // --std=08 reads VHDL-2008; -fsynopsys allows the common std_logic_unsigned / std_logic_arith
-    // packages; -frelaxed accepts older code that 2008 is strict about. "-e" without a name: ghdl finds
-    // the top entity itself, the one no other entity uses, and makes a module of it and of every
-    // entity below it. Its messages go to its error output; the Verilog to its standard output.
+    // VHDL-2008; -fsynopsys: std_logic_unsigned/arith; -frelaxed: older code; "-e" alone finds the top
     QStringList arguments{u"synth"_s, u"--std=08"_s, u"-fsynopsys"_s, u"-frelaxed"_s, u"--out=verilog"_s};
     arguments << vhdlFiles << u"-e"_s;
     QString failure;
@@ -510,9 +480,7 @@ bool HDLCompiler::convertVhdl(const QStringList& vhdlFiles, const QStringList& v
         return false;
     }
 
-    // ghdl names the module of a used entity "<entity>_B<architecture>"; give it the entity's own name,
-    // so the block says "alu" and a Verilog module can use the entity by its name. Kept as it is when
-    // an entity became several modules (one per set of generics) or the name is a Verilog module's.
+    // Rename "<entity>_B<arch>" modules to the entity, unless it became several modules or is taken
     QFile file(output);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         error("Could not read the Verilog ghdl wrote: " + file.errorString());
@@ -540,8 +508,7 @@ bool HDLCompiler::convertVhdl(const QStringList& vhdlFiles, const QStringList& v
     for (const QString& module : modules) {
         const QString entity = vhdlEntityOfModule(module);
         if (entity == module || perEntity.value(entity) != 1 || taken.contains(entity)) continue;
-        // Only a module that is used: the top entity keeps the name it was declared with, which can
-        // contain "_B" itself ("reg_Bank")
+        // Only used modules: the top keeps its declared name, which may contain "_B" ("reg_Bank")
         const QRegularExpression use(u"(?<![\\w$\\\\])"_s + QRegularExpression::escape(module) + u"(?![\\w$])"_s);
         if (verilog.count(use) < 2) continue;
         verilog.replace(use, entity);

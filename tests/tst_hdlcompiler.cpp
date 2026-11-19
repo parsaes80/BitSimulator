@@ -1,8 +1,4 @@
-// The Verilog compiler: Verilog text in, a design (one laid-out netlist per module) out; and the
-// canvas showing it: blocks for submodules, simulated through, opened like folders.
-//
-// It runs the real tools (sv2v, yosys, then Graphviz dot), so every test here is skipped when they
-// are not available in the working directory.
+// Compiling HDL and showing it on the canvas; skipped without sv2v, yosys and dot
 
 #include "TestSupport.h"
 #include "hdlcompiler.h"
@@ -109,8 +105,7 @@ QList<SimResult> simulate(const ExportGraph& graph, int ticks)
     return results;
 }
 
-// Two levels of submodules: top uses add2 (three half adders, an OR, and an input passed straight
-// through to an output) and dff2 (two flip-flops); top also drives a constant 1.
+// top uses add2 (half adders, an OR, a pass-through) and dff2 (two flip-flops), plus a constant 1
 const QString hierarchicalVerilog = u"module ha(input wire a, input wire b, output wire s, output wire c);\n"
     "  assign s = a ^ b;\n  assign c = a & b;\nendmodule\n"
     "module add2(input wire [1:0] x, input wire [1:0] y, output wire [2:0] z, output wire [1:0] xcopy);\n"
@@ -157,7 +152,7 @@ int terminalValue(const QGraphicsScene* scene, const QString& name)
     return value;
 }
 
-// VHDL needs ghdl. Both bundles have it, but a build without it should skip these tests rather than fail.
+// A build without ghdl skips these rather than fail
 bool ghdlAvailable()
 {
     return QFile::exists(toolPaths().ghdl);
@@ -253,8 +248,7 @@ private slots:
 
     void inputsBecomeSourcesCoveringTheirWidth()
     {
-        // A 1-bit input toggles every tick; a wider one counts 0, 1, 2, ... holding each value for
-        // 2 ticks. Wide inputs used to get a list too long to play (15 bits) or almost no values (32 bits).
+        // 1-bit inputs toggle; wider ones count, 2 ticks per value (whatever the width)
         const CompileRun run = compile(u"module top(input wire clk, input wire [14:0] a, input wire [31:0] b, output wire [31:0] y);\n"
             "assign y = b ^ {17'b0, a} ^ {31'b0, clk};\nendmodule\n"_s);
         QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
@@ -281,8 +275,7 @@ private slots:
 
     void aFolderOfFilesWithSubmodulesAndIncludes()
     {
-        // cpu.sv (the top: nothing instantiates it) uses an adder from another folder, whose width
-        // comes from a header in a third folder; folder names have spaces in them
+        // cpu.sv uses an adder from another folder sized by a header in a third; names have spaces
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const QString root = dir.path();
@@ -308,8 +301,7 @@ private slots:
 
     void packagesAndImportsInAnyFileOrder()
     {
-        // Like a typical SystemVerilog project: a package with an enum, imported with "import pkg::*;"
-        // and used as a port type. Yosys's own reader cannot do this; sv2v converts it first.
+        // A package enum imported with "import pkg::*" as a port type: needs sv2v
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const QString root = dir.path();
@@ -363,7 +355,7 @@ private slots:
         QVERIFY2(single.ok, qPrintable(single.errors.join(u'\n')));
         QCOMPARE(single.count(GType::XOR), 1);
 
-        // With a submodule written above it, the outer module is still the top; the submodule is a block in it
+        // A submodule written above it doesn't make it stop being the top
         const CompileRun nested = compile(u"module inv(input wire a, output wire y);\nassign y = ~a;\nendmodule\n"
             "module pair(input wire p, q, output wire r, s);\ninv i0(.a(p), .y(r));\ninv i1(.a(q), .y(s));\nendmodule\n"_s);
         QVERIFY2(nested.ok, qPrintable(nested.errors.join(u'\n')));
@@ -421,8 +413,7 @@ private slots:
         CircuitScene scene;
         scene.receiveDesign(run.design);
 
-        // Every input is a source and every output a display, named as in the code. The constant 1
-        // is a source too, but not a port: it has no name.
+        // Inputs are sources and outputs displays, named as in the code; the constant 1 has no name
         QStringList sources, displays;
         for (SourceItem* source : itemsOfType<SourceItem>(&scene)) sources << source->name();
         for (DisplayItem* display : itemsOfType<DisplayItem>(&scene)) displays << display->name();
@@ -585,7 +576,7 @@ private slots:
         };
         QCOMPARE(signalNamed(u"u"_s, u"z"_s).width(), 3);
         QVERIFY(signalNamed(u"r"_s, u"q"_s).output);
-        // A block's port is the same net as what it is wired to outside: u's z is the sum display's input
+        // A block port is the same net as its wire outside
         QCOMPARE(signalNamed(u"u"_s, u"z"_s).nets, signalNamed(QString(), u"sum"_s).nets);
 
         // What the simulator records for them matches every tick
@@ -700,8 +691,7 @@ private slots:
 
     void everyKindOfFlipFlop()
     {
-        // One of each kind yosys makes from Verilog. The compiler turns them into the simulator's few
-        // kinds; here every output is compared with what the Verilog says, on every tick.
+        // Every flip-flop kind yosys makes, compared with the Verilog on every tick
         const CompileRun run = compile(u"module kinds(input clk, input rst, input rst_n, input en, input en_n, input [7:0] d,\n"
             "             output reg [7:0] q1, q2, q3, q4, q5, output reg q7, output reg [7:0] q8);\n"
             "  always @(posedge clk or posedge rst) if (rst) q1 <= 8'hA5; else q1 <= d;              // asynchronous reset to 0s and 1s\n"
@@ -740,7 +730,7 @@ private slots:
         connect(&scene, &CircuitScene::startSimSIG, this, [&graph](const ExportGraph& g) { graph = g; });
         scene.startOrResumeSim();
 
-        // The Verilog, one tick at a time. A flip-flop shows a new value in the tick of the edge that made it.
+        // The Verilog, tick by tick; a flip-flop's new value shows in the edge's tick
         struct State { int q1 = 0, q2 = 0, q3 = 0, q4 = 0, q5 = 0, q7 = 0, q8 = 0x81; } state;
         bool previousClock = false;
         for (SimResult result : simulate(graph, 120)) {

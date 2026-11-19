@@ -1,13 +1,8 @@
-# Applies PATCH to the git checkout in SOURCE, once: does nothing if it is already applied.
-#
-#   cmake -DSOURCE=<checkout> -DPATCH=<file.patch> -P apply_patch.cmake
-#
-# The patch changes the submodule's working tree only (its commit stays the upstream one);
-# .gitmodules has "ignore = dirty" so that does not show up as a change in this repository.
+# cmake -DSOURCE=<checkout> -DPATCH=<file> -P apply_patch.cmake; once ("ignore = dirty" hides it)
 
 find_package(Git REQUIRED)
 
-# --ignore-whitespace: a Windows checkout may have CRLF line endings, the patch has LF
+# A Windows checkout may have CRLF
 set(apply_options --ignore-whitespace --whitespace=nowarn)
 
 execute_process(

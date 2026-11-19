@@ -38,8 +38,7 @@ void ToolbarButton::drawLabel(QPainter& painter, const QRectF& rect, const QStri
 
 void GateButton::drawIcon(QPainter& painter, QSizeF)
 {
-    // The canvas shape of the gate, with its name on it. It is sized from the whole button, not the
-    // inset area the other pictures use: 70% of its width and 75% of its height, centred.
+    // Sized from the whole button (70% x 75%), not the inset the other pictures use
     const Theme& theme = currentTheme();
     const QColor color = theme.gateColor(m_gateType);
     painter.setPen(QPen(color, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
@@ -47,7 +46,7 @@ void GateButton::drawIcon(QPainter& painter, QSizeF)
     const double width = rect().width() * 0.7, height = rect().height() * 0.75;
     const QRectF body(-width / 2, -height / 2, width, height);
     drawGateSymbol(&painter, m_gateType, body);
-    // A NOT gate's name sits further left, in the wide end of the triangle
+    // NOT's name sits in the triangle's wide end
     drawLabel(painter, m_gateType == GType::NOT ? body.translated(-body.width() / 6, 0) : body, gateTypeName(m_gateType));
 }
 
@@ -59,7 +58,7 @@ void SourceButton::drawIcon(QPainter& painter, QSizeF size)
     painter.setPen(QPen(theme.source, 2));
     painter.setBrush(theme.fillFor(theme.source));
     painter.drawRoundedRect(body, 3, 3);
-    drawLabel(painter, body, u"1"_s, 12, true);   // a logic source
+    drawLabel(painter, body, u"1"_s, 12, true);
 }
 
 void RegisterButton::drawIcon(QPainter& painter, QSizeF size)
@@ -72,7 +71,6 @@ void RegisterButton::drawIcon(QPainter& painter, QSizeF size)
     painter.drawRoundedRect(body, 3, 3);
     drawLabel(painter, body, u"R"_s, 12, true);
 
-    // The clock input's triangle at the bottom
     QPainterPath clock;
     clock.moveTo(-3, 10);
     clock.lineTo(3, 10);
@@ -85,7 +83,6 @@ void RegisterButton::drawIcon(QPainter& painter, QSizeF size)
 
 void MuxButton::drawIcon(QPainter& painter, QSizeF size)
 {
-    // A trapezoid, narrower on the output side
     const double halfWidth = size.width() / 2, halfHeight = size.height() / 2;
     QPainterPath body;
     body.moveTo(-halfWidth, -halfHeight);
@@ -101,7 +98,6 @@ void MuxButton::drawIcon(QPainter& painter, QSizeF size)
 
 void DisplayButton::drawIcon(QPainter& painter, QSizeF size)
 {
-    // Casing outlined in the display's color, a screen as dark as the canvas, and a sample digit
     fit(painter, size, {40, 60});
     const Theme& theme = currentTheme();
     const QRectF casing(-20, -30, 40, 60);

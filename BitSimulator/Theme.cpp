@@ -56,7 +56,7 @@ Theme makeTheme(ColorScheme scheme)
     t.mux           = pick(0xf59e5b, 0xdd6f16);
     t.reg           = pick(0x7aa2f7, 0x3567d6);
     t.source        = pick(0x9aa6ad, 0x7d878d);
-    t.sourceLit     = pick(0x2dd4bf, 0x0d9488);   // the teal of a wire carrying 1
+    t.sourceLit     = pick(0x2dd4bf, 0x0d9488);   // teal, like a wire carrying 1
     t.display       = pick(0xef4444, 0xc62828);
     t.block         = pick(0xf0abfc, 0xa21caf);
     t.inversion     = pick(0xef4444, 0xc62828);
@@ -80,8 +80,7 @@ const Theme* current = &themeFor(ColorScheme::Dark);
 
 //===================== The style sheet ========================
 
-// Written once; @name stands for that color of the theme, e.g. @accent for Theme::accent.
-// Images are in theme/ (theme.qrc).
+// @name = that Theme color, e.g. @accent; images are in theme/ (theme.qrc)
 constexpr const char* SheetTemplate = R"qss(
 QWidget {
     color: @text;
@@ -134,7 +133,7 @@ QTabBar::tab:selected {
     border-bottom: 2px solid @accent;
 }
 
-/* ---------- Buttons (the component buttons in the toolbar too) ---------- */
+/* ---------- Buttons (toolbar components too) ---------- */
 
 QPushButton {
     background-color: @button;
@@ -163,7 +162,7 @@ QPushButton:disabled {
     color: @disabledText;
 }
 
-/* Start / Pause, on the circuit's toolbar and the Waveforms tab's: teal while it says Start, amber while it says Pause */
+/* Start / Pause: teal for Start, amber for Pause */
 #startButton, #waveStartButton {
     background-color: @accent;
     border-color: @accent;
@@ -191,7 +190,7 @@ QPushButton:disabled {
     border-color: @pauseHover;
 }
 
-/* The faint line between the Waveforms tab's view buttons and its Start / Reset */
+/* Waveforms toolbar: line before Start / Reset */
 #waveToolbarSeparator {
     border: none;
     background-color: @border;
@@ -200,7 +199,7 @@ QPushButton:disabled {
     margin: 6px 4px;
 }
 
-/* Light / dark mode: a round icon button showing the mode it switches to (MainWindow sets the icon) */
+/* Light / dark mode button (MainWindow sets the icon) */
 #themeButton {
     background-color: transparent;
     border: 1px solid transparent;
@@ -265,7 +264,7 @@ QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {
     color: @disabledText;
 }
 
-/* The text field inside a number box: the number box itself draws the border */
+/* The number box draws the border, not its text field */
 QSpinBox QLineEdit {
     background-color: transparent;
     border: none;
@@ -273,7 +272,7 @@ QSpinBox QLineEdit {
     min-height: 0px;
 }
 
-/* The arrow images are in theme/ (theme.qrc) */
+/* Arrow images: theme/ (theme.qrc) */
 QSpinBox::up-button, QSpinBox::down-button {
     subcontrol-origin: border;
     width: 20px;
@@ -417,14 +416,14 @@ QAbstractScrollArea::corner {
 
 /* ---------- Properties panel ---------- */
 
-/* The properties panel floats over the canvas in this rounded box (FloatingPanel) */
+/* FloatingPanel: the box over the canvas */
 #propertiesFrame {
     background-color: @panel;
     border: 1px solid @border;
     border-radius: 10px;
 }
 
-/* Its title bar: drag it to move the box; the button at its right minimizes the box */
+/* Its title bar and minimize button */
 #panelTitle {
     color: @mutedText;
 }
@@ -500,7 +499,7 @@ QAbstractScrollArea::corner {
     color: @disabledText;
 }
 
-/* Over the canvas inside a block: the blocks opened, e.g. top > core (RISCV) > alu (ALU) */
+/* Block breadcrumb: top > core (RISCV) > alu (ALU) */
 #blockBreadcrumb {
     background-color: @panel;
     border: 1px solid @border;
@@ -528,7 +527,7 @@ QAbstractScrollArea::corner {
     color: @disabledText;
 }
 
-/* Lists, such as the files on the Compile Dir tab; the checkboxes look like the other checkboxes */
+/* Lists, e.g. the Compile Dir files */
 QListWidget {
     background-color: @field;
     color: @text;
@@ -552,7 +551,7 @@ QListWidget::item:selected {
     color: @text;
 }
 
-/* Trees, such as the signals on the Waveforms tab */
+/* Trees, e.g. the waveform signals */
 QTreeWidget {
     background-color: @field;
     color: @text;
@@ -597,13 +596,13 @@ QListWidget::indicator:checked, QTreeWidget::indicator:checked {
     image: url(:/theme/check.png);
 }
 
-/* A block in the signal tree with only some of its ports shown */
+/* Partly shown block in the signal tree */
 QTreeWidget::indicator:indeterminate {
     background-color: @buttonChecked;
     border-color: @accent;
 }
 
-/* The pin buttons of a waveform source: the checked one is the pin the step editor shows */
+/* Waveform source pin buttons; checked = the pin being edited */
 QToolButton[wavePin="true"] {
     padding: 3px 0px;
     background-color: @button;
@@ -635,7 +634,7 @@ QToolButton[wavePin="true"]:checked {
     border-color: @accent;
 }
 
-/* ---------- Canvas: everything on it is painted in code, with the canvas colors of Theme ---------- */
+/* ---------- Canvas (painted in code) ---------- */
 
 CircuitCanvas {
     border: none;
@@ -643,7 +642,6 @@ CircuitCanvas {
 }
 )qss";
 
-// The colors the style sheet can name
 const std::pair<QLatin1StringView, QColor Theme::*> SheetColors[] = {
     {"window"_L1, &Theme::window},
     {"panel"_L1, &Theme::panel},
@@ -669,7 +667,7 @@ const std::pair<QLatin1StringView, QColor Theme::*> SheetColors[] = {
     {"block"_L1, &Theme::block},
 };
 
-} // namespace
+}
 
 //===================== Theme ========================
 
@@ -692,13 +690,13 @@ QColor Theme::sourceOutline(double ones) const
 
 QColor Theme::sourceFill(double ones) const
 {
-    // From the tinted body of a gray source to solid teal
+    // From a gray source's tinted body to solid teal
     return mix(fillFor(source), sourceLit, ones);
 }
 
 QColor Theme::textOn(const QColor& background) const
 {
-    // WCAG's contrast ratio between relative luminances
+    // WCAG contrast ratio
     const auto luminance = [](const QColor& color) {
         const auto linear = [](double c) { return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4); };
         return 0.2126 * linear(color.redF()) + 0.7152 * linear(color.greenF()) + 0.0722 * linear(color.blueF());
@@ -754,7 +752,7 @@ QString themeStyleSheet(const Theme& theme)
         const auto entry = std::ranges::find_if(SheetColors, [name](const auto& color) { return color.first == name; });
         if (entry == std::end(SheetColors)) {
             qWarning() << "Theme.cpp: the style sheet names a color Theme does not have:" << match.captured();
-            continue;   // left as it is: Qt ignores the rule
+            continue;   // left as is: Qt ignores the rule
         }
         result += QStringView(sheet).mid(copied, match.capturedStart() - copied);
         result += (theme.*entry->second).name();
@@ -804,7 +802,7 @@ void applyPalette(QApplication& app, const Theme& theme)
 
 QIcon colorSchemeIcon(ColorScheme scheme)
 {
-    // QIcon also loads the @2x image next to it, for high-DPI screens
+    // QIcon also loads the @2x image for high-DPI screens
     return QIcon(scheme == ColorScheme::Dark ? u":/theme/sun.png"_s : u":/theme/moon.png"_s);
 }
 

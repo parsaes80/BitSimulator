@@ -1,6 +1,4 @@
-// The canvas without the window around it: components and their pins, the editing rules,
-// the simulation state machine, and the translation of the drawing into the netlist the
-// simulator runs.
+// The canvas alone: components, editing rules, the run state machine, the netlist it builds
 
 #include "TestSupport.h"
 #include <QSignalSpy>
@@ -94,8 +92,7 @@ private slots:
         canvas.centerOn(80000, 50000);
         QTest::qWait(200);
 
-        // Nothing changes, so nothing is painted. (The scene used to repaint whenever it had
-        // repainted: hundreds of full repaints a second on an idle canvas.)
+        // An idle canvas paints nothing (it used to repaint hundreds of times a second)
         int paints = 0;
         struct PaintCounter : QObject {
             int* count = nullptr;
@@ -663,7 +660,7 @@ private slots:
         add<RegisterItem>(scene, RegisterProps{RType::D, false, false});
         scene.startOrResumeSim();
         const Register& r = link.started.first().registers.front();
-        QCOMPARE(r.clkID, u32(0));                                       // which is what makes the simulator treat it as a latch
+        QCOMPARE(r.clkID, u32(0));                                       // so the simulator treats it as a latch
         QCOMPARE(r.enableID, u32(0));
     }
 
@@ -682,14 +679,13 @@ private slots:
         scene.startOrResumeSim();
         const ExportGraph& graph = link.started.first();
         QCOMPARE(graph.numNets, u32(1));
-        QCOMPARE(netOf(gate->getInputPort(0)), netOf(display->getInputPorts()[0]));     // same net on both sides of the display
+        QCOMPARE(netOf(gate->getInputPort(0)), netOf(display->getInputPorts()[0]));     // same net on both sides
         QCOMPARE(netOf(gate2->getInputPort(0)), u32(0));
     }
 
     void aChainOfDisplaysIsOneNet()
     {
-        // source -> display A -> display B -> NOT. Wired in the order that used to give B's wire a
-        // net of its own: the display-to-display wire was numbered before the wire into A.
+        // source -> display A -> display B -> NOT, wired in the order that once split B's net
         CircuitScene scene;
         SimLink link(scene);
         auto* source = add<SourceItem>(scene, SourceProps::waveform({true}), {-300, 0});
@@ -739,7 +735,7 @@ private slots:
         SimResult result;
         result.runId = graph.runId;
         result.netValues.assign(graph.numNets + 1, 0);
-        result.netValues[scene.wireMap().wire2net.at(w1)] = 1;                       // bit 1 high, bit 0 low: the display should read 2
+        result.netValues[scene.wireMap().wire2net.at(w1)] = 1;                       // bit 1 high: the display reads 2
         result.sourceTick = 1;
         result.registerValues = {true};
         scene.receiveResult(result);

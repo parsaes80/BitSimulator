@@ -9,44 +9,38 @@ class Simulator : public QObject {
 public:
     explicit Simulator(QObject* parent = nullptr) : QObject(parent) {}
 
-    // All of these run in the simulator's thread. The GUI reaches them through queued connections,
-    // so they execute in the order the GUI asked for them and no state is shared between threads.
+    // Called through queued connections, in the simulator's thread; no state is shared
 public:
-    void receiveCircuit(ExportGraph graph);   // replaces any previous circuit and starts running it
-    void setRunning(bool running);            // pause (keeps all state) or continue
-    void unloadCircuit();                     // stop and forget the circuit
+    void receiveCircuit(ExportGraph graph);   // replaces any previous circuit
+    void setRunning(bool running);            // pause or continue
+    void unloadCircuit();
     void SimController(); 
     void setTimerPeriod(int milliseconds);
     void printRunDataInfo();
 signals:
     void sendResult(SimResult result);
-    // The recorded nets' changes for the waveforms, about every WaveReportMs and when the run pauses
-    // or stops. Unlike sendResult, none of these may be skipped: together they are the whole history.
+    // None may be skipped: together they are the whole waveform history
     void sendWaveChanges(WaveChanges changes);
 private:
     void tick();
-    // After a tick's propagation: notes the recorded nets that changed. Only the nets in the event
-    // queue can have changed (every write to a net queues it), so only those are looked at.
+    // Only nets in the event queue can have changed, so only those are checked
     void recordWaveChanges(u64 tick);
-    void reportWaveChanges();           // sends what was recorded since the last report
+    void reportWaveChanges();
 
     static constexpr int WaveReportMs = 30;
     void clearCircuit();
     void processGates(u32 changedNetId);
     void processMuxes(u32 changedNetId);
-    void processRegisters(bool firstTick);   // firstTick: only note the clock levels, there is no edge yet
-    // Works off the event queue from `head` until nothing changes (or the tick's step limit is reached)
+    void processRegisters(bool firstTick);   // firstTick: no edge yet, only note the clock levels
     void settle(size_t& head, int& steps);
-    // Puts every flip-flop's and latch's stored value on its output; false if none changed
+    // false if no output changed
     bool driveRegisterOutputs();
 
-    // Within one tick, the flip-flops and latches act as often as their outputs set off further
-    // changes (a flip-flop clocked by another, a latch following a latch); a loop that never settles
-    // stops after this many rounds and goes on in the next tick
+    // Rounds of register updates per tick (a flip-flop clocked by another); stops a loop that never settles
     static constexpr int MaxRegisterRounds = 256;
     static constexpr int MaxPropagationSteps = 100000;   // gate and mux evaluations per tick
 
-    // Worklist + per-net "already queued" flag replaces std::set: O(1) dedup, no per-event allocation
+    // Per-net queued flag: O(1) dedup without std::set
     inline void enqueue(u32 netId) {
         if (!m_inQueue[netId]) {
             m_inQueue[netId] = 1;
@@ -63,7 +57,7 @@ private:
     std::vector<Mux> m_muxes;
 
     bool m_firstTick = true;
-    u64 m_tick = 0;                 // ticks done in this run; sources compute their value from it
+    u64 m_tick = 0;                 // sources compute their value from it
     bool m_running = false;
     u32 m_runId = 0;
 
@@ -75,12 +69,11 @@ private:
     std::vector<std::vector<u32>> m_MuxFanout;
 
     std::vector<u32> m_eventQueue;
-    std::vector<u8> m_inQueue; // indexed by net id
+    std::vector<u8> m_inQueue; // by net id
 
-    // Waveform recording: the nets to watch, their values after the last tick, and the changes not reported yet
     std::vector<u32> m_recordedNets;
     std::vector<u8> m_recordedValues;
-    std::vector<u32> m_recordedSlot;    // by net id: its index in m_recordedNets + 1, or 0 if it is not recorded
+    std::vector<u32> m_recordedSlot;    // by net id: index in m_recordedNets + 1, 0 = not recorded
     WaveChanges m_waveChanges;
     QElapsedTimer m_sinceWaveReport;
 

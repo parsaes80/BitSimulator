@@ -24,7 +24,7 @@ using namespace Qt::StringLiterals;
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent)
 {
-    setSceneRect(0, 0, 160000, 100000); // Large canvas
+    setSceneRect(0, 0, 160000, 100000);
 
     m_frameTimer.setSingleShot(true);
     m_frameTimer.setTimerType(Qt::PreciseTimer);
@@ -36,17 +36,16 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     const Theme& theme = currentTheme();
     painter->fillRect(rect, theme.canvas);
 
-    constexpr qreal DotSpacing = 20;     // scene units between two dots
-    constexpr qreal MinDotGap = 12;      // screen pixels; zoomed out further, only every 2nd, 4th, ... dot is drawn
-    constexpr qreal DotSize = 2;         // screen pixels, at every zoom level
+    constexpr qreal DotSpacing = 20;     // scene units
+    constexpr qreal MinDotGap = 12;      // screen pixels; zoomed out, only every 2nd, 4th, ... dot
+    constexpr qreal DotSize = 2;         // screen pixels
 
     qreal spacing = DotSpacing;
     const qreal pixelsPerUnit = painter->worldTransform().m11();
     if (pixelsPerUnit <= 0) return;
     while (spacing * pixelsPerUnit < MinDotGap) spacing *= 2;
 
-    // Also the dots just outside `rect` that reach into it; else a partly redrawn area (a scrolled
-    // strip of the cached background, say) would lose the halves of the dots on its edges
+    // Include dots just outside `rect`, or a partial redraw would cut those on its edges
     const qreal reach = DotSize / pixelsPerUnit;
     const QRectF area = rect.adjusted(-reach, -reach, reach, reach);
 
@@ -59,7 +58,7 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     }
 
     QPen pen(theme.dot, DotSize, Qt::SolidLine, Qt::RoundCap);
-    pen.setCosmetic(true);               // the same size on screen however far the view is zoomed
+    pen.setCosmetic(true);
     painter->setPen(pen);
     painter->drawPoints(dots.constData(), int(dots.size()));
 }
@@ -81,8 +80,7 @@ ComponentItem* createComponent(const ItemProps& props)
 
 CircuitScene::~CircuitScene()
 {
-    // ~QGraphicsScene deletes the items next, which can emit selectionChanged. Listeners such as the
-    // properties panel would then call into this object after its members are destroyed.
+    // ~QGraphicsScene may emit selectionChanged into listeners after our members are gone
     disconnect(this, &QGraphicsScene::selectionChanged, nullptr, nullptr);
 }
 
@@ -124,7 +122,7 @@ QString CircuitScene::automaticName(const ComponentItem* item) const
     if (!isSource && !dynamic_cast<const DisplayItem*>(item)) return {};
     const QString stem = isSource ? tr("Source") : tr("Display");
 
-    // The numbers the other components of the same kind have, then the lowest one that is free
+    // The lowest number no other component of the kind has
     QSet<int> taken;
     const QString prefix = stem + u' ';
     for (QGraphicsItem* other : items()) {
@@ -155,12 +153,12 @@ ComponentItem::EditResult CircuitScene::editComponent(ComponentItem* item, const
 void CircuitScene::deleteSelection()
 {
     if (isLocked() || m_readOnly) return;
-    cancelWireConnection();   // a wire being dragged must not start or snap at a pin that goes away
+    cancelWireConnection();   // a dragged wire must not end at a pin that goes away
 
     const QList<QGraphicsItem*> selected = selectedItems();
     bool removedAny = false;
 
-    // Wires first, so a component selected together with all of its wires goes too
+    // Wires first, so a component selected with all its wires goes too
     for (QGraphicsItem* item : selected) {
         if (auto* wire = dynamic_cast<WireItem*>(item)) {
             wire->setStartPort(nullptr);
@@ -170,7 +168,6 @@ void CircuitScene::deleteSelection()
             removedAny = true;
         }
     }
-    // Only a component with no wires attached can be deleted
     for (QGraphicsItem* item : selected) {
         if (auto* component = dynamic_cast<ComponentItem*>(item); component && !component->hasConnections()) {
             removeItem(component);
@@ -213,7 +210,7 @@ void CircuitScene::startOrResumeSim()
     if (m_simState == SimState::Running) return;
 
     if (m_simState == SimState::Paused) {
-        // Nothing was edited since Pause (an edit would have ended the run), so just carry on
+        // Nothing was edited since Pause (an edit ends the run)
         cancelWireConnection();
         setSimState(SimState::Running);
         setSimRunningSIG(true);
@@ -238,7 +235,7 @@ void CircuitScene::stopSim()
 {
     if (m_simState == SimState::Stopped) return;
 
-    ++m_runId;                 // results of this run that are still on their way are now ignored
+    ++m_runId;                 // results still on their way are ignored
     stopSimSIG();
     m_wireMap.clear();
     m_displays.clear();
@@ -253,7 +250,6 @@ void CircuitScene::stopSim()
 
 void CircuitScene::circuitEdited()
 {
-    // The frozen values describe the circuit as it was; once it changes they are meaningless
     if (m_simState == SimState::Paused) stopSim();
 }
 
@@ -292,7 +288,7 @@ void CircuitScene::setToolProps(const ItemProps& props)
 void CircuitScene::selectTool(std::size_t kind)
 {
     if (kind >= m_toolDefaults.size()) return;
-    clearSelection();            // picking a tool means "I want to place something new"
+    clearSelection();
     m_activeTool = kind;
     toolChanged();
 }
@@ -336,7 +332,7 @@ void CircuitScene::clearHighlights()
 
 void CircuitScene::startWireConnection(QPointF startPoint)
 {
-    // The wire starts at the nearest pin (magnetic snapping), or where the mouse is
+    // Snaps to the nearest pin
     m_currWireStartPort = findNearestPort(startPoint);
     m_wireStartPoint = m_currWireStartPort ? m_currWireStartPort->scenePos() : startPoint;
     if (m_currWireStartPort) m_currWireStartPort->setHighlighted(true);
@@ -351,7 +347,6 @@ void CircuitScene::updateWireConnection(QPointF currentPoint)
 {
     if (!m_connectingWire || !m_currWire) return;
 
-    // Snap to a pin near the mouse that the wire can connect to, and highlight it
     PortItem* nearPort = findNearestPort(currentPoint);
     const bool canSnap = nearPort && nearPort != m_currWireStartPort
                          && (!m_currWireStartPort || m_currWireStartPort->canConnectTo(nearPort));
@@ -371,9 +366,9 @@ void CircuitScene::finishWireConnection(QPointF endPoint)
     if (!m_connectingWire) return;
     PortItem* startPort = m_currWireStartPort;
     PortItem* endPort = findNearestPort(endPoint);
-    cancelWireConnection();   // the dragged wire goes; a real one replaces it if the pins fit
+    cancelWireConnection();   // a real wire replaces it if the pins fit
 
-    // Not while running (the drag may have begun before Start), and only from an output to a free input
+    // Not while running (the drag may predate Start); only output to free input
     if (isLocked() || !startPort || !endPort || !endPort->canConnectTo(startPort)
         || endPort->getPortType() != PortType::IN || !endPort->getConnections().isEmpty()) return;
     addWire(startPort, endPort);
@@ -385,7 +380,7 @@ ExportGraph CircuitScene::buildGraph()
     m_wireMap.clear();
     m_displays.clear();
     m_sources.clear();
-    m_lastNetValues.clear();   // net ids are numbered anew, so the next result repaints every net
+    m_lastNetValues.clear();   // nets are renumbered, so the next result repaints all
     m_instanceNets.clear();
     m_instanceRegisters.clear();
 
@@ -394,7 +389,7 @@ ExportGraph CircuitScene::buildGraph()
     QList<BlockItem*> blocks;
     for (QGraphicsItem* item : items()) {
         if (auto* wire = dynamic_cast<WireItem*>(item)) {
-            if (wire->isConnected()) wires.append(wire);   // a wire not attached at both ends carries nothing
+            if (wire->isConnected()) wires.append(wire);   // one not attached at both ends carries nothing
         } else if (auto* block = dynamic_cast<BlockItem*>(item)) {
             blocks.append(block);
         } else if (auto* component = dynamic_cast<ComponentItem*>(item)) {
@@ -402,9 +397,7 @@ ExportGraph CircuitScene::buildGraph()
         }
     }
 
-    // One net per output pin that has wires; net 0 means "not connected" and is always 0. An input
-    // pin carries the net of the output its wire comes from. A display passes each input on to the
-    // output in the same position.
+    // One net per wired output pin (0 = not connected); a display passes inputs through
     u32 nextNet = 1;
     QHash<PortItem*, u32> outputNets;
     std::function<u32(PortItem*)> netOf = [&](PortItem* pin) -> u32 {
@@ -426,8 +419,7 @@ ExportGraph CircuitScene::buildGraph()
         for (PortItem* pin : pins) nets.push_back(netOf(pin));
         return nets;
     };
-    // A source's pins without wires get nets of their own too: nothing reads them, but the waveforms
-    // show every bit of every source
+    // Unwired source pins get nets too: the waveforms show every source bit
     const auto sourceNetsOf = [&](const QList<PortItem*>& pins) {
         std::vector<u32> nets;
         nets.reserve(pins.size());
@@ -453,7 +445,7 @@ ExportGraph CircuitScene::buildGraph()
             graph.registers.emplace_back(props.type, netOf(reg->getInputPort()), netOf(reg->getInputPortTwo()), netOf(reg->getOutputPort()),
                                          netOf(reg->getClkPort()), netOf(reg->getReadEnablePort()), props.asyncReset, props.resetValue);
         } else if (auto* source = dynamic_cast<SourceItem*>(component)) {
-            m_sources.append(source);   // the simulator computes the values itself
+            m_sources.append(source);   // the simulator computes their values
             graph.sources.emplace_back(sourceNetsOf(source->getOutputPorts()), source->sourceProps());
         } else if (auto* display = dynamic_cast<DisplayItem*>(component)) {
             m_displays.append(display);
@@ -469,8 +461,7 @@ void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>&
 {
     m_waveSignals.clear();
 
-    // The circuit's own inputs and outputs. m_sources is in the order of graph.sources (a constant 1
-    // that blocks need is added after them).
+    // m_sources is in graph.sources order (a constant 1 for blocks comes after)
     for (qsizetype i = 0; i < m_sources.size(); i++) {
         m_waveSignals.append({QString(), QString(), m_sources[i]->name(), false, graph.sources[size_t(i)].outIDs});
     }
@@ -483,7 +474,7 @@ void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>&
         }
         m_waveSignals.append(std::move(signal));
     }
-    // Inputs first, then outputs, each by name with numbers in order: "Source 2" before "Source 10"
+    // Inputs, then outputs, by name with numbers in order ("Source 2" < "Source 10")
     QCollator collator;
     collator.setNumericMode(true);
     std::ranges::stable_sort(m_waveSignals, [&collator](const WaveSignal& a, const WaveSignal& b) {
@@ -491,7 +482,6 @@ void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>&
         return collator.compare(a.name, b.name) < 0;
     });
 
-    // Every port of every block instance, and of the instances inside it
     std::function<void(const QString&, const QString&)> addInstance = [&](const QString& path, const QString& moduleName) {
         const NetModule* module = m_design.module(moduleName);
         if (!module) return;
@@ -513,7 +503,6 @@ void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>&
     };
     for (BlockItem* block : blocks) addInstance(block->blockProps().instance, block->blockProps().module);
 
-    // The simulator records exactly the nets these signals are made of
     std::vector<u32> recorded;
     for (const WaveSignal& signal : std::as_const(m_waveSignals)) {
         for (u32 net : signal.nets) {
@@ -526,24 +515,21 @@ void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>&
 }
 
 namespace {
-// How often a running simulation's values are put on the canvas: every frame of the screen, but
-// at most 60 times a second. A big circuit takes longer than a frame of a 144 or 360 Hz screen to
-// paint, and values changing faster than that cannot be followed anyway. (Panning, zooming and
-// dragging are not limited by this; they repaint as fast as they can.)
+// Every screen frame, at most 60 per second; faster can't be followed anyway
 int frameIntervalMs()
 {
     const QScreen* screen = QGuiApplication::primaryScreen();
     const qreal hz = screen && screen->refreshRate() > 0 ? screen->refreshRate() : 60.0;
     return int(std::ceil(1000.0 / std::clamp(hz, 30.0, 60.0)));
 }
-} // namespace
+}
 
 void CircuitScene::queueResult(const SimResult& result)
 {
-    m_pendingResult = result;          // a newer result replaces one that was not shown yet
+    m_pendingResult = result;          // replaces one not shown yet
     m_hasPendingResult = true;
     if (m_frameTimer.isActive()) return;
-    // A whole frame since the last one (always so at slow speeds): show it at once; else at the next frame
+    // A whole frame since the last one: show it now, else at the next frame
     const qint64 sinceLast = m_sinceLastFrame.isValid() ? m_sinceLastFrame.elapsed() : std::numeric_limits<qint64>::max();
     m_frameTimer.start(int(std::max<qint64>(0, frameIntervalMs() - sinceLast)));
 }
@@ -558,12 +544,11 @@ void CircuitScene::applyPendingResult()
 
 void CircuitScene::receiveResult(const SimResult& result)
 {
-    // Results travel through the event queue, so one can arrive after its run was stopped or replaced.
-    // A paused run still accepts its own last results: they are the state it froze in.
+    // A late result of a stopped or replaced run is dropped; a paused run takes its own
     if (m_simState == SimState::Stopped || result.runId != m_runId) return;
 
     const auto& nets = result.netValues;
-    // Size mismatch = first result of a run (cache cleared in startSim): repaint every net
+    // First result of a run: repaint every net
     const bool fullUpdate = m_lastNetValues.size() != nets.size();
 
     for (size_t i = 1; i < nets.size(); i++) {
@@ -572,7 +557,7 @@ void CircuitScene::receiveResult(const SimResult& result)
         auto it = m_wireMap.net2wire.find(static_cast<u32>(i));
         if (it == m_wireMap.net2wire.end()) {continue;}
 
-        const bool value = nets[i];   // true = red, false = black
+        const bool value = nets[i];
         for (auto* wire : it->second) {
             wire->setValue(value);
             wire->getEndPort()->setValue(value);
@@ -582,7 +567,7 @@ void CircuitScene::receiveResult(const SimResult& result)
     m_lastNetValues = nets;
 
     for (const auto& source : m_sources) {
-        if (source) {source->setTick(result.sourceTick);}   // QPointer is null if the source was deleted
+        if (source) {source->setTick(result.sourceTick);}   // null if the source was deleted
     }
     for (size_t i = 0; i < std::min(result.registerValues.size(), m_wireMap.registers.size()); i++) {
         m_wireMap.registers[i]->setValue(result.registerValues[i]);
@@ -590,7 +575,7 @@ void CircuitScene::receiveResult(const SimResult& result)
     m_lastRegisterValues = result.registerValues;
 
     for (const auto& display : m_displays) {
-        if (display) {display->updateValue();}   // QPointer is null if the display was deleted
+        if (display) {display->updateValue();}   // null if the display was deleted
     }
     valuesChanged();
 }
@@ -599,7 +584,7 @@ void CircuitScene::receiveResult(const SimResult& result)
 
 void CircuitScene::receiveDesign(const NetDesign& design)
 {
-    resetCircuit();   // stop the simulation first; it must never outlive the items it reports on
+    resetCircuit();   // the simulation must never outlive its items
     m_design = design;
     buildModule(m_design, m_design.top, true);
 }
@@ -628,8 +613,8 @@ void CircuitScene::buildModule(const NetDesign& design, const QString& moduleNam
     const NetModule* module = design.module(moduleName);
     if (!module) return;
 
-    QHash<int, PortItem*> drivers;                 // bit -> the pin that drives it
-    QList<std::pair<int, PortItem*>> readers;      // (bit, a pin that reads it)
+    QHash<int, PortItem*> drivers;                 // bit -> driving pin
+    QList<std::pair<int, PortItem*>> readers;
     const auto pinBits = [](const QList<PortItem*>& pins, const QList<int>& bits, auto&& use) {
         for (qsizetype i = 0; i < std::min(pins.size(), bits.size()); i++) use(bits[i], pins[i]);
     };
@@ -663,13 +648,13 @@ void CircuitScene::buildModule(const NetDesign& design, const QString& moduleNam
             } else if (auto* source = dynamic_cast<SourceItem*>(component)) {   // a module input, or the constant 1
                 source->setName(portName(node));
                 drives(source->getOutputPorts(), pins.outputs);
-            } else if (auto* display = dynamic_cast<DisplayItem*>(component)) {   // a module output
+            } else if (auto* display = dynamic_cast<DisplayItem*>(component)) {
                 display->setName(portName(node));
                 reads(display->getInputPorts(), pins.inputs);
             }
             item = component;
         } else {
-            // Inside a block: the module's ports are tags at its edges
+            // Inside a block the ports are tags at its edges
             const bool input = isModulePort(node, IOType::IN);
             auto* terminal = new TerminalItem(node.id, !input, int(portBits(node).size()));
             if (input) drives(terminal->pins(), portBits(node));
@@ -687,7 +672,7 @@ void CircuitScene::buildModule(const NetDesign& design, const QString& moduleNam
 
     for (const auto& [bit, reader] : std::as_const(readers)) {
         PortItem* driver = drivers.value(bit);
-        if (!driver || driver == reader) continue;   // undriven bits read as 0
+        if (!driver || driver == reader) continue;   // undriven bits read 0
         WireItem* wire = addWire(driver, reader);
         if (!topLevel) m_wireBits.insert(wire, bit);
     }
@@ -695,16 +680,14 @@ void CircuitScene::buildModule(const NetDesign& design, const QString& moduleNam
 }
 
 namespace {
-// Turns blocks into the gates, multiplexers and flip-flops of their modules, for the simulator.
-// Nets are joined with a union-find: a block's port bit inside the module is the same net as the
-// wire on its pin outside, and a module can pass an input straight through to an output.
+// Flattens blocks for the simulator; union-find joins a port bit inside with the wire outside
 struct BlockExpander {
     const NetDesign& design;
     ExportGraph& graph;
     QHash<QString, QHash<int, u32>>& instanceNets;
     QHash<QString, QHash<QString, u32>>& instanceRegisters;
-    std::vector<u32> parent;   // union-find over net ids; net 0 (constant 0) always stays a root
-    u32 one = 0;               // the net of the constant 1, made when first needed
+    std::vector<u32> parent;   // net 0 (constant 0) stays a root
+    u32 one = 0;               // made when first needed
 
     u32 newNet()
     {
@@ -741,7 +724,6 @@ struct BlockExpander {
         return *it;
     }
 
-    // The bits of each port of `module`, by port name
     static QHash<QString, QList<int>> portBits(const NetModule& module)
     {
         QHash<QString, QList<int>> bits;
@@ -752,7 +734,7 @@ struct BlockExpander {
         return bits;
     }
 
-    // Adds the contents of the instance at `path`; `nets` holds the nets of its port bits
+    // `nets` holds the nets of its port bits
     void expand(const QString& path, const NetModule& module, QHash<int, u32> nets)
     {
         for (const NetNode& node : module.nodes) {
@@ -791,7 +773,7 @@ struct BlockExpander {
         instanceNets.insert(path, std::move(nets));
     }
 
-    // Gives the joined nets consecutive numbers, everywhere they are used. Returns the highest one.
+    // Consecutive numbers for the joined nets; returns the highest
     u32 renumber(WireMap& wires)
     {
         std::vector<u32> number(parent.size(), 0);
@@ -842,7 +824,6 @@ void CircuitScene::expandBlocks(ExportGraph& graph, const QList<BlockItem*>& blo
         const NetModule* module = m_design.module(props.module);
         if (!module) continue;
 
-        // The block's pins, in port order, joined to the bits of the module's ports
         const QHash<QString, QList<int>> portBits = BlockExpander::portBits(*module);
         QHash<int, u32> nets;
         qsizetype input = 0, output = 0;
@@ -886,7 +867,7 @@ void CircuitScene::showInstanceValues(const QString& path, CircuitScene* view) c
 
 void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 
-    // Placing and wiring change the circuit, so they are off while the simulation runs and inside blocks
+    // No placing or wiring while running or inside a block
     if ((isLocked() || m_readOnly) && (event->button() == Qt::MiddleButton || event->button() == Qt::RightButton)) {
         event->accept();
         return;
@@ -913,7 +894,7 @@ void CircuitScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 void CircuitScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
-        // The block under the mouse, also when the click lands on one of its pins
+        // Also when the click lands on one of its pins
         for (QGraphicsItem* item : items(event->scenePos())) {
             auto* block = dynamic_cast<BlockItem*>(item);
             if (!block && item->parentItem()) block = dynamic_cast<BlockItem*>(item->parentItem());
@@ -955,20 +936,16 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
     m_scene = new CircuitScene(this);
     setScene(m_scene);
 
-    // Configure view
     setDragMode(QGraphicsView::RubberBandDrag);
     setRenderHint(QPainter::Antialiasing);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-    // The dot grid is drawn once and reused; Qt redraws it when the view is zoomed, and
-    // MainWindow::setColorScheme drops it when the theme changes
+    // Cached; MainWindow::setColorScheme drops it on a theme change
     setCacheMode(QGraphicsView::CacheBackground);
-    // A running circuit changes many items at once, all over the view. The default (minimal) mode then
-    // merges thousands of small rectangles into an update region, which costs more than painting;
-    // repainting the one rectangle around them all is much cheaper.
+    // One bounding rect: merging thousands of small update rects costs more than painting
     setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
 
-    m_breadcrumb = new QFrame(this);   // a child of the canvas, not its viewport, so panning does not move it
+    m_breadcrumb = new QFrame(this);   // not the viewport's, so panning doesn't move it
     m_breadcrumb->setObjectName(u"blockBreadcrumb"_s);
     auto* layout = new QHBoxLayout(m_breadcrumb);
     layout->setContentsMargins(4, 3, 4, 3);
@@ -997,7 +974,7 @@ void CircuitCanvas::openBlock(BlockItem* block)
 {
     if (!block || block->scene() != currentScene()) return;
     const BlockProps& props = block->blockProps();
-    if (!m_scene->design().module(props.module)) return;   // a block left over from an older design
+    if (!m_scene->design().module(props.module)) return;   // left over from an older design
 
     Level level;
     level.path = m_levels.isEmpty() ? props.instance : m_levels.last().path + u'/' + props.instance;
@@ -1011,7 +988,7 @@ void CircuitCanvas::openBlock(BlockItem* block)
     m_levels.append(level);
 
     showScene(level.scene);
-    // Show all of the module, but never magnified
+    // All of the module, never magnified
     const QRectF contents = level.scene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
     resetTransform();
     if (!contents.isEmpty()) {
@@ -1057,7 +1034,7 @@ void CircuitCanvas::refreshBlockValues()
 
 void CircuitCanvas::updateBreadcrumb()
 {
-    // Rebuilt while hidden: buttons added to a visible frame only appear later, so it would be measured empty
+    // Buttons added while visible appear late, so it would be measured empty
     m_breadcrumb->hide();
     auto* layout = static_cast<QHBoxLayout*>(m_breadcrumb->layout());
     while (QLayoutItem* item = layout->takeAt(0)) {
@@ -1095,9 +1072,9 @@ void CircuitCanvas::resizeEvent(QResizeEvent* event)
 void CircuitCanvas::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Escape && !m_levels.isEmpty()) {
-        showLevel(depth() - 1);   // out of the block on screen
+        showLevel(depth() - 1);
     } else if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-        currentScene()->deleteSelection();   // does nothing inside a block
+        currentScene()->deleteSelection();   // nothing inside a block
     } else {
         QGraphicsView::keyPressEvent(event);
         return;
@@ -1108,11 +1085,10 @@ void CircuitCanvas::keyPressEvent(QKeyEvent* event)
 void CircuitCanvas::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
-        // Check if we clicked on an item
         QGraphicsItem* itemUnderMouse = itemAt(event->pos());
         
         if (!itemUnderMouse) {
-            // Clicked on empty space - start camera dragging
+            // Empty canvas: pan
             m_panning = true;
             m_lastPanPoint = event->pos();
             m_panStartPoint = event->pos();
@@ -1120,7 +1096,6 @@ void CircuitCanvas::mousePressEvent(QMouseEvent* event)
             event->accept();
             return;
         }
-        // If we clicked on an item, fall through to let QGraphicsView handle it
     }
 
     QGraphicsView::mousePressEvent(event);
@@ -1153,7 +1128,7 @@ void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
         m_panning = false;
         setCursor(Qt::ArrowCursor);
 
-        // A click on empty canvas without dragging deselects everything
+        // A click without a drag deselects
         if ((event->pos() - m_panStartPoint).manhattanLength() < QApplication::startDragDistance()) {
             currentScene()->clearSelection();
         }
@@ -1166,10 +1141,10 @@ void CircuitCanvas::mouseReleaseEvent(QMouseEvent* event)
 
 void CircuitCanvas::wheelEvent(QWheelEvent* event)
 {
-    if (event->angleDelta().y() == 0) return;   // a sideways scroll does not zoom
+    if (event->angleDelta().y() == 0) return;
     const double factor = event->angleDelta().y() > 0 ? 1.15 : 1 / 1.15;
 
-    // Never zoom out so far that the view would be bigger than the scene
+    // Never zoomed out past the scene
     const double newScale = transform().m11() * factor;
     const QRectF sceneArea = currentScene()->sceneRect();
     if (factor < 1 && (viewport()->width() / newScale >= sceneArea.width() || viewport()->height() / newScale >= sceneArea.height())) {

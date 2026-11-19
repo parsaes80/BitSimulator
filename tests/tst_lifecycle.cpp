@@ -1,7 +1,4 @@
-// Start, Pause, Reset, Clear and Compile on the real main window, with the simulator running in its own
-// thread exactly as in the application.
-//
-// The tests that press Compile need yosys and Graphviz dot; they are skipped if those are missing.
+// Start, Pause, Reset, Clear and Compile on the real window, simulator in its own thread
 
 #include "TestSupport.h"
 #include <QDir>
@@ -26,7 +23,7 @@ const QString brokenVerilog = u"module top(input wire a, output wire y);\n"
     "assign y = a &&& ;\n"
     "endmodule\n"_s;
 
-// clock -> NOT -> display. The clock has 16 steps so "continues" and "starts over" can be told apart.
+// clock -> NOT -> display; 16 clock steps tell "continues" from "starts over"
 struct ClockCircuit {
     QList<bool> pattern;
     SourceItem* clock = nullptr;
@@ -367,8 +364,7 @@ private slots:
         QCOMPARE(circuit.step(), 0);                                     // and then nothing for a second
 
         slider->setValue(10000);                                         // 1 ms per tick
-        // The canvas shows values at most once per frame, so count the ticks the clock shows it got
-        // through, not how often the picture changed
+        // Values show once per frame, so count the ticks the clock got through
         const u64 before = circuit.clock->tick();
         QTest::qWait(200);
         const u64 ticks = circuit.clock->tick() - before;
@@ -448,7 +444,7 @@ private slots:
         files->item(2)->setCheckState(Qt::Unchecked);                    // leave the testbench out
         QCOMPARE(count->text(), u"2 of 3 files selected"_s);
 
-        // A running simulation is stopped, both compile buttons wait, and the result is shown on the canvas
+        // The run stops, both compile buttons wait, the result shows on the canvas
         ClockCircuit circuit(app);
         app.start->click();
         tabs->setCurrentWidget(tab);

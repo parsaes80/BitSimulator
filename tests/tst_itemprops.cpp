@@ -1,4 +1,4 @@
-// The small pure functions in Items.h (component and source properties) that the items and the properties panel rely on.
+// The pure property functions of Items.h and general.h
 
 #include <QtTest>
 #include <QSet>
@@ -51,7 +51,7 @@ private slots:
         QTest::newRow("2") << 2 << 1;
         QTest::newRow("3") << 3 << 2;
         QTest::newRow("4") << 4 << 2;
-        QTest::newRow("5") << 5 << 3;      // the natural-log version gave 2 for 5, 6 and 7
+        QTest::newRow("5") << 5 << 3;      // natural log gave 2 for 5, 6 and 7
         QTest::newRow("6") << 6 << 3;
         QTest::newRow("7") << 7 << 3;
         QTest::newRow("8") << 8 << 3;
@@ -87,7 +87,7 @@ private slots:
 
     void normalizedSource()
     {
-        // A list or a constant always has enough pins for its largest value; asking for more is fine
+        // A list or constant gets enough pins for its largest value; more is fine
         QCOMPARE(normalized(SourceProps::list({1, 2}, 1)).bits, 2);
         QCOMPARE(normalized(SourceProps::list({1, 2}, 6)).bits, 6);
         QCOMPARE(normalized(SourceProps::list({300}, 2)).bits, 9);
@@ -96,10 +96,10 @@ private slots:
         constant.constant = 0xFFFF'FFFF'FFFFull;
         constant.bits = 1;
         QCOMPARE(normalized(constant).bits, 48);
-        // Other modes keep the pins they were given: a counter wraps at that width
+        // Other modes keep their pins: a counter wraps at that width
         QCOMPARE(normalized(SourceProps::counter(5)).bits, 5);
 
-        // An empty list would crash the painter and the simulator, so it becomes a single 0
+        // An empty list would crash the painter and the simulator
         QCOMPARE(normalized(SourceProps::list({}, 1)).values, (QList<std::uint64_t>{0}));
         // Limits
         QCOMPARE(normalized(SourceProps::counter(0)).bits, 1);
@@ -138,7 +138,7 @@ private slots:
 
     void wideCountersCountThroughTheirWholeRange()
     {
-        // The HDL compiler's inputs: before, 31-bit and 32-bit inputs got almost no values
+        // HDL compiler inputs: 31- and 32-bit ones used to get almost no values
         const SourceProps c31 = SourceProps::counter(31, 2);
         QCOMPARE(sourceValueAt(c31, 2 * 0x7FFF'FFFFull), std::uint64_t(0x7FFF'FFFF));
         QCOMPARE(sourceValueAt(c31, 2 * 0x8000'0000ull), std::uint64_t(0));
@@ -226,7 +226,7 @@ private slots:
         pulse.repeat = false;
         QCOMPARE(sequence(pulse, 6), (QList<std::uint64_t>{1, 1, 0, 0, 0, 0}));
 
-        // Each pin stops on its own last step; a list stops on its last value
+        // Each pin stops on its own last step
         SourceProps waves = SourceProps::waveform({false, true});
         waves.bits = 2;
         waves.waves.append(QList<bool>{true, true, false});
@@ -236,7 +236,7 @@ private slots:
         list.repeat = false;
         list.ticksPerStep = 2;
         QCOMPARE(sequence(list, 8), (QList<std::uint64_t>{4, 4, 7, 7, 9, 9, 9, 9}));   // each value for 2 ticks
-        QVERIFY(SourceProps{}.repeat);                                   // repeating is the default
+        QVERIFY(SourceProps{}.repeat);                                   // the default
     }
 
     void constantAlwaysOutputsItsValue()
@@ -273,7 +273,7 @@ private slots:
 
     void kindsMatchTheVariantOrder()
     {
-        // The scene's tool table and the panel's pages are indexed by these
+        // Tool table and panel pages are indexed by these
         QCOMPARE(itemKind<GateProps>, ItemProps(GateProps{}).index());
         QCOMPARE(itemKind<RegisterProps>, ItemProps(RegisterProps{}).index());
         QCOMPARE(itemKind<MuxProps>, ItemProps(MuxProps{}).index());

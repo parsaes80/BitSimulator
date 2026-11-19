@@ -1,4 +1,4 @@
-// Light and dark mode: the colors and style sheet in Theme.cpp, the theme button, and the canvas dots.
+// Light and dark mode: Theme.cpp, the theme button, the canvas dots
 
 #include "TestSupport.h"
 #include "Theme.h"
@@ -16,7 +16,7 @@ QImage iconImage(const QIcon& icon)
     return icon.pixmap(QSize(18, 18), 1.0).toImage();
 }
 
-} // namespace
+}
 
 class TestTheme : public QObject {
     Q_OBJECT
@@ -41,7 +41,6 @@ private slots:
         QVERIFY2(!sheet.contains(u'@'), qPrintable(sheet.mid(sheet.indexOf(u'@'), 40)));   // every @name was a Theme color
         QVERIFY(sheet.contains(u"CircuitCanvas"_s));
 
-        // Qt parses it without complaint
         QWidget widget;
         widget.setStyleSheet(sheet);
         auto* button = new QPushButton(u"x"_s, &widget);
@@ -76,12 +75,12 @@ private slots:
         QFETCH(ColorScheme, scheme);
         const Theme& theme = themeFor(scheme);
         QCOMPARE(theme.sourceOutline(0), theme.source);                     // all pins 0: gray
-        QCOMPARE(theme.sourceOutline(1), theme.sourceLit);                  // all 1: teal, like a wire carrying 1
+        QCOMPARE(theme.sourceOutline(1), theme.sourceLit);                  // all 1: teal
         QCOMPARE(theme.sourceFill(0), theme.fillFor(theme.source));
         QCOMPARE(theme.sourceFill(1), theme.sourceLit);
         QVERIFY(theme.source.saturation() < 40);                            // gray, not a color
 
-        // In a straight line: each pin at 1 moves it the same step closer to teal
+        // Linear: each pin at 1 moves it the same step toward teal
         const QColor lit = theme.sourceLit;
         const auto distance = [&](const QColor& c) {
             return std::abs(c.red() - lit.red()) + std::abs(c.green() - lit.green()) + std::abs(c.blue() - lit.blue());
@@ -96,14 +95,14 @@ private slots:
             previous = now;
         }
 
-        // The number stays readable: light text on the gray body, the other text color on solid teal
+        // Readable: light text on gray, the other text color on teal
         QCOMPARE(theme.textOn(theme.sourceFill(0)), theme.componentText);
         QCOMPARE(theme.textOn(theme.sourceFill(1)), theme.canvas);
     }
 
     void aSourceIsPaintedByHowManyPinsAreOne()
     {
-        // A 4-pin source holding 3: two of four pins are 1, so its body is halfway to teal
+        // A 4-pin source holding 3: two pins at 1, halfway to teal
         CircuitScene scene;
         auto* source = dynamic_cast<SourceItem*>(scene.addComponent(SourceProps::constantOf(3, 4), QPointF(80000, 50000)));
         QVERIFY(source);
@@ -114,8 +113,7 @@ private slots:
             QPainter painter(&image);
             scene.render(&painter, QRectF(image.rect()), body);
             painter.end();
-            // Inside the body (its shape less the outline), near its bottom-left corner: away from the
-            // number and the pins
+            // Inside the body near its bottom-left, away from the number and pins
             const QRectF inside = source->shape().boundingRect().adjusted(2, 2, -2, -2);
             const QPointF at = source->mapToScene(inside.bottomLeft() + QPointF(6, -6)) - body.topLeft();
             return image.pixelColor(at.toPoint());
@@ -133,7 +131,7 @@ private slots:
 
     void theInvertingBubbleIsRed()
     {
-        // A NAND gate: the gate is yellow, its bubble red
+        // NAND: yellow gate, red bubble
         CircuitScene scene;
         ComponentItem* nand = scene.addComponent(GateProps{GType::NAND, 2}, QPointF(80000, 50000));
         const QRectF area = nand->sceneBoundingRect();
@@ -247,7 +245,7 @@ private slots:
 
     void theDotGridStaysCheapWhenZoomedOut()
     {
-        // The whole 160000 x 100000 canvas in a small picture: without thinning out the dots this is billions of them
+        // The whole canvas in a small picture: billions of dots without thinning
         CircuitScene scene;
         QImage image(400, 250, QImage::Format_ARGB32_Premultiplied);
         QPainter painter(&image);
@@ -271,7 +269,7 @@ private slots:
                 if (image.pixelColor(x, y) != currentTheme().canvas) dotPixels++;
             }
         }
-        QVERIFY(dotPixels > 50);                                         // about 100 dots in this area
+        QVERIFY(dotPixels > 50);                                         // about 100 dots here
     }
 };
 

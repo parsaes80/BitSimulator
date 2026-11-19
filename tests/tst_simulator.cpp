@@ -1,8 +1,4 @@
-// The simulation core on its own: no window, no canvas.
-//
-// Each test hands the Simulator a small netlist, lets it run for a number of ticks and compares
-// every tick's result with what the logic should produce. The Simulator lives in the test's own
-// thread here, so the sequence of results is exact and does not depend on timing.
+// The simulator alone, in the test's thread, so every tick's result is exact
 
 #include <QtTest>
 #include <numeric>
@@ -12,7 +8,7 @@ using namespace Qt::StringLiterals;
 
 namespace {
 
-// Runs a netlist and returns the first `ticks` results (fewer if the simulator stalls).
+// Fewer than `ticks` if the simulator stalls
 QList<SimResult> run(const ExportGraph& graph, int ticks)
 {
     Simulator sim;
@@ -36,8 +32,7 @@ QList<SimResult> run(const ExportGraph& graph, int ticks)
     return results;
 }
 
-// A source that outputs one bit of the tick number. `width` of them on `width` nets walk through
-// every combination of 0s and 1s, one combination per tick.
+// Outputs bit `bit` of the tick: `width` of them walk through every combination
 Source counterBit(u32 net, int bit, int width)
 {
     QList<bool> cycle(qsizetype(1) << width);
@@ -45,7 +40,6 @@ Source counterBit(u32 net, int bit, int width)
     return Source({net}, SourceProps::waveform(cycle));
 }
 
-// A 1-pin source repeating `bits`
 Source pattern(u32 net, std::initializer_list<int> bits)
 {
     QList<bool> cycle;
@@ -85,14 +79,14 @@ const char* name(RType type)
     return "?";
 }
 
-} // namespace
+}
 
 class TestSimulator : public QObject {
     Q_OBJECT
 private slots:
     void asynchronousResetDoesNotWaitForTheClock()
     {
-        // Net 1: a clock that never ticks, 2: D = 0, 3: reset, high at tick 2 only, 4: Q
+        // Nets: 1 clock (never ticks), 2 D = 0, 3 reset (high at tick 2 only), 4 Q
         for (const bool async : {true, false}) {
             ExportGraph graph;
             graph.numNets = 4;
@@ -103,7 +97,7 @@ private slots:
             const QList<SimResult> results = run(graph, 6);
             QCOMPARE(results.size(), 6);
             for (int tick = 0; tick < results.size(); tick++) {
-                // Asynchronous: 1 from the tick of the reset on. Synchronous: waits for a clock edge, which never comes.
+                // Asynchronous: 1 from the reset's tick; synchronous: waits for an edge that never comes
                 QCOMPARE(bool(results[tick].netValues[4]), async && tick >= 2);
             }
         }
@@ -157,7 +151,7 @@ private slots:
 
     void unconnectedInputReadsAsZero()
     {
-        // Net 0 means "nothing connected"; it must always read as 0
+        // Net 0 = not connected; always reads 0
         ExportGraph graph;
         graph.sources.push_back(pattern(1, {1, 1, 0, 1}));
         graph.gates.emplace_back(GType::AND, std::vector<u32>{1, 0}, 2);
@@ -186,7 +180,7 @@ private slots:
 
     void changesTravelThroughAChainInOneTick()
     {
-        // source -> NOT -> NOT -> NOT -> NOT -> NOT: all five outputs must be settled in every result
+        // All five outputs settled in every result
         ExportGraph graph;
         graph.sources.push_back(pattern(1, {0, 1, 1, 0}));
         for (u32 i = 1; i <= 5; i++) graph.gates.emplace_back(GType::NOT, std::vector<u32>{i}, i + 1);
@@ -206,7 +200,7 @@ private slots:
         graph.sources.push_back(pattern(2, {0, 0, 1, 1}));
         graph.gates.emplace_back(GType::AND, std::vector<u32>{1, 2}, 3);
         graph.gates.emplace_back(GType::XOR, std::vector<u32>{1, 2}, 4);
-        graph.gates.emplace_back(GType::OR, std::vector<u32>{3, 4}, 5);     // = a OR b
+        graph.gates.emplace_back(GType::OR, std::vector<u32>{3, 4}, 5);
         graph.numNets = 5;
 
         for (const SimResult& result : run(graph, 8)) {
@@ -219,7 +213,7 @@ private slots:
 
     void aLoopOfGatesDoesNotHang()
     {
-        // A NOT gate wired to itself never settles. The simulator must give up on the tick and keep going.
+        // A NOT wired to itself never settles; the simulator gives up on the tick and goes on
         ExportGraph graph;
         graph.gates.emplace_back(GType::NOT, std::vector<u32>{1}, 1);
         graph.sources.push_back(pattern(2, {0, 1}));
@@ -263,7 +257,7 @@ private slots:
         for (const SimResult& result : results) {
             int selected = 0;
             for (int i = 0; i < selectLines; i++) selected |= result.netValues[numInputs + i + 1] << i;
-            selected = std::min(selected, numInputs - 1);      // an address past the last input picks the last input
+            selected = std::min(selected, numInputs - 1);      // past the last input picks the last
             QCOMPARE(result.netValues[out], result.netValues[selected + 1]);
         }
     }
@@ -290,7 +284,7 @@ private slots:
         const RType regType = static_cast<RType>(type);
         const u32 in1 = 1, in2 = 2, clk = 3, en = 4, out = 5;
 
-        // Cycle lengths 5, 7, 4 and 3 share no factor, so 210 ticks see many different situations
+        // Cycle lengths 5, 7, 4, 3 share no factor, so 210 ticks see many situations
         ExportGraph graph;
         graph.sources.push_back(pattern(in1, {1, 0, 1, 1, 0}));
         graph.sources.push_back(pattern(in2, {0, 0, 1, 0, 0, 0, 1}));
@@ -311,7 +305,6 @@ private slots:
             const bool before = stored;
             const bool enabled = !hasEnable || enable;
             if (hasClock) {
-                // Flip-flop: acts only on the rising clock edge
                 if (!previousClock && clock && enabled) {
                     switch (regType) {
                     case RType::D:  stored = b ? false : a; break;                 // second pin is a reset
@@ -322,7 +315,6 @@ private slots:
                 }
                 previousClock = clock;
             } else if (enabled) {
-                // Latch: follows its inputs while enabled, holds otherwise
                 switch (regType) {
                 case RType::D:
                 case RType::T:  stored = a; break;
@@ -332,7 +324,7 @@ private slots:
             }
             changes += (stored != before);
 
-            // The output pin shows the new value in the same tick, as at a clock edge in an HDL simulator
+            // The new value shows in the edge's tick, as in an HDL simulator
             if (bool(nets[out]) != stored) QFAIL(qPrintable(u"tick %1: output pin shows %2 but %3 was stored"_s.arg(tick).arg(nets[out]).arg(stored)));
             if (bool(results[tick].registerValues[0]) != stored) {
                 QFAIL(qPrintable(u"tick %1 (in1=%2 in2=%3 clk=%4 en=%5): register holds %6, expected %7"_s
@@ -363,7 +355,7 @@ private slots:
 
     void aSourceDrivesEachOfItsPins()
     {
-        // A 3-pin counter on nets 1..3 (pin 1 not connected), and a 40-bit counter whose top pin is net 4
+        // 3-pin counter on nets 1..3 (pin 1 unwired), 40-bit counter with its top pin on net 4
         ExportGraph graph;
         graph.sources.push_back(Source({1, 0, 3}, SourceProps::counter(3)));
         SourceProps wide = SourceProps::counter(40);
@@ -426,7 +418,7 @@ private slots:
 
         results.clear();
         graph.runId = 8;
-        sim.receiveCircuit(graph);                                  // loading again starts from the first step
+        sim.receiveCircuit(graph);                                  // loading again starts from step 0
         QCOMPARE(results.size(), 1);
         QCOMPARE(results[0].runId, u32(8));
         QCOMPARE(results[0].sourceTick, u64(0));
@@ -440,7 +432,7 @@ private slots:
         sim.SimController();
         sim.setTimerPeriod(1);
 
-        // A T flip-flop toggling on every clock edge, so there is stored state to lose
+        // Toggles on every edge, so there is state to lose
         ExportGraph graph;
         graph.sources.push_back(pattern(1, {0, 1}));                // clock
         graph.sources.push_back(pattern(2, {1}));                   // T = 1
@@ -482,7 +474,7 @@ private slots:
         QTest::qWait(60);
         QCOMPARE(received, stopped);
 
-        sim.setRunning(true);           // "continue" with nothing loaded must not crash
+        sim.setRunning(true);           // with nothing loaded must not crash
         QTest::qWait(20);
         sim.setRunning(false);
     }
@@ -490,7 +482,7 @@ private slots:
     void speedCanChangeBeforeTheTimerExists()
     {
         Simulator sim;
-        sim.setTimerPeriod(5);          // the GUI may send this before the simulator thread has started
+        sim.setTimerPeriod(5);          // the GUI may send this before the thread starts
         sim.SimController();
         sim.setTimerPeriod(5);
     }

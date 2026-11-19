@@ -1,6 +1,5 @@
 #pragma once
 
-// Shared helpers for the BitSimulator tests.
 
 #include <QtTest>
 #include <QCheckBox>
@@ -16,13 +15,13 @@
 #include <QToolButton>
 
 #include "CircuitCanvas.h"
-#include "hdlcompiler.h"   // toolPaths()
+#include "hdlcompiler.h"
 #include "MainWindow.h"
 #include "PropertiesPanel.h"
 
 namespace TestSupport {
 
-// Finds a child widget by object name; aborts the test program with a clear message if it is missing.
+// Aborts with a clear message if it is missing
 template <typename T>
 T* child(QObject* root, const char* name)
 {
@@ -40,7 +39,7 @@ inline QLabel* labelWith(QWidget* root, const QString& part)
     return nullptr;
 }
 
-// One of the joined "segment" buttons in the properties panel, found by its text.
+// A properties panel segment button, by its text
 inline QToolButton* segment(QWidget* root, const QString& text)
 {
     for (QToolButton* button : root->findChildren<QToolButton*>()) {
@@ -50,7 +49,7 @@ inline QToolButton* segment(QWidget* root, const QString& text)
     return nullptr;
 }
 
-// Draws a wire the way the mouse does: press on one pin, move, release on the other.
+// Like the mouse: press on one pin, move, release on the other
 inline WireItem* connectPorts(CircuitScene* scene, PortItem* from, PortItem* to)
 {
     scene->startWireConnection(from->mapToScene(QPointF(0, 0)));
@@ -75,7 +74,7 @@ QList<T*> itemsOfType(const QGraphicsScene* scene)
     return found;
 }
 
-// Types into a line edit the way a user does (replacing what is there).
+// Like a user: replaces the text
 inline void typeInto(QLineEdit* edit, const QString& text)
 {
     edit->setFocus();
@@ -83,7 +82,7 @@ inline void typeInto(QLineEdit* edit, const QString& text)
     QTest::keyClicks(edit, text);
 }
 
-// Picks an entry of a combo box the way a user does (setCurrentIndex alone does not emit activated()).
+// Like a user: setCurrentIndex alone doesn't emit activated()
 inline void choose(QComboBox* combo, const QString& text)
 {
     const int index = combo->findText(text);
@@ -92,17 +91,17 @@ inline void choose(QComboBox* combo, const QString& text)
     combo->activated(index);
 }
 
-// The HDL tests need the same external tools as the app's Compile button.
+// The tools the Compile button needs
 inline bool hdlToolsAvailable()
 {
     using namespace Qt::StringLiterals;
     const ToolPaths& tools = toolPaths();
     return QFile::exists(tools.yosys) && QFile::exists(tools.dot) && QFile::exists(tools.sv2v);
 }
-// Skip message for a test that needs them: if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
+// if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
 inline constexpr const char* MissingHdlTools = "yosys, Graphviz dot or sv2v was not found in the working directory";
 
-// The whole application window with shortcuts to the parts the tests poke at.
+// The application window, with shortcuts to what the tests use
 struct App {
     MainWindow window;
     CircuitCanvas* canvas = nullptr;
@@ -134,15 +133,14 @@ struct App {
 
     QPushButton* tool(const char* name) { return child<QPushButton>(&window, name); }
 
-    // Header of the properties panel
     QString title() const { return child<QLabel>(panel, "propertiesTitle")->text(); }
-    // Name of the component the panel offers to place next; empty while something is selected
+    // Empty while something is selected
     QString nextComponent() const
     {
         const QLabel* label = child<QLabel>(panel, "propertiesNextTitle");
         return label->isVisible() ? label->text() : QString();
     }
-    // Error shown under the editors; empty if none
+    // Empty if none
     QString message() const
     {
         const QLabel* label = child<QLabel>(panel, "propertiesMessage");
@@ -165,9 +163,9 @@ struct App {
     {
         canvas->setFocus();
         QTest::keyClick(canvas, Qt::Key_Delete);
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);   // items are removed with deleteLater()
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);   // items go with deleteLater()
         QCoreApplication::processEvents();
     }
 };
 
-} // namespace TestSupport
+}

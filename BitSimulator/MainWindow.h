@@ -19,24 +19,24 @@ public:
     ~MainWindow();
 
     ColorScheme colorScheme() const { return m_colorScheme; }
-    // Restyles the whole window. Called with the system's setting at startup and by the theme button.
+    // Restyles the whole window
     void setColorScheme(ColorScheme scheme);
 protected:
     void closeEvent(QCloseEvent* event) override;
 private:
-    // Connected explicitly in setup(); nothing here relies on Qt's on_<object>_<signal> name matching
-    void toggleSimulation();                 // the Start/Pause button
-    void showSimState(SimState state);       // makes that button say Start or Pause
-    void resetSimulation();                  // the Reset buttons: end the run, clear its waveforms
+    // Connected explicitly in setup(), no on_<object>_<signal> auto-connection
+    void toggleSimulation();                 // Start/Pause
+    void showSimState(SimState state);
+    void resetSimulation();                  // end the run, clear its waveforms
     void clearCircuit();
-    void compileHdl();                       // HDL Editor tab: the editor's text
+    void compileHdl();
     void compileFinished(bool ok);
-    void chooseCompileDir();                 // Compile Dir tab: the system's folder chooser
-    void scanCompileDir();                   // lists the .v / .sv files under the folder in the path field
-    void updateCompileDirStatus();           // "3 of 4 files selected", and whether Compile directory is enabled
-    void compileDir();                       // the checked files
+    void chooseCompileDir();
+    void scanCompileDir();                   // the .v / .sv files under the folder in the path field
+    void updateCompileDirStatus();           // "3 of 4 files selected"
+    void compileDir();
     void updateTimerPeriod(int sliderValue);
-    void toggleColorScheme();                // the light/dark button; stops following the system setting
+    void toggleColorScheme();                // stops following the system setting
 
 signals:
     void sendTimerPeriod(int milliseconds);
@@ -47,20 +47,20 @@ private:
     void setupHdlEditor();
     void setupPropertiesPanel();
     void setupColorScheme();
-    void setupWaveforms();                   // the Waveforms tab: its model follows the scene's runs
-    void updateWaveStatus();                 // "Tick 1234" / "Paused at tick ..." / "Stopped at tick ..."
-    void beginCompile(const QString& message);   // stops the simulation and disables both compile buttons
+    void setupWaveforms();
+    void updateWaveStatus();
+    void beginCompile(const QString& message);   // stops the run, disables both compile buttons
 
     Ui::BitSimulatorClass ui;
     PropertiesPanel* m_properties = nullptr;
-    FloatingPanel* m_propertiesFrame = nullptr;   // the floating box holding the panel
+    FloatingPanel* m_propertiesFrame = nullptr;
     WaveformModel* m_waveModel = nullptr;
     ColorScheme m_colorScheme = ColorScheme::Dark;
-    bool m_followSystemScheme = true;        // until the user picks a mode with the theme button
-    QString m_compileError;                  // last message from the HDL compiler, shown if the compile fails
+    bool m_followSystemScheme = true;        // until the user picks a mode
+    QString m_compileError;                  // shown if the compile fails
     bool m_compiling = false;
-    QString m_scannedDir;                    // the folder the file list shows
-    QStringList m_compileIncludeDirs;        // its folders with Verilog or header files, for `include
+    QString m_scannedDir;
+    QStringList m_compileIncludeDirs;        // for `include
     QThread *simThread, *compilerThread;
     Simulator *simObj;
     HDLCompiler *compiler;

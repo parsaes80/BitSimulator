@@ -1,11 +1,5 @@
 #pragma once
-// The components of a circuit: their properties and the canvas items that draw them.
-// The colors they are drawn with are in Theme.h.
-//
-//   1. Component properties the editable settings of every kind of component
-//   2. Canvas items         the QGraphicsItems on the canvas
-//
-// A source's properties (SourceProps) are in general.h: the simulator uses them too.
+// Component properties and the canvas items that draw them (SourceProps is in general.h)
 
 #include <QCoreApplication>
 #include <QColor>
@@ -26,10 +20,7 @@
 
 //===================== 1. Component properties ========================
 
-// The editable properties of each kind of component.
-//
-// The same types describe a component that is already on the canvas and the
-// defaults of the tool that places new ones, so one editor serves both.
+// Also the defaults of the tool that places new components, so one editor serves both
 
 struct GateProps {
     GType type = GType::AND;
@@ -39,11 +30,9 @@ struct GateProps {
 
 struct RegisterProps {
     RType type = RType::D;
-    bool edgeTriggered = true;         // true: flip-flop with a clock pin, false: latch
+    bool edgeTriggered = true;         // false: latch
     bool hasEnable = true;
-    // The reset input of a D or T flip-flop (its second pin): it sets the flip-flop to resetValue on the
-    // clock edge, or with asyncReset at once, without waiting for the clock. Compiled Verilog uses
-    // both kinds (e.g. "always @(posedge clk or posedge rst)" is asynchronous) and both values.
+    // D and T: the second pin resets to resetValue on the clock edge, or at once with asyncReset
     bool asyncReset = false;
     bool resetValue = false;
     bool operator==(const RegisterProps&) const = default;
@@ -61,7 +50,7 @@ struct DisplayProps {
     bool operator==(const DisplayProps&) const = default;
 };
 
-// One port of a block: its pins are consecutive, lowest bit first
+// Pins are consecutive, lowest bit first
 struct BlockPort {
     QString name;
     bool output = false;
@@ -69,18 +58,17 @@ struct BlockPort {
     bool operator==(const BlockPort&) const = default;
 };
 
-// A submodule instance in a compiled design, drawn as one block. Double-clicking it opens the
-// module's contents; the block itself has nothing to edit.
+// A submodule instance; double-click opens it, nothing to edit
 struct BlockProps {
     QString instance;               // e.g. "alu"
     QString module;                 // e.g. "ALU"
-    QList<BlockPort> ports;         // sorted by name; inputs on the left, outputs on the right
+    QList<BlockPort> ports;         // by name; inputs left, outputs right
     bool operator==(const BlockProps&) const = default;
 };
 
 using ItemProps = std::variant<GateProps, RegisterProps, MuxProps, SourceProps, DisplayProps, BlockProps>;
 
-// Position of T inside ItemProps; used instead of hard-coded page/tool numbers.
+// Index of T in ItemProps
 namespace detail {
 template <typename T, typename Variant> struct VariantIndex;
 template <typename T, typename... Ts>
@@ -103,13 +91,12 @@ inline constexpr int minDisplayInputs = 1, maxDisplayInputs = 8;
 inline constexpr int minDisplayOutputs = 0, maxDisplayOutputs = 8;
 }
 
-// Select lines a multiplexer needs to address `numInputs` data inputs.
 inline int muxSelectLines(int numInputs)
 {
     return std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned>(std::max(numInputs, 2) - 1))));
 }
 
-// Bring properties into a consistent state (a NOT gate has one input, a waveform has one pin, ...).
+// A consistent state: a NOT has one input, a waveform has one pin, ...
 inline GateProps normalized(GateProps p)
 {
     p.numInputs = (p.type == GType::NOT) ? 1 : std::max(p.numInputs, ItemLimits::minGateInputs);
@@ -171,7 +158,7 @@ inline QString sourceModeName(SourceMode mode)
     return {};
 }
 
-// Human-readable name of a component, e.g. "NAND gate" or "D flip-flop".
+// e.g. "NAND gate", "D flip-flop"
 inline QString itemTitle(const ItemProps& props)
 {
     struct Visitor {
@@ -192,20 +179,16 @@ inline QString itemTitle(const ItemProps& props)
     return std::visit(Visitor{}, props);
 }
 
-// The size of a component's body on the canvas (its selection outline not included), and of a port
-// tag inside a block. The HDL compiler gives these sizes to dot, so a layout leaves room for every
-// component as it is drawn. `name`: the port name a source or display of compiled code shows.
+// Body size (selection outline excluded); dot gets these so layouts fit. name: a compiled port's
 QSizeF componentSize(const ItemProps& props, const QString& name = {});
 QSizeF terminalSize(const QString& name, int width);
 
-// A gate's symbol filling `body`, with the painter's pen and brush: the AND, OR, XOR or NOT shape,
-// and for NAND, NOR and XNOR a bubble just right of it. Used on the canvas and on the toolbar.
+// Fills `body` with the gate's shape (and bubble); used on the canvas and the toolbar
 void drawGateSymbol(QPainter* painter, GType type, const QRectF& body);
 
 //===================== 2. Canvas items ========================
 
-// True while the items draw simulation values (running or paused): wires and pins in their 0/1
-// colors, a 1-pin source lit when it outputs 1. Set by CircuitScene; only the GUI thread uses it.
+// Items draw run values (running or paused); GUI thread only
 extern bool sim_values_visible;
 
 class WireItem;
@@ -227,7 +210,7 @@ public:
     QGraphicsObject* getParent() const { return dynamic_cast<QGraphicsObject*>(parentItem()); }
     void setHighlighted(bool highlighted) { m_highlighted = highlighted; update(); }
     bool getValue() const { return m_value; }
-    void setValue(bool value);              // repaints when the value changes
+    void setValue(bool value);
 
 private:
     bool m_value = false;
@@ -236,20 +219,19 @@ private:
     QList<WireItem*> m_connections;
 };
 
-// Base of everything that can be placed on the canvas and wired up.
-// Its properties can be read and changed after it has been placed.
+// Base of everything placed and wired on the canvas
 class ComponentItem : public QGraphicsObject {
     Q_OBJECT
 public:
-    // Empty on success; otherwise the reason the edit was refused (nothing is changed in that case).
+    // Error: why the edit was refused (nothing changed)
     using EditResult = std::expected<void, QString>;
 
-    // The painted area leaves room for the selection outline; clicks only count on the body itself
+    // Room for the selection outline; clicks only count on the body
     QRectF boundingRect() const override { return m_rect.adjusted(-PaintMargin, -PaintMargin, PaintMargin, PaintMargin); }
     QPainterPath shape() const override { QPainterPath body; body.addRect(m_rect.adjusted(-2, -2, 2, 2)); return body; }
 
     virtual ItemProps props() const = 0;
-    // An edit that would remove a pin which still has a wire on it is refused.
+    // Refused if it would remove a wired pin
     virtual EditResult setProps(const ItemProps& props) = 0;
     virtual QList<PortItem*> ports() const = 0;
 
@@ -258,15 +240,14 @@ public:
 protected:
     explicit ComponentItem(QGraphicsItem* parent = nullptr);
 
-    // A dashed outline SelectionMargin outside the body while the item is selected
     void drawSelection(QPainter* painter, const QStyleOptionGraphicsItem* option) const;
     static constexpr qreal SelectionMargin = 5;
     static constexpr qreal PaintMargin = SelectionMargin + 1;
 
-    // Refuses if any of ports[newCount..] is wired; `what` names the pin group, e.g. "Input".
+    // Refuses if any of ports[newCount..] is wired; `what` names them, e.g. "Input"
     static EditResult checkRemovable(const QList<PortItem*>& ports, int newCount, const QString& what);
     static EditResult checkRemovable(const PortItem* port, bool stillWanted, const QString& what);
-    // Grows or shrinks a pin list; existing pins (and the wires on them) are kept.
+    // Existing pins and their wires are kept
     void resizePorts(QList<PortItem*>& ports, int count, PortType type);
     void setOptionalPort(PortItem*& port, bool wanted, PortType type);
     void updateWires() const;                         // call after pins have moved
@@ -310,13 +291,12 @@ public:
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
     const SourceProps& sourceProps() const { return m_props; }
 
-    // The tick whose value the source shows (the simulator reports it; 0 when not running)
+    // The tick whose value it shows; 0 when not running
     u64 tick() const { return m_tick; }
     void setTick(u64 tick);
     u64 value() const { return sourceValueAt(m_props, m_tick); }
 
-    // A source made for an input port of compiled code shows the port's name at its top, and is
-    // made wide enough for it. Placed by hand, it has none.
+    // Compiled inputs show their port name; hand-placed ones have none
     const QString& name() const { return m_name; }
     void setName(const QString& name);
 
@@ -336,7 +316,7 @@ public:
 
     QRectF boundingRect() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
-    QPainterPath shape() const override;   // the path, widened so a click near it selects it
+    QPainterPath shape() const override;   // widened, so a click near it selects it
 
     void setStartPort(PortItem* port);
     void setEndPort(PortItem* port);
@@ -344,8 +324,8 @@ public:
     PortItem* getEndPort() const { return m_endPort; }
     bool isConnected() const { return m_startPort && m_endPort; }
 
-    void setEnds(QPointF start, QPointF end);   // a wire still being dragged: its two ends, in scene coordinates
-    void setValue(bool value);              // repaints when the value changes
+    void setEnds(QPointF start, QPointF end);   // while dragged, in scene coordinates
+    void setValue(bool value);
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
@@ -356,11 +336,11 @@ private:
     bool m_value = false;
     PortItem* m_startPort = nullptr;
     PortItem* m_endPort = nullptr;
-    QPainterPath path() const;   // horizontal, vertical, horizontal between the two ends
+    QPainterPath path() const;   // horizontal, vertical, horizontal
 
     QPointF localStartPos;
     QPointF localEndPos;
-    QPen m_pen;  //need pen because of outside access
+    QPen m_pen;
 };
 
 class RegisterItem : public ComponentItem {
@@ -379,7 +359,7 @@ public:
     PortItem* getOutputPort() const { return m_outputPort; }
     PortItem* getReadEnablePort() const { return m_readEnbPort; }
     PortItem* getClkPort() const { return m_clkPort; }
-    void setValue(bool value);              // repaints when the value changes
+    void setValue(bool value);
     bool getValue() const { return m_value; }
 
 private:
@@ -433,9 +413,9 @@ public:
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
     void updateValue();
-    int getValue() const { return m_value; }     // the number currently shown
+    int getValue() const { return m_value; }
 
-    // A display made for an output port of compiled code shows the port's name (see SourceItem::name)
+    // See SourceItem::name
     const QString& name() const { return m_name; }
     void setName(const QString& name);
 
@@ -449,8 +429,7 @@ private:
     QList<PortItem*> m_outputPorts;
 };
 
-// A submodule instance: a box with the instance and module name, input port pins on the left and
-// output port pins on the right, each port labelled. Double-click opens it (see CircuitScene).
+// Instance and module name, inputs left, outputs right; double-click opens it
 class BlockItem : public ComponentItem {
 public:
     explicit BlockItem(const BlockProps& props, QGraphicsItem* parent = nullptr);
@@ -458,7 +437,7 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
     ItemProps props() const override { return m_props; }
-    EditResult setProps(const ItemProps& props) override;     // always refused
+    EditResult setProps(const ItemProps& props) override;
     QList<PortItem*> ports() const override { return m_inputPorts + m_outputPorts; }
 
     const BlockProps& blockProps() const { return m_props; }
@@ -473,8 +452,7 @@ private:
     QList<PortItem*> m_outputPorts;
 };
 
-// A port of the module whose contents are shown (inside a block): an input port drives its bits
-// into the module from the left, an output port collects them on the right. Read-only.
+// A port of the module shown inside a block: inputs on the left, outputs on the right
 class TerminalItem : public QGraphicsObject {
 public:
     TerminalItem(const QString& name, bool output, int width, QGraphicsItem* parent = nullptr);
@@ -482,8 +460,8 @@ public:
     QRectF boundingRect() const override { return m_rect.adjusted(-2, -2, 2, 2); }
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
 
-    QList<PortItem*> pins() const { return m_pins; }   // outputs for an input port, inputs for an output port
-    const QString& name() const { return m_name; }      // the module port's name
+    QList<PortItem*> pins() const { return m_pins; }   // outputs for an input port, inputs for an output
+    const QString& name() const { return m_name; }
 
 private:
     QString m_name;

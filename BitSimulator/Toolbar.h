@@ -4,19 +4,17 @@
 
 class QPainter;
 
-// The component buttons of the toolbar. Each draws a small picture of its component in the
-// component's canvas colors; clicking one makes that component the next one placed (MainWindow
-// connects their clicked signals). They are promoted widgets in BitSimulator.ui.
+// Toolbar component buttons (promoted in the .ui), each drawing its component
 class ToolbarButton : public QPushButton {
     Q_OBJECT
 public:
     using QPushButton::QPushButton;
 
 protected:
-    void paintEvent(QPaintEvent* event) override;   // the button, then its picture over the middle
-    // Draws the picture with the origin at the button's centre; `size` is the room for it
+    void paintEvent(QPaintEvent* event) override;
+    // Origin at the button's centre; `size` is the room for it
     virtual void drawIcon(QPainter& painter, QSizeF size) = 0;
-    // Scales the painter so a picture drawn `design` units big fills `size`
+    // Scales so a picture `design` units big fills `size`
     static void fit(QPainter& painter, QSizeF size, QSizeF design);
     static void drawLabel(QPainter& painter, const QRectF& rect, const QString& text, int pointSize = 8, bool bold = false);
 };

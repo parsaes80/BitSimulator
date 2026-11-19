@@ -1,4 +1,4 @@
-// The Properties panel, driven through the real main window with simulated clicks and key presses.
+// The Properties panel, through the real window with simulated input
 
 #include "TestSupport.h"
 #include <QFrame>
@@ -12,8 +12,7 @@ using namespace TestSupport;
 
 namespace {
 
-// Like the spin box arrows: sets the value and lets the panel react.
-// Replaces the text of a multi-line field the way a user does
+// Replaces a multi-line field's text like a user
 void typeText(QPlainTextEdit* edit, const QString& text)
 {
     edit->setFocus();
@@ -25,6 +24,7 @@ void typeText(QPlainTextEdit* edit, const QString& text)
     }
 }
 
+// Like the spin box arrows
 void setSpin(QSpinBox* spin, int value)
 {
     spin->setFocus();
@@ -312,8 +312,7 @@ private slots:
         QWidget* titleBar = frame->titleBar();
         QWidget* viewport = app.canvas->viewport();
         const QRect area = viewport->geometry();
-        // QTest takes positions relative to the title bar, which moves with the box: after the move
-        // the mouse is over the point it grabbed again
+        // QTest positions are relative to the moving title bar, so release at the grab point
         const auto drag = [titleBar](QPoint by) {
             const QPoint grab(20, titleBar->height() / 2);
             QTest::mousePress(titleBar, Qt::LeftButton, {}, grab);

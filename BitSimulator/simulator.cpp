@@ -4,8 +4,7 @@
 #include <chrono>
 
 namespace {
-// The next value of an SR or JK register, edge-triggered or not: S (J) sets, R (K) resets, both
-// together hold an SR register and toggle a JK register, neither holds.
+// S (J) sets, R (K) resets, both hold SR and toggle JK, neither holds
 bool setOrReset(RType type, bool stored, bool set, bool reset)
 {
     if (set != reset) return set;
@@ -38,7 +37,7 @@ void Simulator::processGates(u32 changedNetId) {
 
         bool newOutput;
 
-        // AND/OR families stop at the first controlling input; XOR needs every input
+        // AND/OR families stop at the first controlling input
         switch (gate.gateType) {
         case GType::AND:
         case GType::NAND:
@@ -72,13 +71,11 @@ void Simulator::processGates(u32 changedNetId) {
             break;
         }
 
-        // ===== Check if output changed =====
         u32 outputNetId = gate.outID;
 
         bool oldValue = m_nets[outputNetId];
 
         if (oldValue != newOutput) {
-            // Output changed - update net and queue it
             m_nets[outputNetId] = newOutput;
             enqueue(outputNetId);
         }
@@ -94,25 +91,21 @@ void Simulator::processMuxes(u32 changedNetId) {
             continue;
         }
 
-        // Read address inputs and compute selected index
         u32 selectedIndex = 0;
         for (size_t i = 0; i < mux.inAddress.size(); i++) {
             u32 addrNetId = mux.inAddress[i];
             if (m_nets[addrNetId]) {
-                selectedIndex |= (1 << i);  // Build binary address
+                selectedIndex |= (1 << i);
             }
         }
 
-        // Clamp to valid range
         if (selectedIndex >= mux.inData.size()) {
             selectedIndex = mux.inData.size() - 1;
         }
 
-        // Read selected data input
         u32 selectedDataNetId = mux.inData[selectedIndex];
         bool newOutput = m_nets[selectedDataNetId];
 
-        // Update output if changed
         u32 outputNetId = mux.outID;
 
         bool oldValue = m_nets[outputNetId];
@@ -131,13 +124,12 @@ void Simulator::processRegisters(bool firstTick) {
         const bool clock = m_nets[reg.clkID];
         const bool enable = m_nets[reg.enableID];
         const bool input1 = m_nets[reg.inID];     // D, T, S or J
-        const bool input2 = m_nets[reg.InID2];    // the reset of D and T, R or K
+        const bool input2 = m_nets[reg.InID2];    // reset of D and T, R or K
 
-        const bool hasReset = reg.regType == RType::D || reg.regType == RType::T;   // their second input
+        const bool hasReset = reg.regType == RType::D || reg.regType == RType::T;
 
         if (hasClock) {
-            // Flip-flop: changes on the rising clock edge, when enabled (always, without an enable pin).
-            // An asynchronous reset acts at once, whatever the clock and enable do.
+            // Flip-flop: rising edge when enabled; an asynchronous reset acts at once
             const bool risingEdge = !firstTick && !reg.prevClkState && clock;
             reg.prevClkState = clock;
             if (hasReset && reg.asyncReset && input2) {
@@ -152,9 +144,7 @@ void Simulator::processRegisters(bool firstTick) {
             case RType::JK: reg.storedValue = setOrReset(reg.regType, reg.storedValue, input1, input2); break;
             }
         } else if (!hasEnable || enable) {
-            // Latch: follows its inputs while enabled (always, without an enable pin); a latch whose
-            // enable pin is wired but low holds its value. A JK latch with J = K = 1 has no stable value
-            // (each toggle sets off the next); it toggles once per tick, so its output shows that.
+            // Latch: follows its inputs while enabled; JK with J = K = 1 toggles once per tick
             switch (reg.regType) {
             case RType::D:
             case RType::T: reg.storedValue = input1; break;
@@ -175,21 +165,19 @@ void Simulator::processRegisters(bool firstTick) {
 void Simulator::tick() {
     const bool firstTick = m_firstTick;
     if (m_firstTick) {
-        // Every net once, including net 0 ("not connected"): a gate with only unwired inputs
-        // hangs off net 0 alone and would otherwise never be evaluated (a NOT of nothing is 1).
+        // Every net once, net 0 too: a gate with only unwired inputs would never be evaluated
         for (size_t i = 0; i < m_nets.size(); i++) {
             enqueue(i);
         }
         m_firstTick = false;
     }
 
-    // Every source puts its value for this tick on its pins (bit i on pin i)
     const u64 tick = m_tick++;
     for (const auto& source : m_sources) {
         const u64 value = sourceValueAt(source.props, tick);
         for (size_t bit = 0; bit < source.outIDs.size(); bit++) {
             const u32 net = source.outIDs[bit];
-            if (net == 0) {continue;}   // pin not connected
+            if (net == 0) {continue;}
             const u8 level = (value >> bit) & 1;
             if (m_nets[net] != level) {
                 m_nets[net] = level;
@@ -198,10 +186,7 @@ void Simulator::tick() {
         }
     }
 
-    // The gates settle on the new source values. Then, as at a clock edge in an HDL simulator, every
-    // flip-flop and latch samples what settled, and only after all have sampled do their outputs change
-    // and settle in turn. That can set off more (a flip-flop clocked by another one), so it repeats until
-    // no output changes. A new value is thus seen in the same tick as the edge that made it.
+    // Like an HDL clock edge: all registers sample what settled, then their outputs change, until nothing does
     for (auto& reg : m_registers) reg.toggledThisTick = false;
     size_t head = 0;
     int propagationSteps = 0;
@@ -212,10 +197,9 @@ void Simulator::tick() {
         settle(head, propagationSteps);
     }
 
-    // The queue now lists every net that changed in this tick, also any left over after the step limit
     recordWaveChanges(tick);
 
-    // Drop processed entries; anything left after hitting the step limit carries over to the next tick
+    // Entries left after the step limit carry over to the next tick
     m_eventQueue.erase(m_eventQueue.begin(), m_eventQueue.begin() + head);
 
     SimResult result;
@@ -225,13 +209,12 @@ void Simulator::tick() {
     for (const auto& reg : m_registers) {result.registerValues.push_back(reg.storedValue);}
 
     result.netValues = m_nets;
-    // Recorded above, before the result: whatever the result sets off (a pause, say) finds this tick in the waveforms
+    // After recording, so whatever the result sets off finds this tick in the waveforms
     sendResult(std::move(result));
 }
 
 void Simulator::settle(size_t& head, int& steps)
 {
-    // FIFO worklist; nets enqueued while processing are appended and picked up by the same loop
     while (head < m_eventQueue.size() && steps < MaxPropagationSteps) {
         const u32 changedNetId = m_eventQueue[head++];
         m_inQueue[changedNetId] = 0;
@@ -245,7 +228,7 @@ bool Simulator::driveRegisterOutputs()
 {
     bool changed = false;
     for (const auto& reg : m_registers) {
-        if (!reg.outID) continue;   // don't write to net 0
+        if (!reg.outID) continue;
         if (m_nets[reg.outID] == u8(reg.storedValue)) continue;
         m_nets[reg.outID] = reg.storedValue;
         enqueue(reg.outID);
@@ -256,7 +239,7 @@ bool Simulator::driveRegisterOutputs()
 
 void Simulator::recordWaveChanges(u64 tick)
 {
-    // A net queued twice in one tick, or changed and changed back, is compared with its last recorded value
+    // Compared with the last recorded value: a net may be queued twice or change back
     for (const u32 net : m_eventQueue) {
         const u32 slot = m_recordedSlot[net];
         if (!slot) continue;
@@ -267,7 +250,6 @@ void Simulator::recordWaveChanges(u64 tick)
     }
     m_waveChanges.lastTick = tick;
     m_waveChanges.hasTicks = true;
-    // At fast speeds many ticks go into one report; at slow ones every tick is reported at once
     if (m_sinceWaveReport.elapsed() >= WaveReportMs) reportWaveChanges();
 }
 
@@ -286,7 +268,7 @@ void Simulator::reportWaveChanges()
 
 void Simulator::receiveCircuit(ExportGraph graph){
 
-    reportWaveChanges();   // the end of a run that was not stopped first
+    reportWaveChanges();   // a run that was not stopped first
     clearCircuit();
 
     m_gates = graph.gates;
@@ -307,7 +289,7 @@ void Simulator::receiveCircuit(ExportGraph graph){
     m_waveChanges = WaveChanges{};
     m_waveChanges.runId = graph.runId;
     m_sinceWaveReport.start();
-    const size_t numNets = graph.numNets;   // sent with the circuit; the GUI's wire map is not ours to read
+    const size_t numNets = graph.numNets;   // the GUI's wire map is not ours to read
     m_nets.assign(numNets + 1, 0);
     m_inQueue.assign(numNets + 1, 0);
     m_eventQueue.reserve(numNets + 1);
@@ -317,7 +299,6 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
     for (size_t gateIdx = 0; gateIdx < m_gates.size(); gateIdx++) {
         Gate& gate = m_gates[gateIdx];
-        // Net 0 gets a fan-out list too. It never changes, so this only costs one evaluation on the first tick.
         for (auto inputNetId: gate.inIDs) {
             m_gateFanout[inputNetId].push_back(gateIdx);
         }
@@ -339,10 +320,9 @@ void Simulator::receiveCircuit(ExportGraph graph){
 
     m_running = true;
 
-    // Produce the first values right away; waiting for the timer would leave the canvas showing
-    // a running circuit with no values for up to one tick period (a full second at slow speeds).
+    // The first values at once, not one timer period later
     tick();
-    if (m_timer) m_timer->start();   // the next tick comes one whole period from now
+    if (m_timer) m_timer->start();
 }
 
 void Simulator::setRunning(bool running) {
@@ -352,7 +332,7 @@ void Simulator::setRunning(bool running) {
 
 void Simulator::unloadCircuit() {
     m_running = false;
-    reportWaveChanges();                 // the waveforms keep the stopped run, up to its last tick
+    reportWaveChanges();
     m_recordedNets.clear();
     m_recordedValues.clear();
     m_recordedSlot.clear();

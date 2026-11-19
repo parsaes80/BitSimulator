@@ -24,8 +24,7 @@ class QSpinBox;
 class QStackedWidget;
 class QToolButton;
 
-// A row of steps drawn as a digital waveform; clicking a step flips it between 0 and 1.
-// Long patterns show their first MaxShownSteps steps; the rest are edited as text.
+// Click a step to flip it; past MaxShownSteps the pattern is edited as text
 class WaveformEditor : public QWidget {
     Q_OBJECT
 public:
@@ -41,7 +40,7 @@ public:
     int shownSteps() const;
 
 signals:
-    void valuesEdited(const QList<bool>& values);   // only emitted for clicks, not for setValues()
+    void valuesEdited(const QList<bool>& values);   // clicks only, not setValues()
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -53,27 +52,22 @@ private:
     QList<bool> m_values;
 };
 
-// The inspector beside the canvas.
-//
-// With one component selected it shows and edits that component. With nothing
-// selected it shows the defaults of the active tool, i.e. what the next placed
-// component will look like. Both cases use the same editors because both are
-// described by ItemProps.
+// Edits the selected component, or with nothing selected the active tool's defaults
 class PropertiesPanel : public QWidget {
     Q_OBJECT
 public:
     explicit PropertiesPanel(CircuitScene* scene, QWidget* parent = nullptr);
 
-    // Running: the circuit is read-only, so the editors are disabled. Paused: a notice explains what an edit does.
+    // Running: editors disabled; Paused: a notice says an edit ends the run
     void showSimState(SimState state);
 
 private:
-    void refresh();                         // selection or tool changed: decide what to show
-    void load(const ItemProps& props);      // put properties into the editors
-    void commit(const ItemProps& props);    // apply an edit to the selected component or the tool defaults
+    void refresh();
+    void load(const ItemProps& props);
+    void commit(const ItemProps& props);    // to the selected component or the tool defaults
     void showMessage(const QString& text);
 
-    // Takes the properties on screen, lets `change` modify them, and applies the result.
+    // Applies `change` to the properties on screen
     template <typename Props, typename Change>
     void edit(Change&& change);
 
@@ -89,30 +83,30 @@ private:
     void loadRegister(const RegisterProps& props);
     void loadMux(const MuxProps& props);
     void loadSource(const SourceProps& props);
-    void setWavePinCount(int count);        // one pattern row per source pin
-    void selectWavePin(int pin);            // the pin whose pattern the click editor shows
+    void setWavePinCount(int count);
+    void selectWavePin(int pin);            // the pin whose pattern the editor shows
     void loadDisplay(const DisplayProps& props);
     void loadBlock(const BlockProps& props);
 
     CircuitScene* m_scene;
-    QPointer<ComponentItem> m_item;         // the selected component, or null when editing tool defaults
-    ItemProps m_shown;                      // what the editors currently display
-    bool m_loading = false;                 // true while load() fills the editors, so they do not commit
+    QPointer<ComponentItem> m_item;         // null: editing tool defaults
+    ItemProps m_shown;
+    bool m_loading = false;                 // so filling the editors doesn't commit
     bool m_locked = false;
 
     QLabel* m_title = nullptr;
     QLabel* m_subtitle = nullptr;
-    QWidget* m_nextSection = nullptr;       // heading shown above the editors when nothing is selected
+    QWidget* m_nextSection = nullptr;       // shown when nothing is selected
     QLabel* m_nextTitle = nullptr;
     QLabel* m_placeHint = nullptr;
     QStackedWidget* m_pages = nullptr;
-    std::array<QWidget*, std::variant_size_v<ItemProps>> m_kindPages{};   // the editor page of each kind, by itemKind
+    std::array<QWidget*, std::variant_size_v<ItemProps>> m_kindPages{};   // by itemKind
     QLabel* m_info = nullptr;
     QLabel* m_message = nullptr;
     QLabel* m_lockNotice = nullptr;
-    QWidget* m_nameRow = nullptr;            // "Name" of a selected source or display
+    QWidget* m_nameRow = nullptr;            // sources and displays only
     QLineEdit* m_name = nullptr;
-    void renameSelected();                   // applies the Name field to the selected source or display
+    void renameSelected();
 
     QComboBox* m_gateType = nullptr;
     QLabel* m_gateTypeLabel = nullptr;
@@ -130,22 +124,20 @@ private:
     QSpinBox* m_muxInputs = nullptr;
     QLabel* m_muxInfo = nullptr;
 
-    // Source: the settings every mode has, then one page of settings per kind of mode
     QComboBox* m_sourceMode = nullptr;
     QFormLayout* m_sourceForm = nullptr;
     QSpinBox* m_sourceBits = nullptr;
-    QSpinBox* m_sourceEvery = nullptr;      // a new value every N ticks
-    QCheckBox* m_sourceRepeat = nullptr;    // List and Waveforms: start again, or hold the last value
-    QList<QWidget*> m_sourcePages;          // in SourcePage order; only the current one is shown, so
-                                            // the panel is exactly as tall as the settings in view
-    QFormLayout* m_sequenceForm = nullptr;  // counter, Gray code and walking one share a page
+    QSpinBox* m_sourceEvery = nullptr;      // N ticks per value
+    QCheckBox* m_sourceRepeat = nullptr;    // List, Waveforms: repeat or hold the last value
+    QList<QWidget*> m_sourcePages;          // only the current one is shown, so the panel fits it
+    QFormLayout* m_sequenceForm = nullptr;  // counter, Gray code, walking one
     QButtonGroup* m_sourceDirection = nullptr;
     QLineEdit* m_sourceStart = nullptr;
     QLineEdit* m_sourceStep = nullptr;
     QSpinBox* m_sourceSeed = nullptr;
     QPlainTextEdit* m_sourceList = nullptr;
     QLabel* m_sourceListCount = nullptr;
-    QWidget* m_wavePins = nullptr;          // a row per pin: pin button + pattern
+    QWidget* m_wavePins = nullptr;          // per pin: button + pattern
     QScrollArea* m_wavePinsScroll = nullptr;
     QList<QLineEdit*> m_wavePatterns;
     QButtonGroup* m_wavePinGroup = nullptr;
@@ -153,24 +145,18 @@ private:
     QLabel* m_waveEditorLabel = nullptr;
     WaveformEditor* m_waveEditor = nullptr;
     QLineEdit* m_sourceConstant = nullptr;
-    QLabel* m_sourcePreview = nullptr;      // the first few values, so the effect of a setting is visible
+    QLabel* m_sourcePreview = nullptr;      // the first few values
     QLabel* m_sourceInfo = nullptr;
 
     QSpinBox* m_displayInputs = nullptr;
     QSpinBox* m_displayOutputs = nullptr;
 };
 
-// A box floating over an area of its parent widget (the properties panel over the canvas).
-//
-// It has a title bar and its content below. Dragging the title bar moves the box anywhere inside the
-// area; the button at its right, or a double-click on the title bar, minimizes it to just the title bar.
-// It starts in the top-right corner, 2/3 of the area high. Moved, it keeps its distance from the
-// nearer side and from the top when the area is resized, and it never leaves the area: moved down, an
-// open box gets shorter and its content scrolls.
+// A box over the canvas: drag its title to move it, ▴/▾ or double-click minimizes; stays inside
 class FloatingPanel : public QFrame {
     Q_OBJECT
 public:
-    // `area` is the widget the box stays over (the canvas viewport); it must be a child of `parent`.
+    // `area` (the canvas viewport) must be a child of `parent`
     FloatingPanel(const QString& title, QWidget* content, QWidget* area, QWidget* parent);
 
     bool isMinimized() const { return m_minimized; }
@@ -179,25 +165,25 @@ public:
     QWidget* titleBar() const { return m_titleBar; }
 
 protected:
-    bool eventFilter(QObject* watched, QEvent* event) override;   // title bar drags; area resizes
+    bool eventFilter(QObject* watched, QEvent* event) override;   // title drags, area resizes
 
 private:
-    void place();                                     // geometry from the stored position and the area's size
-    void moveTo(QPoint topLeft);                      // top-left within the area, as dragged
+    void place();                                     // from the stored position and the area's size
+    void moveTo(QPoint topLeft);                      // within the area
     int minimizedHeight() const;
-    int openMinimumHeight() const;                    // an open box is never shorter than this
+    int openMinimumHeight() const;
 
     QWidget* m_area;
     QWidget* m_titleBar;
     QToolButton* m_minimizeButton;
-    QWidget* m_body;                                  // the content and the line above it; hidden when minimized
+    QWidget* m_body;                                  // hidden when minimized
     bool m_minimized = false;
 
-    // Where the box is: its distance from the area's top, and from its left or right side
+    // Distance from the area's top and from its nearer side
     bool m_fromRight = true;
     QPoint m_offset{12, 12};
 
     bool m_dragging = false;
     QPointF m_dragStartGlobal;
-    QPoint m_dragStartPos;                            // the box's top-left in the area when the drag began
+    QPoint m_dragStartPos;                            // in the area
 };

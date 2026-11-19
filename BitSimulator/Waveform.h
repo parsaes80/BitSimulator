@@ -1,15 +1,5 @@
 #pragma once
-// The Waveforms tab: the values of the circuit's inputs and outputs, and of its blocks' ports, over
-// the ticks of a run, like the wave window of an HDL simulator.
-//
-//   1. WaveHistory    what the simulator recorded: for every recorded net, the ticks it changed at
-//   2. formatValue    a value as text, in the radix chosen for its signal
-//   3. WaveformModel  the run's signals, which of them are shown and how, and their history
-//   4. WaveformView   draws the shown signals over the ticks: zoom, pan, cursors
-//   5. WaveSignalTree the circuit and its block instances, with a check box per port to show it
-//
-// The simulator records the changes in its own thread (Simulator::sendWaveChanges); this side only
-// keeps and reads them.
+// The Waveforms tab: the recorded history, its model, the view and the signal tree
 
 #include <QObject>
 #include <QPoint>
@@ -24,13 +14,11 @@
 
 //===================== 1. WaveHistory ========================
 
-// A net's value at a tick is the value it started the history with, flipped once per change up to
-// and including that tick. Ticks are kept per net, so a net that never changes costs nothing.
+// Ticks are kept per net; a net's value is its start value flipped once per change
 class WaveHistory {
 public:
-    // A new, empty history for the nets of a run
     void start(u32 runId, const std::vector<u32>& recordedNets);
-    // Adds a report of the run; false (and nothing added) for a report of another run
+    // False (nothing added) for another run's report
     bool add(const WaveChanges& changes);
 
     u32 runId() const { return m_runId; }
@@ -39,22 +27,20 @@ public:
     u64 lastTick() const { return m_lastTick; }     // the newest tick recorded
     size_t changeCount() const { return m_changeCount; }
 
-    // The value of a net after `tick`. Net 0 is always 0, WaveSignal::AlwaysOne always 1, and a net
-    // that is not recorded reads 0.
+    // Net 0 and unrecorded nets read 0, WaveSignal::AlwaysOne reads 1
     bool bit(u32 net, u64 tick) const;
-    // How many times a net changes at ticks from..to (both included)
+    // from..to inclusive
     size_t changesBetween(u32 net, u64 from, u64 to) const;
-    // The first tick after `tick` at which the net changes, if it does
     std::optional<u64> nextChange(u32 net, u64 tick) const;
 
-    // The most changes kept (8 bytes each). Beyond it the oldest quarter of the ticks is dropped.
+    // 8 bytes each; beyond it the oldest quarter is dropped
     static constexpr size_t MaxChanges = size_t(32) << 20;
     void setMaxChanges(size_t changes) { m_maxChanges = changes; }   // for the tests
 
 private:
     struct Net {
-        bool startValue = false;         // its value at m_firstTick - 1, before the kept changes
-        std::vector<u64> ticks;          // the ticks it changed at, oldest first
+        bool startValue = false;         // at m_firstTick - 1
+        std::vector<u64> ticks;          // oldest first
     };
     const Net* net(u32 id) const;
     void dropOldest();
@@ -73,19 +59,17 @@ private:
 
 enum class Radix { Hex, Unsigned, Signed, Binary };
 
-// `bits` lowest bit first, of any width. Hex and binary show every digit of the width ("0f" for 8
-// bits); Signed reads the top bit as the sign (two's complement).
+// `bits` lowest first, any width; hex and binary keep every digit ("0f" for 8 bits)
 QString formatValue(const std::vector<bool>& bits, Radix radix);
 QString radixName(Radix radix);
 
 //===================== 3. WaveformModel ========================
 
-// One row of the waveform: a signal, or one part of a bus that was expanded: a single bit, or a
-// word of a bus split into words (a register file that reached the netlist as one wide port)
+// A signal, or one bit or word of an expanded bus
 struct WaveRow {
-    int signal = -1;         // index in WaveformModel::signalList()
-    int bit = -1;            // -1: the whole signal; otherwise the part's lowest bit
-    int width = 1;           // the part's bits (the top word of a split may be narrower than the rest)
+    int signal = -1;         // in signalList()
+    int bit = -1;            // -1: the whole signal; else the part's lowest bit
+    int width = 1;           // the top word may be narrower
 };
 
 class WaveformModel : public QObject {
@@ -93,19 +77,14 @@ class WaveformModel : public QObject {
 public:
     explicit WaveformModel(QObject* parent = nullptr) : QObject(parent) {}
 
-    // A run starts: its signals (CircuitScene::waveSignals) and the nets the simulator records.
-    // `topName` names the circuit itself in the design tree (the compiled design's top module).
-    // The shown signals that still exist stay shown; inputs and outputs of the circuit that the
-    // last run did not have are shown too. After resetSignals(), all of the circuit's are shown.
+    // Still-existing shown signals stay; the circuit's new inputs and outputs are added
     void startRun(u32 runId, const QList<WaveSignal>& runSignals, const std::vector<u32>& recordedNets, const QString& topName);
-    // The simulator's reports
     void addChanges(const WaveChanges& changes);
-    // A new circuit (a compile, or Clear): forget the run, and show the next run's inputs and outputs
+    // A new circuit: forget it all; the next run shows its inputs and outputs
     void resetSignals();
-    // The run ended (the simulator reports its last ticks itself); its history stays until the next run
+    // The history stays until the next run
     void stopRun();
-    // Reset: forget the run's history, also the reports of it still on their way; the shown signals
-    // and their settings stay for the next run
+    // Forgets the history, and late reports of the run; shown signals stay
     void clearHistory();
 
     const QList<WaveSignal>& signalList() const { return m_signals; }
@@ -115,37 +94,33 @@ public:
     bool hasRun() const { return !m_signals.isEmpty() || !m_history.isEmpty(); }
 
     //----- What is shown -----
-    QList<WaveRow> rows() const;                 // the shown signals, with the bits of expanded buses
+    QList<WaveRow> rows() const;                 // with the parts of expanded buses
     bool isShown(int signal) const;
-    void show(int signal);                       // added at the end; nothing if already shown
+    void show(int signal);                       // at the end
     void hide(int signal);
-    void move(int signal, int by);               // up (-1) or down (+1) among the shown signals
+    void move(int signal, int by);               // -1 up, +1 down
     Radix radix(int signal) const;
     void setRadix(int signal, Radix radix);
-    // An expanded bus shows its parts under it: single bits, or words of wordBits() bits. Collapsing
-    // keeps the word size for the next expand.
+    // Collapsing keeps the word size for the next expand
     bool isExpanded(int signal) const;
     void setExpanded(int signal, bool expanded);
     int wordBits(int signal) const;               // 1 = single bits
-    void splitIntoWords(int signal, int bits);    // expands it into words of `bits` bits (1 = bits)
+    void splitIntoWords(int signal, int bits);    // also expands it
 
     //----- Values -----
-    // The bits of a row after a tick, lowest first (one for a bit row)
+    // Lowest first
     std::vector<bool> bitsAt(const WaveRow& row, u64 tick) const;
-    // The text of a row's value after a tick, in its signal's radix
     QString valueText(const WaveRow& row, u64 tick) const;
-    // The row's label: "a[3:0]" for the circuit's own, "u/h0/s" for a block's port, "a[2]" for a bit,
-    // "regs[2]" for the third word of a split
+    // "a[3:0]", "u/h0/s" (block port), "a[2]" (bit or word)
     QString label(const WaveRow& row) const;
-    // The nets a row is made of, lowest bit first
     std::vector<u32> netsOf(const WaveRow& row) const;
 
-    // A signal's identity across runs: its scope and name
+    // Identity across runs: scope and name
     static QString keyOf(const WaveSignal& signal);
 
 signals:
-    void signalsChanged();   // a run started, or the shown signals or their settings changed
-    void historyGrew();      // new ticks arrived
+    void signalsChanged();   // also when the shown signals or their settings change
+    void historyGrew();
 
 private:
     struct Shown {
@@ -154,13 +129,13 @@ private:
         bool expanded = false;
         int wordBits = 1;
     };
-    int shownIndex(int signal) const;            // index in m_shown, or -1
+    int shownIndex(int signal) const;            // or -1
 
     QList<WaveSignal> m_signals;
-    QStringList m_keys;                          // keyOf() of each signal
-    QList<Shown> m_shown;                        // in the order they are shown
-    QSet<QString> m_known;                       // the keys of the last run's signals
-    bool m_reset = true;                         // show all of the circuit's inputs and outputs at the next start
+    QStringList m_keys;
+    QList<Shown> m_shown;
+    QSet<QString> m_known;                       // the last run's signals
+    bool m_reset = true;                         // show all inputs and outputs at the next start
     QString m_topName;
     WaveHistory m_history;
     bool m_running = false;
@@ -172,18 +147,13 @@ class QScrollBar;
 class QTreeWidget;
 class QTreeWidgetItem;
 
-// The shown signals, one row each: name | value at the cursor | the waves. A tick t covers the
-// pixels from xOf(t) to xOf(t + 1); its value is the value after that tick.
-//   Wheel: back and forward in time. Shift+wheel: scroll the rows. Ctrl+wheel: zoom around the pointer.
-//   Left-drag: pan. Click: the cursor. Shift+click: a second cursor; the ruler shows the ticks between.
-//   Right-click a row: radix, expand or collapse a bus, split it into words, move, remove. Delete removes the selected row.
+// Rows of name | value at the cursor | waves; tick t covers xOf(t)..xOf(t + 1)
 class WaveformView : public QWidget {
     Q_OBJECT
 public:
     explicit WaveformView(QWidget* parent = nullptr);
     void setModel(WaveformModel* model);
 
-    // The waves' area, and how ticks map to it
     QRect waveArea() const;
     double tickAt(double x) const;
     double xOf(double tick) const;
@@ -195,21 +165,21 @@ public:
     void setCursorTick(std::optional<u64> tick);
     void setSecondCursorTick(std::optional<u64> tick);
 
-    // Follow: while the run goes on, keep its newest tick at the right edge. Panning turns it off.
+    // Keeps the newest tick at the right edge while running; panning turns it off
     bool follows() const { return m_follow; }
     void setFollow(bool follow);
 
     void zoomIn();
     void zoomOut();
     void zoomToFit();
-    void zoomAround(double x, double factor);   // factor < 1 zooms in; the tick at x stays at x
+    void zoomAround(double x, double factor);   // factor < 1 zooms in; the tick at x stays put
 
-    int selectedRow() const { return m_selected; }   // index in the model's rows(), or -1
-    int rowAt(int y) const;                           // the row under a y, or -1
+    int selectedRow() const { return m_selected; }   // in rows(), or -1
+    int rowAt(int y) const;                           // or -1
 
     static constexpr int RowHeight = 26;
     static constexpr int RulerHeight = 26;
-    static constexpr double MinTicksPerPixel = 1.0 / 200;   // zoomed in to 200 pixels per tick
+    static constexpr double MinTicksPerPixel = 1.0 / 200;   // 200 pixels per tick
 
 signals:
     void followChanged(bool follow);
@@ -229,10 +199,10 @@ protected:
 private:
     void signalsChanged();
     void historyGrew();
-    void layoutParts();                    // the columns' widths and the scroll bars' places
-    void clampView();                      // keeps the view on the recorded ticks
+    void layoutParts();                    // column widths, scroll bar places
+    void clampView();                      // on the recorded ticks
     void updateScrollBars();
-    void scrollTime(double pixels);        // positive: forward in time
+    void scrollTime(double pixels);        // positive: forward
     void scrollRows(int pixels);
     int rowsHeight() const { return int(m_rows.size()) * RowHeight; }
     std::optional<u64> nextChange(const std::vector<u32>& nets, u64 tick) const;   // of any of the nets
@@ -240,22 +210,22 @@ private:
     void paintWaves(QPainter& painter, const WaveRow& row, int top);
     void paintCursor(QPainter& painter, u64 tick, const QColor& color);
     QString rulerText(u64 tick) const;
-    std::optional<QRect> measureLabel() const;   // "Δ 16 ticks" on the ruler, between the two cursors
+    std::optional<QRect> measureLabel() const;   // "Δ 16 ticks" between the cursors
     void showRowMenu(int row, const QPoint& globalPos);
 
     WaveformModel* m_model = nullptr;
     QList<WaveRow> m_rows;
     int m_nameWidth = 140;
     int m_valueWidth = 96;
-    double m_leftTick = 0;                 // the tick at the waves' left edge (may be fractional)
-    double m_ticksPerPixel = 1.0 / 20;     // 20 pixels per tick to start with
-    int m_scrollY = 0;                     // rows scrolled out at the top, in pixels
+    double m_leftTick = 0;                 // may be fractional
+    double m_ticksPerPixel = 1.0 / 20;
+    int m_scrollY = 0;                     // pixels
     bool m_follow = true;
     std::optional<u64> m_cursor;
     std::optional<u64> m_cursor2;
     int m_selected = -1;
 
-    // A left press in the waves: a click (cursor) unless the mouse moves; then a pan
+    // A press in the waves is a click (cursor) unless the mouse moves (pan)
     bool m_pressed = false;
     bool m_panning = false;
     QPoint m_pressPos;
@@ -264,26 +234,25 @@ private:
 
     QScrollBar* m_hbar = nullptr;
     QScrollBar* m_vbar = nullptr;
-    double m_hbarScale = 1;                // pixels per scroll bar step, so long runs fit its int range
+    double m_hbarScale = 1;                // so long runs fit the bar's int range
     bool m_updatingBars = false;
 };
 
 //===================== 5. WaveSignalTree ========================
 
-// Fills a QTreeWidget (two columns: name, in/out) with the circuit, its block instances and their
-// ports. A port's check box shows or hides it in the waveforms; an instance's, all of its ports.
+// Checkable tree of the circuit, its instances and their ports; checks show signals
 class WaveSignalTree : public QObject {
     Q_OBJECT
 public:
     WaveSignalTree(QTreeWidget* tree, WaveformModel* model, QObject* parent = nullptr);
 
 private:
-    void refresh();                        // rebuilds the tree for a new run, else updates the checks
+    void refresh();                        // rebuilds for a new run, else updates the checks
     void rebuild();
     void itemChanged(QTreeWidgetItem* item, int column);
 
     QTreeWidget* m_tree;
     WaveformModel* m_model;
-    QStringList m_builtFor;                // the keys of the signals the tree shows
+    QStringList m_builtFor;
     bool m_filling = false;
 };

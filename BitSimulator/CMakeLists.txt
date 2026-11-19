@@ -43,17 +43,11 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
 
     )
-# Define target properties for Android with Qt 6 as:
-#    set_property(TARGET BitSimulator APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
-# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
 else()
     if(ANDROID)
         add_library(BitSimulator SHARED
             ${PROJECT_SOURCES}
         )
-# Define properties for Android with Qt 5 after find_package() calls as:
-#    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
     else()
         add_executable(BitSimulator
             ${PROJECT_SOURCES}
@@ -63,16 +57,11 @@ endif()
 
 target_include_directories(BitSimulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# main.cpp and MainWindow.cpp include ui_BitSimulator.h, which AUTOUIC makes from the .ui. Should the
-# build miss that header changing, the two would disagree about MainWindow's layout and the app would
-# crash; depending on the .ui itself makes sure both are compiled again after it changes.
+# AUTOUIC changes to ui_BitSimulator.h aren't always noticed; a stale layout crashes the app
 set_source_files_properties(main.cpp MainWindow.cpp PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/BitSimulator.ui)
 
 target_link_libraries(BitSimulator PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
-# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
-# If you are developing for iOS or macOS you should consider setting an
-# explicit, fixed bundle identifier manually though.
 if(${QT_VERSION} VERSION_LESS 6.1.0)
   set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.BitSimulator)
 endif()

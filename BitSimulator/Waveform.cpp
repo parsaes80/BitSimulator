@@ -82,7 +82,7 @@ std::optional<u64> WaveHistory::nextChange(u32 id, u64 tick) const
 
 void WaveHistory::dropOldest()
 {
-    // Each round drops the oldest quarter of the kept ticks; a net remembers the value it had then
+    // Drop the oldest quarter; each net keeps the value it had then
     while (m_changeCount > m_maxChanges && m_firstTick < m_lastTick) {
         const u64 cutoff = m_firstTick + std::max<u64>(1, (m_lastTick - m_firstTick) / 4);
         for (Net& n : m_nets) {
@@ -101,7 +101,7 @@ void WaveHistory::dropOldest()
 
 namespace {
 
-// A non-negative number of any width as decimal digits: repeated division by 10 of 32-bit words
+// Any width: repeated division by 10 over 32-bit words
 QString decimal(const std::vector<bool>& bits)
 {
     std::vector<u32> words((bits.size() + 31) / 32, 0);
@@ -122,7 +122,7 @@ QString decimal(const std::vector<bool>& bits)
     return digits.isEmpty() ? u"0"_s : digits;
 }
 
-} // namespace
+}
 
 QString formatValue(const std::vector<bool>& bits, Radix radix)
 {
@@ -152,7 +152,7 @@ QString formatValue(const std::vector<bool>& bits, Radix radix)
         return decimal(bits);
     case Radix::Signed: {
         if (!bits.back()) return decimal(bits);
-        // Negative: the magnitude is the two's complement (invert, add 1)
+        // Negative: magnitude by two's complement
         std::vector<bool> magnitude(width);
         bool carry = true;
         for (size_t i = 0; i < width; i++) {
@@ -181,7 +181,7 @@ QString radixName(Radix radix)
 
 QString WaveformModel::keyOf(const WaveSignal& signal)
 {
-    return signal.scope + QChar(0x1f) + signal.name;   // a character no name or path contains
+    return signal.scope + QChar(0x1f) + signal.name;   // a character no name contains
 }
 
 void WaveformModel::startRun(u32 runId, const QList<WaveSignal>& runSignals, const std::vector<u32>& recordedNets, const QString& topName)
@@ -194,14 +194,14 @@ void WaveformModel::startRun(u32 runId, const QList<WaveSignal>& runSignals, con
     m_running = true;
 
     if (m_reset) {
-        // A new circuit: all of its inputs and outputs, in the order the canvas lists them
+        // A new circuit: all of its inputs and outputs
         m_shown.clear();
         for (const WaveSignal& signal : std::as_const(m_signals)) {
             if (signal.scope.isEmpty()) m_shown.append({keyOf(signal)});
         }
         m_reset = false;
     } else {
-        // The same circuit, maybe edited: what is still there stays, and new inputs and outputs are added
+        // The same circuit: what still exists stays, new inputs and outputs are added
         const QSet<QString> keys(m_keys.begin(), m_keys.end());
         m_shown.removeIf([&keys](const Shown& shown) { return !keys.contains(shown.key); });
         for (const WaveSignal& signal : std::as_const(m_signals)) {
@@ -241,7 +241,7 @@ void WaveformModel::stopRun()
 
 void WaveformModel::clearHistory()
 {
-    m_history = WaveHistory{};   // run id 0: takes no reports
+    m_history = WaveHistory{};   // run id 0 takes no reports
     m_running = false;
     emit signalsChanged();
     emit historyGrew();
@@ -266,7 +266,7 @@ QList<WaveRow> WaveformModel::rows() const
         const int width = m_signals[signal].width();
         result.append({signal, -1, width});
         if (shown.expanded && width > 1) {
-            // The top part first; words start at multiples of the word size from bit 0
+            // Top part first; words start at multiples of the size from bit 0
             const int size = std::clamp(shown.wordBits, 1, width);
             for (int bit = (width - 1) / size * size; bit >= 0; bit -= size) result.append({signal, bit, std::min(size, width - bit)});
         }
@@ -388,12 +388,12 @@ QString WaveformModel::label(const WaveRow& row) const
 
 namespace {
 constexpr int ScopeSpacing = 6;          // between columns
-constexpr int MinSegmentPx = 2;          // narrower segments are drawn as one dense band
-constexpr int ArrowWidth = 14;           // the expand arrow before a bus's name
-constexpr int WaveMargin = 5;            // between a row's edge and its high or low level
-constexpr int DragThreshold = 4;         // pixels the mouse moves before a press becomes a pan
+constexpr int MinSegmentPx = 2;          // narrower ones become a dense band
+constexpr int ArrowWidth = 14;           // a bus's expand arrow
+constexpr int WaveMargin = 5;            // row edge to high or low level
+constexpr int DragThreshold = 4;         // before a press becomes a pan
 
-// A step for the ruler's labels: 1, 2 or 5 times a power of ten, at least `minimum` ticks
+// 1, 2 or 5 times a power of ten, at least `minimum`
 u64 niceStep(double minimum)
 {
     u64 power = 1;
@@ -405,7 +405,7 @@ u64 niceStep(double minimum)
         power *= 10;
     }
 }
-} // namespace
+}
 
 WaveformView::WaveformView(QWidget* parent)
     : QWidget(parent)
@@ -442,8 +442,7 @@ void WaveformView::signalsChanged()
     m_rows = m_model ? m_model->rows() : QList<WaveRow>{};
     if (m_selected >= m_rows.size()) m_selected = -1;
     if (!m_model || m_model->history().isEmpty()) {
-        // No ticks (a run about to start from tick 0, a reset, a new circuit): no cursors, follow the
-        // newest tick at the starting zoom
+        // No ticks (new run, reset, new circuit): no cursors, follow at the starting zoom
         m_cursor.reset();
         m_cursor2.reset();
         m_leftTick = 0;
@@ -482,7 +481,7 @@ double WaveformView::xOf(double tick) const
 
 void WaveformView::layoutParts()
 {
-    // The name column fits the longest label, within limits
+    // Fits the longest label, within limits
     const QFontMetrics metrics(font());
     int longest = metrics.horizontalAdvance(tr("Signal"));
     if (m_model) {
@@ -540,7 +539,7 @@ void WaveformView::updateScrollBars()
     const double first = double(history.firstTick());
     const double totalPx = (double(history.lastTick()) + 1 - first) / m_ticksPerPixel;
     const double width = std::max(1, waveArea().width());
-    m_hbarScale = std::max(1.0, totalPx / 1e9);              // keep the range within an int
+    m_hbarScale = std::max(1.0, totalPx / 1e9);              // keeps the range within an int
     m_hbar->setRange(0, int(std::max(0.0, (totalPx - width) / m_hbarScale)));
     m_hbar->setPageStep(int(width / m_hbarScale));
     m_hbar->setSingleStep(std::max(1, int(40 / m_hbarScale)));
@@ -610,7 +609,7 @@ int WaveformView::rowAt(int y) const
 void WaveformView::scrollTime(double pixels)
 {
     if (pixels == 0) return;
-    setFollow(false);   // like a drag: moving through the run stops following its end
+    setFollow(false);   // like a drag
     m_leftTick += pixels * m_ticksPerPixel;
     clampView();
     update();
@@ -657,7 +656,6 @@ void WaveformView::paintEvent(QPaintEvent*)
 
     paintRuler(painter);
 
-    // The rows: name | value | waves
     const WaveHistory& history = m_model->history();
     const std::optional<u64> at = m_cursor ? m_cursor : (history.isEmpty() ? std::nullopt : std::optional<u64>(history.lastTick()));
     QFont valueFont = font();
@@ -675,7 +673,7 @@ void WaveformView::paintEvent(QPaintEvent*)
 
         if (i == m_selected) painter.fillRect(QRect(0, top, waves.left(), RowHeight), theme.buttonChecked);
 
-        // Name, with an arrow for a bus; a bit of an expanded bus is indented under it
+        // A bus gets an arrow; parts of an expanded bus are indented
         const WaveSignal& signal = m_model->signalList()[row.signal];
         int textLeft = 6 + ArrowWidth;
         if (row.bit < 0 && signal.width() > 1) {
@@ -688,7 +686,7 @@ void WaveformView::paintEvent(QPaintEvent*)
         painter.drawText(QRect(textLeft, top, m_nameWidth - textLeft - 4, RowHeight), Qt::AlignVCenter | Qt::AlignLeft,
                          nameMetrics.elidedText(m_model->label(row), Qt::ElideLeft, m_nameWidth - textLeft - 4));
 
-        // The value at the cursor (or at the newest tick)
+        // At the cursor, or the newest tick
         if (at) {
             painter.setFont(valueFont);
             painter.setPen(theme.text);
@@ -704,7 +702,6 @@ void WaveformView::paintEvent(QPaintEvent*)
     }
     painter.restore();
 
-    // The cursors over everything, and the ticks between them
     if (m_cursor2) paintCursor(painter, *m_cursor2, theme.waveCursor2);
     if (m_cursor) paintCursor(painter, *m_cursor, theme.waveCursor);
     if (const std::optional<QRect> pill = measureLabel()) {
@@ -742,8 +739,7 @@ void WaveformView::paintRuler(QPainter& painter)
     painter.drawLine(0, RulerHeight - 1, width(), RulerHeight - 1);
     if (history.isEmpty()) return;
 
-    // Labels at least 70 pixels apart, at round ticks; a faint line down through the rows at each.
-    // A label under the measuring label is left out.
+    // Labels at round ticks, at least 70 px apart, none under the measuring label
     const std::optional<QRect> measure = measureLabel();
     const QFontMetrics metrics(font());
     const u64 step = niceStep(70 * m_ticksPerPixel);
@@ -799,7 +795,7 @@ void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
     const QPen line(theme.wireHigh, 1.5);
     const QFontMetrics metrics(font());
 
-    std::optional<bool> previous;           // a 1-bit row's value at the end of the last segment drawn
+    std::optional<bool> previous;           // a 1-bit row's value at the last segment's end
     u64 tick = visStart;
     while (tick <= visEnd) {
         const std::optional<u64> change = nextChange(nets, tick);
@@ -807,7 +803,7 @@ void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
         const double x0 = xOf(double(tick)), x1 = xOf(double(end));
 
         if (x1 - x0 < MinSegmentPx && end <= visEnd) {
-            // Too many changes for the pixels: one band, then go on from a few pixels further
+            // Too many changes for the pixels: one band, then skip ahead
             const u64 skipTo = std::max(end, u64(std::max(0.0, std::floor(tickAt(x0 + MinSegmentPx)))));
             painter.fillRect(QRectF(x0, high, xOf(double(skipTo)) - x0, low - high), band);
             previous.reset();
@@ -816,7 +812,6 @@ void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
         }
 
         if (bus) {
-            // A box from change to change, with the value in it if it fits
             const double slant = std::min(3.0, (x1 - x0) / 2);
             const QPolygonF box{{x0, middle}, {x0 + slant, high}, {x1 - slant, high}, {x1, middle}, {x1 - slant, low}, {x0 + slant, low}};
             painter.setPen(line);
@@ -830,7 +825,6 @@ void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
                 painter.drawText(QRectF(left, high, right - left, low - high), Qt::AlignCenter, text);
             }
         } else {
-            // A level, with an edge where it changed
             const bool value = history.bit(nets.empty() ? 0 : nets[0], tick);
             if (value) painter.fillRect(QRectF(x0, high, x1 - x0, low - high), fill);
             painter.setPen(line);
@@ -848,21 +842,20 @@ void WaveformView::paintWaves(QPainter& painter, const WaveRow& row, int top)
 
 void WaveformView::wheelEvent(QWheelEvent* event)
 {
-    // Positive: the wheel turned up (or left). Some platforms turn Shift+wheel into a sideways turn.
+    // Some platforms send Shift+wheel as a sideways turn
     const QPoint delta = event->angleDelta();
     const double steps = (delta.y() != 0 ? delta.y() : delta.x()) / 120.0;
     if (steps == 0) return;
     const Qt::KeyboardModifiers modifiers = event->modifiers();
     if (modifiers & Qt::ControlModifier) {
-        // Zoom, keeping the tick under the pointer in place (or the newest one, when following, or
-        // when the pointer is over the names)
+        // Around the pointer; around the right edge when following or over the names
         const QRect waves = waveArea();
         const double x = m_follow || event->position().x() < waves.left() ? waves.right() : event->position().x();
         zoomAround(x, std::pow(1.25, -steps));
     } else if (modifiers & Qt::ShiftModifier) {
         scrollRows(int(-steps * RowHeight * 2));
     } else {
-        // Through time: up goes back, down goes forward, an eighth of the view per notch
+        // An eighth of the view per notch
         scrollTime(-steps * waveArea().width() / 8.0);
     }
     event->accept();
@@ -875,7 +868,7 @@ void WaveformView::mousePressEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton) return;
 
     if (pos.x() < waveArea().left()) {
-        // Names and values: select a row; the arrow of a bus expands or collapses it
+        // Selects a row; a bus's arrow expands or collapses it
         m_selected = rowAt(pos.y());
         if (m_selected >= 0 && pos.x() < 4 + ArrowWidth) {
             const WaveRow row = m_rows[m_selected];
@@ -916,7 +909,6 @@ void WaveformView::mouseReleaseEvent(QMouseEvent* event)
         unsetCursor();
         return;
     }
-    // A click: a cursor on the tick under it
     if (!m_model || m_model->history().isEmpty()) return;
     const WaveHistory& history = m_model->history();
     const double at = std::floor(tickAt(event->position().x()));
@@ -964,8 +956,7 @@ void WaveformView::showRowMenu(int index, const QPoint& globalPos)
         connect(menu.addAction(expanded ? tr("Collapse") : tr("Expand")), &QAction::triggered, this,
                 [this, signal, expanded] { m_model->setExpanded(signal, !expanded); });
 
-        // Split into: bits, the usual word sizes that fit, or any size. A register file comes out
-        // of the netlist as one wide port (32 registers of 32 bits = 1024 bits); its words are the registers.
+        // Bits, the usual word sizes below the width, or any size
         const int width = m_model->signalList()[signal].width();
         const int current = expanded ? m_model->wordBits(signal) : 0;
         QMenu* splitMenu = menu.addMenu(tr("Split into"));
@@ -1028,7 +1019,6 @@ WaveSignalTree::WaveSignalTree(QTreeWidget* tree, WaveformModel* model, QObject*
     : QObject(parent), m_tree(tree), m_model(model)
 {
     if (m_tree->columnCount() < 2) m_tree->setColumnCount(2);
-    // The name gets the room; "in" / "out" only what it needs
     m_tree->header()->setStretchLastSection(false);
     m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -1046,7 +1036,7 @@ void WaveSignalTree::refresh()
         rebuild();
         return;
     }
-    // Same signals: only the check boxes follow what is shown
+    // Same signals: only update the checks
     const QScopedValueRollback<bool> filling(m_filling, true);
     for (QTreeWidgetItemIterator it(m_tree); *it; ++it) {
         const QVariant signal = (*it)->data(0, Qt::UserRole);
@@ -1058,7 +1048,6 @@ void WaveSignalTree::rebuild()
 {
     const QScopedValueRollback<bool> filling(m_filling, true);
 
-    // Keep the instances that were open, open
     QSet<QString> open;
     for (QTreeWidgetItemIterator it(m_tree); *it; ++it) {
         if ((*it)->isExpanded()) open.insert((*it)->data(0, Qt::UserRole + 1).toString());
@@ -1079,7 +1068,7 @@ void WaveSignalTree::rebuild()
     top->setData(0, Qt::UserRole + 1, QString());
     QHash<QString, QTreeWidgetItem*> scopes{{QString(), top}};
 
-    // The item of an instance path, made with its parents on first use: "u/h0" under "u"
+    // Made with its parents on first use: "u/h0" under "u"
     std::function<QTreeWidgetItem*(const QString&, const QString&)> scopeItem = [&](const QString& path, const QString& module) {
         if (QTreeWidgetItem* item = scopes.value(path)) return item;
         const qsizetype slash = path.lastIndexOf(u'/');
@@ -1115,7 +1104,7 @@ void WaveSignalTree::itemChanged(QTreeWidgetItem* item, int column)
 {
     if (m_filling || column != 0) return;
     const QVariant signal = item->data(0, Qt::UserRole);
-    if (!signal.isValid()) return;   // an instance: Qt checks its ports, which arrive here one by one
+    if (!signal.isValid()) return;   // an instance: Qt checks its ports one by one
     if (item->checkState(0) == Qt::Checked) m_model->show(signal.toInt());
     else m_model->hide(signal.toInt());
 }

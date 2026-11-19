@@ -26,7 +26,7 @@ struct Run {
     QList<WaveChanges> reports;
 };
 
-// Runs `graph` for `ticks` ticks as fast as the simulator goes, then stops it as the canvas would
+// Runs `ticks` ticks at full speed, then stops as the canvas would
 Run simulate(const ExportGraph& graph, int ticks, bool pauseFirst = false)
 {
     Simulator sim;
@@ -51,7 +51,7 @@ Run simulate(const ExportGraph& graph, int ticks, bool pauseFirst = false)
     return run;
 }
 
-// The value of a recorded net after `tick`, from the reports: whether it changed an odd number of times
+// From the reports: changed an odd number of times by `tick`
 bool recordedValue(const Run& run, u32 net, u64 tick)
 {
     bool value = false;
@@ -344,7 +344,7 @@ private slots:
 
     void aBusCanBeSplitIntoWords()
     {
-        // An 8-bit port, bit i on net i + 1, as a 1024-bit register file port would be on a smaller scale
+        // 8 bits on nets 1..8: a register file port in small
         WaveformModel model;
         const QList<WaveSignal> signalList{signalOf(u"rf"_s, u"regs"_s, true, {1, 2, 3, 4, 5, 6, 7, 8})};
         model.startRun(1, signalList, {1, 2, 3, 4, 5, 6, 7, 8}, u"top"_s);
@@ -372,7 +372,7 @@ private slots:
         model.setRadix(0, Radix::Binary);
         QCOMPARE(model.valueText(rows[3], 1), u"111"_s);
 
-        // Collapsing keeps the word size for the next expand, and the next run of the circuit keeps it too
+        // Collapsing, and the next run, keep the word size
         model.setExpanded(0, false);
         QCOMPARE(model.rows().size(), 1);
         model.startRun(2, signalList, {1, 2, 3, 4, 5, 6, 7, 8}, u"top"_s);
@@ -591,7 +591,7 @@ private slots:
         // Pause: the newest tick is reported and the status says so
         app.start->click();
         QTRY_VERIFY(status->text().startsWith(u"Paused at tick"_s));
-        QTest::qWait(100);                                                  // ticks run before the pause reached the simulator
+        QTest::qWait(100);                                                  // ticks before the pause arrived
         const u64 paused = model->history().lastTick();
         QCOMPARE(status->text(), u"Paused at tick %1"_s.arg(paused));
         QTest::qWait(100);
@@ -661,7 +661,7 @@ private slots:
         model->setRadix(0, Radix::Binary);
         view->setCursorTick(5);
 
-        // Reset on the Waveforms tab: the run ends and its waveforms go; the signals and their settings stay
+        // The run ends and its waveforms go; signals and their settings stay
         waveReset->click();
         QCOMPARE(app.scene->simState(), SimState::Stopped);
         QVERIFY(model->history().isEmpty());
@@ -670,7 +670,7 @@ private slots:
         QVERIFY(!view->cursorTick());
         QVERIFY(status->text().isEmpty());
         QVERIFY(!waveReset->isEnabled() && !reset->isEnabled());
-        QTest::qWait(200);                                                  // the run's last reports, still on their way, are dropped
+        QTest::qWait(200);                                                  // late reports are dropped
         QVERIFY(model->history().isEmpty());
 
         // An edit during a pause ends the run but keeps its waveforms; Reset can still clear them
