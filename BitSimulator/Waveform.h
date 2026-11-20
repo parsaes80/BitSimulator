@@ -7,7 +7,9 @@
 #include <QString>
 #include <QStringList>
 #include <QWidget>
+#include <expected>
 #include <optional>
+#include <span>
 #include <vector>
 #include "CircuitCanvas.h"   // WaveSignal
 #include "general.h"
@@ -32,6 +34,7 @@ public:
     // from..to inclusive
     size_t changesBetween(u32 net, u64 from, u64 to) const;
     std::optional<u64> nextChange(u32 net, u64 tick) const;
+    std::span<const u64> changeTicks(u32 net) const;   // oldest first; empty if not recorded
 
     // 8 bytes each; beyond it the oldest quarter is dropped
     static constexpr size_t MaxChanges = size_t(32) << 20;
@@ -256,3 +259,9 @@ private:
     QStringList m_builtFor;
     bool m_filling = false;
 };
+
+//===================== 6. VCD export ========================
+
+class QIODevice;
+// Every recorded signal of the run as a Value Change Dump: a scope per block instance, 1 tick = 1 ns
+std::expected<void, QString> writeVcd(QIODevice& out, const WaveformModel& model);

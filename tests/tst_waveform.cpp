@@ -3,10 +3,13 @@
 #include "TestSupport.h"
 #include "Waveform.h"
 #include "simulator.h"
+#include <QBuffer>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QTreeWidget>
 #include <QTimer>
+#include <QSlider>
+#include <QFileDialog>
 
 using namespace Qt::StringLiterals;
 
@@ -84,6 +87,62 @@ WaveChanges report(u32 runId, u64 lastTick, std::vector<WaveChange> changes)
 WaveSignal signalOf(const QString& scope, const QString& name, bool output, std::vector<u32> nets)
 {
     return WaveSignal{scope, scope.isEmpty() ? QString() : u"mod"_s, name, output, std::move(nets)};
+}
+
+// A VCD read back: declarations as "scope/path/name width", and each identifier's assignments in time order
+struct Vcd {
+    QStringList declarations;
+    QHash<QByteArray, QByteArray> idOf;                          // "scope/path/name" -> identifier
+    QHash<QByteArray, QList<std::pair<u64, QByteArray>>> values;
+    u64 dumpTime = 0, endTime = 0;
+    QString timescale;
+
+    QByteArray at(const QByteArray& name, u64 time) const   // the value at `time`, top bit first
+    {
+        QByteArray result;
+        for (const auto& [t, v] : values.value(idOf.value(name))) {
+            if (t > time) break;
+            result = v;
+        }
+        return result;
+    }
+};
+
+Vcd readVcd(const QByteArray& text)
+{
+    Vcd vcd;
+    QByteArrayList scope;
+    u64 time = 0;
+    bool dumping = false;
+    for (const QByteArray& line : text.split('\n')) {
+        const QByteArrayList words = line.simplified().split(' ');
+        if (words[0] == "$timescale") vcd.timescale = QString::fromLatin1(words.value(1));
+        else if (words[0] == "$scope") scope << words[2];
+        else if (words[0] == "$upscope") scope.removeLast();
+        else if (words[0] == "$var") {
+            const QByteArray path = (scope + QByteArrayList{words[4]}).join('/');
+            vcd.declarations << QString::fromLatin1(path + ' ' + words[2]);
+            vcd.idOf.insert(path, words[3]);
+        } else if (words[0] == "$dumpvars") {
+            dumping = true;
+            vcd.dumpTime = time;
+        } else if (words[0].startsWith('#')) {
+            time = words[0].mid(1).toULongLong();
+            vcd.endTime = time;
+        } else if (words[0].startsWith('b')) {
+            vcd.values[words[1]].append({time, words[0].mid(1)});
+        } else if (!words[0].isEmpty() && (words[0][0] == '0' || words[0][0] == '1') && (dumping || time > 0)) {
+            vcd.values[words[0].mid(1)].append({time, words[0].left(1)});
+        }
+    }
+    return vcd;
+}
+
+QByteArray bitsText(const std::vector<bool>& bits)   // top bit first, as VCD writes them
+{
+    QByteArray text;
+    for (size_t b = bits.size(); b-- > 0;) text += bits[b] ? '1' : '0';
+    return text;
 }
 
 ExportGraph startAndCapture(CircuitScene& scene)
@@ -389,6 +448,45 @@ private slots:
         QCOMPARE(model.label(rows[8]), u"rf/regs[0]"_s);
     }
 
+    void theRunExportsAsAVcd()
+    {
+        WaveformModel model;
+        const QList<WaveSignal> list{signalOf({}, u"Source 1"_s, false, {1, 2}), signalOf({}, u"y"_s, true, {3}),
+                                     signalOf(u"u"_s, u"x"_s, false, {1}), signalOf(u"u/h0"_s, u"s"_s, true, {2}),
+                                     signalOf(u"v"_s, u"one"_s, false, {WaveSignal::AlwaysOne, 0})};
+        model.startRun(1, list, {1, 2, 3}, u"top"_s);
+        model.addChanges(report(1, 20, {{0, 1}, {3, 2}, {3, 3}, {7, 1}, {12, 2}, {12, 3}}));
+        QBuffer buffer;
+        QVERIFY(buffer.open(QIODevice::WriteOnly));
+        const auto written = writeVcd(buffer, model);
+        QVERIFY2(written, qPrintable(written.error()));
+        const Vcd vcd = readVcd(buffer.data());
+
+        // A scope per instance, nested; names without spaces; 1 tick = 1 ns
+        QCOMPARE(vcd.timescale, u"1ns"_s);
+        QCOMPARE(vcd.declarations, (QStringList{u"top/Source_1 2"_s, u"top/y 1"_s, u"top/u/x 1"_s, u"top/u/h0/s 1"_s, u"top/v/one 2"_s}));
+        QCOMPARE(vcd.dumpTime, u64(0));
+        QCOMPARE(vcd.endTime, u64(21));                                     // the end of the last tick
+
+        // Every signal, at every tick, has the value the waveforms show
+        const QByteArrayList paths{"top/Source_1", "top/y", "top/u/x", "top/u/h0/s", "top/v/one"};
+        for (u64 tick = 0; tick <= 20; tick++) {
+            for (int i = 0; i < paths.size(); i++) {
+                const WaveRow row{i, -1, list[i].width()};
+                QVERIFY2(vcd.at(paths[i], tick) == bitsText(model.bitsAt(row, tick)),
+                         qPrintable(u"%1 at tick %2: %3 in the file, %4 in the waveforms"_s.arg(QString::fromLatin1(paths[i])).arg(tick)
+                                        .arg(QString::fromLatin1(vcd.at(paths[i], tick)), QString::fromLatin1(bitsText(model.bitsAt(row, tick))))));
+            }
+        }
+        QCOMPARE(vcd.at("top/v/one", 0), QByteArray("01"));                // a bit tied to 1 above one tied to 0
+
+        // Nothing to export without a run
+        WaveformModel empty;
+        QBuffer none;
+        QVERIFY(none.open(QIODevice::WriteOnly));
+        QVERIFY(!writeVcd(none, empty));
+    }
+
     //===================== The view ========================
 
     void theViewMapsTicksToPixelsAndZooms()
@@ -616,6 +714,44 @@ private slots:
         QVERIFY(!model->hasRun());
         QVERIFY(model->rows().isEmpty());
         QVERIFY(!(tree->topLevelItem(0)->flags() & Qt::ItemIsEnabled));   // the hint
+    }
+
+    void theExportButtonSavesTheRun()
+    {
+        App app;
+        auto* model = app.window.findChild<WaveformModel*>();
+        auto* exportButton = child<QPushButton>(&app.window, "exportButton");
+        auto* source = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(3), app.centre));
+        auto* display = dynamic_cast<DisplayItem*>(app.scene->addComponent(DisplayProps{3, 0}, app.centre + QPointF(200, 0)));
+        for (int pin = 0; pin < 3; pin++) QVERIFY(connectPorts(app.scene, source->getOutputPorts()[pin], display->getInputPorts()[pin]));
+        QVERIFY(!exportButton->isEnabled());                               // no run yet
+
+        child<QSlider>(&app.window, "slider")->setValue(10000);
+        app.start->click();
+        QTRY_VERIFY(model->history().lastTick() > 30);
+        app.start->click();
+        QTRY_VERIFY(exportButton->isEnabled());
+        QTest::qWait(100);                                                  // the ticks before the pause arrived
+
+        const QString path = QDir(app.saves.path()).filePath(u"counter.vcd"_s);
+        whenDialogOpens([&path](QWidget* dialog) {
+            auto* name = qobject_cast<QFileDialog*>(dialog) ? dialog->findChild<QLineEdit*>(u"fileNameEdit"_s) : nullptr;
+            QVERIFY(name);
+            name->setText(path);                                            // typed, as a user would
+            static_cast<QDialog*>(dialog)->accept();
+        });
+        exportButton->click();
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const Vcd vcd = readVcd(file.readAll());
+        QCOMPARE(vcd.declarations, (QStringList{u"circuit/Source_1 3"_s, u"circuit/Display_1 3"_s}));
+        QCOMPARE(vcd.endTime, model->history().lastTick() + 1);
+        const WaveRow sourceRow{0, -1, 3};
+        for (u64 tick = 0; tick <= model->history().lastTick(); tick++) {
+            QCOMPARE(vcd.at("circuit/Source_1", tick), bitsText(model->bitsAt(sourceRow, tick)));
+            QCOMPARE(vcd.at("circuit/Display_1", tick), vcd.at("circuit/Source_1", tick));   // wired straight through
+        }
+        app.clear->click();
     }
 
     void theTabsStartButtonIsTheSameAsTheCircuits()

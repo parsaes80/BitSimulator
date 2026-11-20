@@ -1,5 +1,8 @@
 #include "Waveform.h"
 #include <QActionGroup>
+#include <QRegularExpression>
+#include <QIODevice>
+#include <QDateTime>
 #include <QContextMenuEvent>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -13,6 +16,7 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <cmath>
+#include <queue>
 #include <functional>
 #include <limits>
 #include "Theme.h"
@@ -78,6 +82,12 @@ std::optional<u64> WaveHistory::nextChange(u32 id, u64 tick) const
     const auto it = std::ranges::upper_bound(n->ticks, tick);
     if (it == n->ticks.end()) return std::nullopt;
     return *it;
+}
+
+std::span<const u64> WaveHistory::changeTicks(u32 id) const
+{
+    const Net* n = net(id);
+    return n ? std::span<const u64>(n->ticks) : std::span<const u64>();
 }
 
 void WaveHistory::dropOldest()
@@ -1107,4 +1117,131 @@ void WaveSignalTree::itemChanged(QTreeWidgetItem* item, int column)
     if (!signal.isValid()) return;   // an instance: Qt checks its ports one by one
     if (item->checkState(0) == Qt::Checked) m_model->show(signal.toInt());
     else m_model->hide(signal.toInt());
+}
+
+//===================== 6. VCD export ========================
+
+namespace {
+
+// Short identifiers from the printable ASCII range VCD allows: "!", "\"", ..., "!!", ...
+QByteArray vcdId(qsizetype index)
+{
+    QByteArray id;
+    do {
+        id += char(33 + index % 94);
+        index /= 94;
+    } while (index > 0);
+    return id;
+}
+
+QByteArray vcdName(const QString& name)   // VCD names can't contain whitespace
+{
+    static const QRegularExpression space(u"\\s+"_s);
+    const QString clean = name.trimmed().replace(space, u"_"_s);
+    return clean.isEmpty() ? QByteArray("unnamed") : clean.toUtf8();
+}
+
+} // namespace
+
+std::expected<void, QString> writeVcd(QIODevice& out, const WaveformModel& model)
+{
+    const WaveHistory& history = model.history();
+    const QList<WaveSignal>& signalList = model.signalList();
+    if (history.isEmpty() || signalList.isEmpty()) return std::unexpected(QObject::tr("There is no run to export."));
+
+    QByteArray text;
+    const auto flush = [&out, &text] {
+        const bool ok = out.write(text) == text.size();
+        text.clear();
+        return ok;
+    };
+    text += "$date " + QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8() + " $end\n";
+    text += "$version BitSimulator $end\n";
+    text += "$comment One simulation tick is 1 ns $end\n";
+    text += "$timescale 1ns $end\n";
+
+    // The circuit's scope holds a scope per block instance, nested by path ("core/alu" inside "core")
+    struct Scope {
+        QByteArray name;
+        QList<int> children;
+        QList<qsizetype> signalIndices;
+    };
+    QList<Scope> scopes{{vcdName(model.topName().isEmpty() ? u"circuit"_s : model.topName()), {}, {}}};
+    for (qsizetype i = 0; i < signalList.size(); i++) {
+        if (signalList[i].nets.empty()) continue;
+        int scope = 0;
+        if (!signalList[i].scope.isEmpty()) {
+            for (const QString& part : signalList[i].scope.split(u'/')) {
+                const QByteArray name = vcdName(part);
+                const auto child = std::ranges::find_if(scopes[scope].children, [&](int c) { return scopes[c].name == name; });
+                if (child != scopes[scope].children.end()) {
+                    scope = *child;
+                } else {
+                    scopes.append({name, {}, {}});
+                    scopes[scope].children.append(int(scopes.size() - 1));
+                    scope = int(scopes.size() - 1);
+                }
+            }
+        }
+        scopes[scope].signalIndices.append(i);
+    }
+    const std::function<void(int)> declare = [&](int scope) {
+        text += "$scope module " + scopes[scope].name + " $end\n";
+        for (const qsizetype i : std::as_const(scopes[scope].signalIndices)) {
+            const qsizetype width = qsizetype(signalList[i].nets.size());
+            text += "$var wire " + QByteArray::number(width) + ' ' + vcdId(i) + ' ' + vcdName(signalList[i].name);
+            if (width > 1) text += " [" + QByteArray::number(width - 1) + ":0]";
+            text += " $end\n";
+        }
+        for (const int child : std::as_const(scopes[scope].children)) declare(child);
+        text += "$upscope $end\n";
+    };
+    declare(0);
+    text += "$enddefinitions $end\n";
+
+    // A value is the signal's value after that tick, as the waveforms show it
+    const auto value = [&](qsizetype i, u64 tick) {
+        const std::vector<u32>& nets = signalList[i].nets;
+        if (nets.size() == 1) return QByteArray(1, history.bit(nets[0], tick) ? '1' : '0') + vcdId(i);
+        QByteArray bits("b");
+        for (size_t b = nets.size(); b-- > 0;) bits += history.bit(nets[b], tick) ? '1' : '0';   // top bit first
+        return bits + ' ' + vcdId(i);
+    };
+
+    // Every signal's change ticks, then all of them merged in tick order
+    const u64 first = history.firstTick();
+    std::vector<std::vector<u64>> changes(size_t(signalList.size()));
+    for (qsizetype i = 0; i < signalList.size(); i++) {
+        std::vector<u64>& ticks = changes[size_t(i)];
+        for (const u32 net : signalList[i].nets) std::ranges::copy(history.changeTicks(net), std::back_inserter(ticks));
+        std::ranges::sort(ticks);
+        ticks.erase(std::ranges::unique(ticks).begin(), ticks.end());
+    }
+    text += "#" + QByteArray::number(first) + "\n$dumpvars\n";
+    using Next = std::pair<u64, qsizetype>;   // tick, signal
+    std::priority_queue<Next, std::vector<Next>, std::greater<>> queue;
+    std::vector<size_t> position(changes.size());
+    for (qsizetype i = 0; i < signalList.size(); i++) {
+        if (signalList[i].nets.empty()) continue;
+        text += value(i, first) + '\n';
+        const std::vector<u64>& ticks = changes[size_t(i)];
+        position[size_t(i)] = size_t(std::ranges::upper_bound(ticks, first) - ticks.begin());
+        if (position[size_t(i)] < ticks.size()) queue.push({ticks[position[size_t(i)]], i});
+    }
+    text += "$end\n";
+    while (!queue.empty()) {
+        const u64 tick = queue.top().first;
+        text += "#" + QByteArray::number(tick) + '\n';
+        while (!queue.empty() && queue.top().first == tick) {
+            const qsizetype i = queue.top().second;
+            queue.pop();
+            text += value(i, tick) + '\n';
+            const std::vector<u64>& ticks = changes[size_t(i)];
+            if (++position[size_t(i)] < ticks.size()) queue.push({ticks[position[size_t(i)]], i});
+        }
+        if (text.size() > (1 << 20) && !flush()) return std::unexpected(out.errorString());
+    }
+    text += "#" + QByteArray::number(history.lastTick() + 1) + '\n';   // the last tick lasts until here
+    if (!flush()) return std::unexpected(out.errorString());
+    return {};
 }

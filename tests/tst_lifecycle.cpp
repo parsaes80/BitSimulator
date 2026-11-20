@@ -54,35 +54,6 @@ struct ClockCircuit {
     int step() const { return int(clock->tick() % u64(pattern.size())); }   // position in the pattern
 };
 
-// Answers the next modal dialog once it opens, as the user would
-void whenDialogOpens(std::function<void(QWidget*)> answer)
-{
-    auto* poll = new QTimer;
-    QObject::connect(poll, &QTimer::timeout, poll, [poll, answer] {
-        QWidget* dialog = QApplication::activeModalWidget();
-        if (!dialog) return;
-        poll->deleteLater();
-        poll->stop();
-        answer(dialog);
-    });
-    poll->start(10);
-}
-
-void typeName(QWidget* dialog, const QString& name)
-{
-    auto* input = dialog->findChild<QLineEdit*>();
-    QVERIFY(input);
-    input->setText(name);
-    static_cast<QDialog*>(dialog)->accept();
-}
-
-void pressButton(QWidget* dialog, QMessageBox::StandardButton button)
-{
-    auto* box = qobject_cast<QMessageBox*>(dialog);
-    QVERIFY(box && box->button(button));
-    box->button(button)->click();
-}
-
 bool waitForCompile(App& app)
 {
     return QTest::qWaitFor([&app] { return app.compile->isEnabled(); }, 90000);

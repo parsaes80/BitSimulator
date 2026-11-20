@@ -73,7 +73,8 @@ private:
     void setupWaveforms();
     void setupSearch();
     void setupFiles();
-    void updateWaveStatus();
+    void updateWaveStatus();                 // also whether there is a run to export
+    void exportWaveforms();
     bool beginCompile(const QString& message);   // stops the run, disables both compile buttons; false if cancelled
 
     Ui::BitSimulatorClass ui;

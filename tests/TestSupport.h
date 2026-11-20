@@ -8,6 +8,10 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QTemporaryDir>
+#include <QDialog>
+#include <functional>
+#include <QTimer>
+#include <QMessageBox>
 #include <QTextCursor>
 #include <QPushButton>
 #include <QSlider>
@@ -99,6 +103,35 @@ inline bool hdlToolsAvailable()
     const ToolPaths& tools = toolPaths();
     return QFile::exists(tools.yosys) && QFile::exists(tools.dot) && QFile::exists(tools.sv2v);
 }
+// Answers the next modal dialog once it opens, as the user would
+inline void whenDialogOpens(std::function<void(QWidget*)> answer)
+{
+    auto* poll = new QTimer;
+    QObject::connect(poll, &QTimer::timeout, poll, [poll, answer] {
+        QWidget* dialog = QApplication::activeModalWidget();
+        if (!dialog) return;
+        poll->deleteLater();
+        poll->stop();
+        answer(dialog);
+    });
+    poll->start(10);
+}
+
+inline void typeName(QWidget* dialog, const QString& name)
+{
+    auto* input = dialog->findChild<QLineEdit*>();
+    QVERIFY(input);
+    input->setText(name);
+    static_cast<QDialog*>(dialog)->accept();
+}
+
+inline void pressButton(QWidget* dialog, QMessageBox::StandardButton button)
+{
+    auto* box = qobject_cast<QMessageBox*>(dialog);
+    QVERIFY(box && box->button(button));
+    box->button(button)->click();
+}
+
 // if (!hdlToolsAvailable()) QSKIP(MissingHdlTools);
 inline constexpr const char* MissingHdlTools = "yosys, Graphviz dot or sv2v was not found in the working directory";
 

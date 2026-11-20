@@ -229,6 +229,7 @@ void MainWindow::setupWaveforms()
     });
     connect(ui.waveFollow, &QPushButton::toggled, ui.waveView, &WaveformView::setFollow);
     connect(ui.waveView, &WaveformView::followChanged, ui.waveFollow, &QPushButton::setChecked);
+    connect(ui.exportButton, &QPushButton::clicked, this, &MainWindow::exportWaveforms);
     connect(m_waveModel, &WaveformModel::historyGrew, this, &MainWindow::updateWaveStatus);
     connect(m_waveModel, &WaveformModel::signalsChanged, this, &MainWindow::updateWaveStatus);
     updateWaveStatus();
@@ -489,6 +490,32 @@ void MainWindow::updateWaveStatus()
         }
     }
     ui.waveStatus->setText(text);
+    ui.exportButton->setEnabled(!history.isEmpty());
+}
+
+void MainWindow::exportWaveforms()
+{
+    if (m_waveModel->history().isEmpty()) return;
+    // Next to the circuit's file, named after it (or after the compiled top module)
+    const QString base = !m_currentFile.isEmpty() ? QFileInfo(m_currentFile).completeBaseName()
+                         : !m_waveModel->topName().isEmpty() ? m_waveModel->topName() : u"waveforms"_s;
+    const QString dir = !m_currentFile.isEmpty() ? QFileInfo(m_currentFile).absolutePath() : m_savesDir;
+    QString path = QFileDialog::getSaveFileName(this, tr("Export waveforms"), QDir(dir).filePath(base + u".vcd"_s),
+                                                tr("Value Change Dump (*.vcd)"));
+    if (path.isEmpty()) return;
+    if (QFileInfo(path).suffix().isEmpty()) path += u".vcd"_s;
+
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile file(path);
+    std::expected<void, QString> written = std::unexpected(QString());
+    if (file.open(QIODevice::WriteOnly)) written = writeVcd(file, *m_waveModel);
+    if (!written || !file.commit()) {
+        const QString reason = !written && !written.error().isEmpty() ? written.error() : file.errorString();
+        QMessageBox::warning(this, tr("Export waveforms"), tr("%1 could not be written: %2").arg(QFileInfo(path).fileName(), reason));
+        return;
+    }
+    statusBar()->showMessage(tr("Exported ticks %1 to %2 to %3.").arg(m_waveModel->history().firstTick())
+                                 .arg(m_waveModel->history().lastTick()).arg(QFileInfo(path).fileName()), 6000);
 }
 
 void MainWindow::setupColorScheme()

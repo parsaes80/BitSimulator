@@ -745,6 +745,15 @@
           </item>
           <item>
            <widget class="QLabel" name="waveHint">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+              <horstretch>1</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="toolTip">
+             <string>Click: cursor · Shift+click: second cursor · Drag: pan · Wheel: time · Shift+wheel: rows · Ctrl+wheel: zoom · Right-click a row: radix, split, remove</string>
+            </property>
             <property name="text">
              <string>Click: cursor · Shift+click: second cursor · Drag: pan · Wheel: time · Shift+wheel: rows · Ctrl+wheel: zoom · Right-click a row: radix, split, remove</string>
             </property>
@@ -765,6 +774,19 @@
              </size>
             </property>
            </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="exportButton">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Save the run's waveforms as a VCD file for GTKWave, Surfer or ModelSim (1 tick = 1 ns)</string>
+            </property>
+            <property name="text">
+             <string>Export VCD...</string>
+            </property>
+           </widget>
           </item>
           <item>
            <widget class="QLabel" name="waveStatus">
