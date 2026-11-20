@@ -1,16 +1,28 @@
 #include "MainWindow.h"
+#include <QAbstractItemView>
+#include <QCompleter>
 #include <QDebug>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QInputDialog>
+#include <QMenu>
+#include <QSaveFile>
+#include <QShortcut>
 #include <QFontMetricsF>
 #include <QFrame>
+#include <QRegularExpression>
+#include <QLocale>
+#include <QHeaderView>
 #include <QListWidget>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QMessageBox>
+#include <QStandardItemModel>
 #include <QStatusBar>
 #include <QStyle>
 #include <QStyleHints>
@@ -47,6 +59,10 @@ MainWindow::~MainWindow()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    if (!maybeSave()) {
+        event->ignore();
+        return;
+    }
     qDebug() << "Closing application - stopping simulator thread...";
 
     ui.camera->getScene()->stopSim();
@@ -81,6 +97,8 @@ void MainWindow::setup()
     setupPropertiesPanel();
     setupColorScheme();
     setupWaveforms();
+    setupSearch();
+    setupFiles();
 
     ui.andButton->setGateType(GType::AND);
     ui.orButton->setGateType(GType::OR);
@@ -213,6 +231,242 @@ void MainWindow::setupWaveforms()
     updateWaveStatus();
 }
 
+//===================== Files tab ========================
+
+void MainWindow::setupFiles()
+{
+    connect(ui.newButton, &QPushButton::clicked, this, &MainWindow::newCircuit);
+    connect(ui.openButton, &QPushButton::clicked, this, &MainWindow::openCircuitDialog);
+    connect(ui.saveButton, &QPushButton::clicked, this, &MainWindow::save);
+    connect(ui.saveAsButton, &QPushButton::clicked, this, &MainWindow::saveAs);
+    connect(new QShortcut(QKeySequence::New, this), &QShortcut::activated, this, &MainWindow::newCircuit);
+    connect(new QShortcut(QKeySequence::Open, this), &QShortcut::activated, this, &MainWindow::openCircuitDialog);
+    connect(new QShortcut(QKeySequence::Save, this), &QShortcut::activated, this, &MainWindow::save);
+    connect(new QShortcut(QKeySequence::SaveAs, this), &QShortcut::activated, this, &MainWindow::saveAs);
+
+    ui.savesList->header()->setStretchLastSection(false);
+    ui.savesList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    ui.savesList->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    ui.savesList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui.savesList, &QTreeWidget::itemActivated, this,
+            [this](QTreeWidgetItem* item) { openCircuit(item->data(0, Qt::UserRole).toString()); });
+    connect(ui.savesList, &QTreeWidget::customContextMenuRequested, this, &MainWindow::showSavesMenu);
+    connect(ui.tabWidget, &QTabWidget::currentChanged, this, [this] {
+        if (ui.tabWidget->currentWidget() == ui.filesTab) refreshSavesList();   // files may have changed outside the app
+    });
+
+    connect(ui.camera->getScene(), &CircuitScene::circuitModified, this, [this] {
+        if (isWindowModified()) return;   // moves report every pixel
+        setWindowModified(true);
+        showFileState();
+    });
+    setSavesDir(QDir(QCoreApplication::applicationDirPath()).filePath(u"saves"_s));
+}
+
+void MainWindow::setSavesDir(const QString& dir)
+{
+    m_savesDir = dir;
+    ui.savesFolder->setText(QDir::toNativeSeparators(dir));
+    refreshSavesList();
+    showFileState();
+}
+
+void MainWindow::showFileState()
+{
+    const QString name = m_currentFile.isEmpty() ? tr("Untitled") : QFileInfo(m_currentFile).completeBaseName();
+    setWindowTitle(u"%1[*] - BitSimulator"_s.arg(name));
+    ui.currentFileName->setText(isWindowModified() ? tr("%1 (unsaved changes)").arg(name) : name);
+    ui.currentFilePath->setText(m_currentFile.isEmpty() ? tr("Not saved yet") : QDir::toNativeSeparators(m_currentFile));
+    for (int i = 0; i < ui.savesList->topLevelItemCount(); i++) {
+        QTreeWidgetItem* item = ui.savesList->topLevelItem(i);
+        QFont font = item->font(0);
+        font.setBold(QFileInfo(item->data(0, Qt::UserRole).toString()) == QFileInfo(m_currentFile));
+        item->setFont(0, font);
+    }
+}
+
+void MainWindow::refreshSavesList()
+{
+    ui.savesList->clear();
+    const QFileInfoList files = QDir(m_savesDir).entryInfoList({u"*."_s + QLatin1StringView(CircuitFileSuffix)}, QDir::Files, QDir::Time);
+    for (const QFileInfo& file : files) {   // newest first
+        auto* item = new QTreeWidgetItem(ui.savesList, {file.completeBaseName(), QLocale().toString(file.lastModified(), QLocale::ShortFormat)});
+        item->setData(0, Qt::UserRole, file.absoluteFilePath());
+        item->setToolTip(0, QDir::toNativeSeparators(file.absoluteFilePath()));
+    }
+    showFileState();
+}
+
+void MainWindow::showSavesMenu(const QPoint& pos)
+{
+    QTreeWidgetItem* item = ui.savesList->itemAt(pos);
+    if (!item) return;
+    const QString path = item->data(0, Qt::UserRole).toString();
+    QMenu menu(this);
+    connect(menu.addAction(tr("Open")), &QAction::triggered, this, [this, path] { openCircuit(path); });
+    connect(menu.addAction(tr("Delete...")), &QAction::triggered, this, [this, path] {
+        const QString name = QFileInfo(path).completeBaseName();
+        if (QMessageBox::question(this, tr("Delete circuit"), tr("Delete %1 from the saves folder? This cannot be undone.").arg(name),
+                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+        if (!QFile::remove(path)) {
+            QMessageBox::warning(this, tr("Delete circuit"), tr("%1 could not be deleted.").arg(name));
+            return;
+        }
+        if (QFileInfo(path) == QFileInfo(m_currentFile)) {
+            m_currentFile.clear();   // the circuit stays on the canvas, now unsaved
+            setWindowModified(true);
+        }
+        refreshSavesList();
+    });
+    menu.exec(ui.savesList->viewport()->mapToGlobal(pos));
+}
+
+bool MainWindow::maybeSave()
+{
+    if (!m_askToSave || !isWindowModified() || ui.camera->getScene()->circuitData().components.isEmpty()) return true;
+    const QString name = m_currentFile.isEmpty() ? tr("the untitled circuit") : QFileInfo(m_currentFile).completeBaseName();
+    const auto answer = QMessageBox::warning(this, tr("Unsaved changes"), tr("Save the changes to %1?").arg(name),
+                                             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+    if (answer == QMessageBox::Save) return save();
+    return answer == QMessageBox::Discard;
+}
+
+void MainWindow::newCircuit()
+{
+    if (!maybeSave()) return;
+    ui.camera->getScene()->resetCircuit();
+    m_currentFile.clear();
+    setWindowModified(false);
+    showFileState();
+    ui.tabWidget->setCurrentWidget(ui.CircuitTab);
+}
+
+void MainWindow::openCircuitDialog()
+{
+    const QString path = QFileDialog::getOpenFileName(this, tr("Open circuit"), m_savesDir,
+                                                      tr("BitSimulator circuits (*.%1)").arg(QLatin1StringView(CircuitFileSuffix)));
+    if (!path.isEmpty()) openCircuit(path);
+}
+
+bool MainWindow::openCircuit(const QString& path)
+{
+    if (!maybeSave()) return false;
+    const QString name = QFileInfo(path).fileName();
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Open circuit"), tr("%1 could not be read: %2").arg(name, file.errorString()));
+        return false;
+    }
+    const auto data = circuitFromJson(file.readAll());
+    const auto loaded = data ? ui.camera->getScene()->loadCircuit(*data) : std::unexpected(data.error());
+    if (!loaded) {
+        QMessageBox::warning(this, tr("Open circuit"), tr("%1 could not be opened. %2").arg(name, loaded.error()));
+        return false;
+    }
+    m_currentFile = QFileInfo(path).absoluteFilePath();
+    setWindowModified(false);
+    showFileState();
+    ui.tabWidget->setCurrentWidget(ui.CircuitTab);
+    ui.camera->showWholeCircuit();
+    statusBar()->showMessage(tr("Opened %1.").arg(name), 4000);
+    return true;
+}
+
+bool MainWindow::save()
+{
+    return m_currentFile.isEmpty() ? saveAs() : saveCircuit(m_currentFile);
+}
+
+bool MainWindow::saveAs()
+{
+    QString name = m_currentFile.isEmpty() ? QString() : QFileInfo(m_currentFile).completeBaseName();
+    while (true) {
+        bool ok = false;
+        name = QInputDialog::getText(this, tr("Save As"), tr("Name of the circuit in the saves folder:"), QLineEdit::Normal, name, &ok).trimmed();
+        if (!ok) return false;
+        static const QRegularExpression forbidden(uR"([\\/:*?"<>|])"_s);
+        if (name.isEmpty() || name.contains(forbidden) || name.startsWith(u'.')) {
+            QMessageBox::warning(this, tr("Save As"), tr("Use a name without \\ / : * ? \" < > | that doesn't start with a dot."));
+            continue;
+        }
+        const QString path = QDir(m_savesDir).filePath(name + u'.' + QLatin1StringView(CircuitFileSuffix));
+        if (QFileInfo::exists(path) && QFileInfo(path) != QFileInfo(m_currentFile)
+            && QMessageBox::question(this, tr("Save As"), tr("%1 already exists. Replace it?").arg(name),
+                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) continue;
+        return saveCircuit(path);
+    }
+}
+
+bool MainWindow::saveCircuit(const QString& path)
+{
+    const QString name = QFileInfo(path).fileName();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile file(path);   // all or nothing: a failed save leaves the old file
+    if (!file.open(QIODevice::WriteOnly) || file.write(circuitToJson(ui.camera->getScene()->circuitData())) < 0 || !file.commit()) {
+        QMessageBox::warning(this, tr("Save circuit"), tr("%1 could not be saved: %2").arg(name, file.errorString()));
+        return false;
+    }
+    m_currentFile = QFileInfo(path).absoluteFilePath();
+    setWindowModified(false);
+    refreshSavesList();
+    statusBar()->showMessage(tr("Saved %1.").arg(name), 4000);
+    return true;
+}
+
+void MainWindow::setupSearch()
+{
+    // Filled on every keystroke, so the completer shows the rows as they are instead of filtering them
+    m_searchModel = new QStandardItemModel(this);
+    m_searchCompleter = new QCompleter(m_searchModel, this);
+    m_searchCompleter->setWidget(ui.searchBar);
+    m_searchCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    m_searchCompleter->setMaxVisibleItems(12);
+    m_searchCompleter->popup()->setParent(this, Qt::Popup);   // so the window's style sheet reaches it
+    m_searchCompleter->popup()->setObjectName(u"searchResults"_s);
+
+    connect(ui.searchBar, &QLineEdit::textEdited, this, &MainWindow::updateSearch);
+    connect(m_searchCompleter, qOverload<const QModelIndex&>(&QCompleter::activated), this,
+            [this](const QModelIndex& index) { jumpToSearchMatch(index.data(Qt::UserRole).toInt()); });
+    connect(ui.searchBar, &QLineEdit::returnPressed, this, [this] {
+        updateSearch(ui.searchBar->text());   // the circuit may have changed since the last keystroke
+        if (m_searchMatches.size() == 1) jumpToSearchMatch(0);
+    });
+}
+
+void MainWindow::updateSearch(const QString& text)
+{
+    m_searchModel->clear();
+    m_searchMatches.clear();
+    if (!text.isEmpty()) {
+        for (ComponentItem* item : ui.camera->getScene()->findInputsAndOutputs(text)) {
+            const auto* source = dynamic_cast<SourceItem*>(item);
+            const QString name = source ? source->name() : static_cast<DisplayItem*>(item)->name();
+            auto* row = new QStandardItem(u"%1   ·  %2"_s.arg(name, source ? tr("input") : tr("output")));
+            row->setData(int(m_searchMatches.size()), Qt::UserRole);
+            m_searchModel->appendRow(row);
+            m_searchMatches.append(item);
+        }
+    }
+    if (m_searchMatches.isEmpty()) {
+        m_searchCompleter->popup()->hide();
+        return;
+    }
+    // Wide enough for the longest row, right-aligned under the bar
+    QAbstractItemView* list = m_searchCompleter->popup();
+    const int width = std::clamp(list->sizeHintForColumn(0) + list->verticalScrollBar()->sizeHint().width() + 24,
+                                 ui.searchBar->width(), 420);
+    m_searchCompleter->complete(QRect(ui.searchBar->width() - width, 0, width, ui.searchBar->height()));
+    list->setCurrentIndex({});   // nothing highlighted until the user picks a row
+}
+
+void MainWindow::jumpToSearchMatch(int match)
+{
+    if (match < 0 || match >= m_searchMatches.size() || !m_searchMatches[match]) return;
+    m_searchCompleter->popup()->hide();
+    ui.tabWidget->setCurrentWidget(ui.CircuitTab);
+    ui.camera->focusOn(m_searchMatches[match]);
+}
+
 void MainWindow::updateWaveStatus()
 {
     const WaveHistory& history = m_waveModel->history();
@@ -318,11 +572,16 @@ void MainWindow::resetSimulation()
 
 void MainWindow::clearCircuit()
 {
+    if (!maybeSave()) return;
     ui.camera->getScene()->resetCircuit();
+    m_currentFile.clear();   // Save must not write the empty canvas over the file
+    setWindowModified(false);
+    showFileState();
 }
 
-void MainWindow::beginCompile(const QString& message)
+bool MainWindow::beginCompile(const QString& message)
 {
+    if (!maybeSave()) return false;
     // The old circuit stays until the new one compiles
     ui.camera->getScene()->stopSim();
 
@@ -331,11 +590,12 @@ void MainWindow::beginCompile(const QString& message)
     ui.compileButton->setEnabled(false);
     updateCompileDirStatus();
     statusBar()->showMessage(message);
+    return true;
 }
 
 void MainWindow::compileHdl()
 {
-    beginCompile(tr("Compiling..."));
+    if (!beginCompile(tr("Compiling..."))) return;
     sendCodeToCompiler(ui.hdlEditor->toPlainText());
 }
 
@@ -346,6 +606,10 @@ void MainWindow::compileFinished(bool ok)
     updateCompileDirStatus();
 
     if (ok) {
+        // A new, untitled circuit; it can be compiled again, so it doesn't count as unsaved
+        m_currentFile.clear();
+        setWindowModified(false);
+        showFileState();
         statusBar()->showMessage(tr("Compiled. The new circuit is on the canvas."), 6000);
         ui.tabWidget->setCurrentWidget(ui.CircuitTab);
         return;
@@ -454,7 +718,7 @@ void MainWindow::compileDir()
     }
     if (files.isEmpty()) return;
 
-    beginCompile(files.size() == 1 ? tr("Compiling 1 file...") : tr("Compiling %1 files...").arg(files.size()));
+    if (!beginCompile(files.size() == 1 ? tr("Compiling 1 file...") : tr("Compiling %1 files...").arg(files.size()))) return;
     sendFilesToCompiler(files, m_compileIncludeDirs);
 }
 

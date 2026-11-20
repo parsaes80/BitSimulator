@@ -657,6 +657,14 @@ private slots:
         QVERIFY(!breadcrumb->isVisible());
         QCOMPARE(depth.size(), 4);
 
+        // A search jump from inside a block goes back to the top first
+        canvas.openBlock(blockNamed(top, u"u"_s));
+        const QList<ComponentItem*> found = top->findInputsAndOutputs(u"."_s);
+        QVERIFY(!found.isEmpty());
+        canvas.focusOn(found.first());
+        QCOMPARE(canvas.depth(), 0);
+        QVERIFY(canvas.scene() == top && found.first()->isSelected());
+
         // A new design or Clear always returns to the top
         canvas.openBlock(blockNamed(top, u"r"_s));
         QCOMPARE(canvas.depth(), 1);
@@ -666,6 +674,29 @@ private slots:
         top->resetCircuit();
         QCOMPARE(canvas.depth(), 0);
         QVERIFY(canvas.scene() == top);
+    }
+
+    void aSavedDesignKeepsItsBlocks()
+    {
+        const CompileRun run = compile(hierarchicalVerilog);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        CircuitScene scene;
+        scene.receiveDesign(run.design);
+        const QByteArray json = circuitToJson(scene.circuitData());
+
+        CircuitCanvas canvas;
+        const auto data = circuitFromJson(json);
+        QVERIFY2(data, qPrintable(data.error()));
+        const auto loaded = canvas.getScene()->loadCircuit(*data);
+        QVERIFY2(loaded, qPrintable(loaded.error()));
+        QCOMPARE(circuitToJson(canvas.getScene()->circuitData()), json);
+        QCOMPARE(canvas.getScene()->design().modules.keys().size(), run.design.modules.keys().size());
+
+        // Its blocks still open, down to the innermost one
+        canvas.openBlock(blockNamed(canvas.getScene(), u"u"_s));
+        QCOMPARE(canvas.depth(), 1);
+        canvas.openBlock(blockNamed(canvas.currentScene(), u"h1"_s));
+        QCOMPARE(itemsOfType<GateItem>(canvas.currentScene()).size(), 2);
     }
 
     void resetInputsStayZero()

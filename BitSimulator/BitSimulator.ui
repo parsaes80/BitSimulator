@@ -56,15 +56,40 @@
          <number>0</number>
         </property>
         <item>
-         <layout class="QGridLayout" name="gridLayout_2" columnstretch="1,0,0">
+         <layout class="QGridLayout" name="gridLayout_2" columnstretch="1,0,0,0,0">
           <property name="horizontalSpacing">
            <number>6</number>
           </property>
           <property name="verticalSpacing">
            <number>0</number>
           </property>
-          <item row="1" column="0" colspan="3">
+          <item row="1" column="0" colspan="5">
            <widget class="CircuitCanvas" name="camera"/>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="searchBar">
+            <property name="minimumSize">
+             <size>
+              <width>180</width>
+              <height>32</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>240</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="toolTip">
+             <string>Find an input or output by name (a regular expression, any case); Enter jumps to a single match</string>
+            </property>
+            <property name="placeholderText">
+             <string>Search inputs and outputs</string>
+            </property>
+            <property name="clearButtonEnabled">
+             <bool>true</bool>
+            </property>
+           </widget>
           </item>
           <item row="0" column="1">
            <spacer name="horizontalSpacer">
@@ -572,7 +597,7 @@
             </item>
            </layout>
           </item>
-          <item row="0" column="2">
+          <item row="0" column="4">
            <widget class="QPushButton" name="themeButton">
             <property name="minimumSize">
              <size>
@@ -599,6 +624,19 @@
              <string/>
             </property>
            </widget>
+          </item>
+          <item row="0" column="3">
+           <spacer name="horizontalSpacer_2">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
           </item>
          </layout>
         </item>
@@ -923,6 +961,242 @@
            <widget class="QPushButton" name="compileDirButton">
             <property name="text">
              <string>Compile directory</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="filesTab">
+       <attribute name="title">
+        <string>Files</string>
+       </attribute>
+       <layout class="QHBoxLayout" name="filesLayout" stretch="1,1">
+        <property name="spacing">
+         <number>24</number>
+        </property>
+        <property name="leftMargin">
+         <number>16</number>
+        </property>
+        <property name="topMargin">
+         <number>16</number>
+        </property>
+        <property name="rightMargin">
+         <number>16</number>
+        </property>
+        <property name="bottomMargin">
+         <number>16</number>
+        </property>
+        <item>
+         <layout class="QVBoxLayout" name="fileActions">
+          <property name="spacing">
+           <number>10</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="currentFileName">
+            <property name="text">
+             <string>Untitled</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="currentFilePath">
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+            </property>
+            <property name="muted" stdset="0">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QGridLayout" name="fileButtonGrid" columnstretch="0,1">
+            <property name="horizontalSpacing">
+             <number>14</number>
+            </property>
+            <property name="verticalSpacing">
+             <number>10</number>
+            </property>
+            <item row="0" column="0">
+             <widget class="QPushButton" name="newButton">
+              <property name="minimumSize">
+               <size>
+                <width>130</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>New</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLabel" name="newButtonHint">
+              <property name="text">
+               <string>Start an empty circuit (Ctrl+N)</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="muted" stdset="0">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QPushButton" name="openButton">
+              <property name="minimumSize">
+               <size>
+                <width>130</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Open...</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QLabel" name="openButtonHint">
+              <property name="text">
+               <string>Open a .bitsim file from anywhere (Ctrl+O)</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="muted" stdset="0">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QPushButton" name="saveButton">
+              <property name="minimumSize">
+               <size>
+                <width>130</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Save</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QLabel" name="saveButtonHint">
+              <property name="text">
+               <string>Save the circuit to its file (Ctrl+S)</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="muted" stdset="0">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QPushButton" name="saveAsButton">
+              <property name="minimumSize">
+               <size>
+                <width>130</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Save As...</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QLabel" name="saveAsButtonHint">
+              <property name="text">
+               <string>Save the circuit under a new name in the saves folder (Ctrl+Shift+S)</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="muted" stdset="0">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <spacer name="fileActionsSpacer">
+            <property name="orientation">
+             <enum>Qt::Orientation::Vertical</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="savesColumn">
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="savesTitle">
+            <property name="text">
+             <string>Saved circuits</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="savesFolder">
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+            </property>
+            <property name="muted" stdset="0">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTreeWidget" name="savesList">
+            <property name="rootIsDecorated">
+             <bool>false</bool>
+            </property>
+            <property name="uniformRowHeights">
+             <bool>true</bool>
+            </property>
+            <property name="sortingEnabled">
+             <bool>false</bool>
+            </property>
+            <column>
+             <property name="text">
+              <string>Name</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Saved</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="savesHint">
+            <property name="text">
+             <string>Double-click a circuit to open it; right-click it to delete it.</string>
+            </property>
+            <property name="muted" stdset="0">
+             <bool>true</bool>
             </property>
            </widget>
           </item>

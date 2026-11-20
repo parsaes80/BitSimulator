@@ -9,6 +9,7 @@
 #include <functional>
 #include <unordered_map>
 #include <vector>
+#include "CircuitFile.h"
 #include "Items.h"
 #include "hdlcompiler.h"
 
@@ -63,6 +64,8 @@ public:
     void deleteSelection();
     // Stops the run and empties the canvas
     void resetCircuit();
+    // Sources and displays whose name matches `pattern` (a case-insensitive regex, else literal text); inputs first
+    QList<ComponentItem*> findInputsAndOutputs(const QString& pattern) const;
     void startWireConnection(QPointF startPoint);
     void updateWireConnection(QPointF currentPoint);
     void finishWireConnection(QPointF endPoint);
@@ -105,6 +108,9 @@ public:
     // Keeps only the newest result and applies it at the next frame, so fast runs don't flood the GUI
     void queueResult(const SimResult& result);
     void receiveDesign(const NetDesign& design);
+    CircuitData circuitData() const;
+    // Replaces the circuit; refused with a reason if the data doesn't fit together (nothing changes then)
+    std::expected<void, QString> loadCircuit(const CircuitData& data);
 signals:
     // To the simulator, queued across threads so they arrive in order
     void startSimSIG(ExportGraph graph);
@@ -116,6 +122,7 @@ signals:
     void openBlock(BlockItem* block);
     void designChanged();              // also when cleared: the view returns to the top
     void valuesChanged();              // block views follow it
+    void circuitModified();            // a change worth saving: an edit or a move
 private:
     ExportGraph buildGraph();          // also fills the wire map
     WireItem* addWire(PortItem* from, PortItem* to);
@@ -125,6 +132,7 @@ private:
     void buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>& blocks);
     void setSimState(SimState state);
     void circuitEdited();              // after every structural change
+    void watchMoves(QGraphicsObject* item);
     QString automaticName(const ComponentItem* item) const;   // "Source 3"; empty for other kinds
     void cancelWireConnection();
     void resetValues();
@@ -186,6 +194,8 @@ public:
     QString currentPath() const;                         // e.g. "core/alu"
     void openBlock(BlockItem* block);
     void showLevel(int depth);                           // 0 = the circuit
+    void focusOn(ComponentItem* item);
+    void showWholeCircuit();                             // everything on screen, never magnified                   // jumps and zooms to a component of the circuit, and selects it
 signals:
     void depthChanged(int depth);
 public:

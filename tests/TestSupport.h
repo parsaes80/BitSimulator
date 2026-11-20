@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QTemporaryDir>
 #include <QTextCursor>
 #include <QPushButton>
 #include <QSlider>
@@ -103,6 +104,7 @@ inline constexpr const char* MissingHdlTools = "yosys, Graphviz dot or sv2v was 
 
 // The application window, with shortcuts to what the tests use
 struct App {
+    QTemporaryDir saves;      // each window gets its own saves folder
     MainWindow window;
     CircuitCanvas* canvas = nullptr;
     CircuitScene* scene = nullptr;
@@ -116,6 +118,8 @@ struct App {
 
     App()
     {
+        window.setSavesDir(saves.path());
+        window.setAskToSave(false);   // a modal box would stall the tests; the file tests turn it back on
         window.resize(1280, 760);
         window.show();
         if (!QTest::qWaitForWindowExposed(&window)) qFatal("Test setup: the main window never appeared");

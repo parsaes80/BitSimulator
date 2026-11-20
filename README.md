@@ -27,6 +27,9 @@ Controls in the Schematic Editor:
 | Deselect | Left click on empty space |
 | Delete the selected component | Delete or Backspace |
 | Zoom in / out | Mouse wheel |
+| Find an input or output | Type in the search bar (top right); click a result, or press Enter when there is only one |
+
+The search bar matches the names of sources and displays as a regular expression, in any case (`^data\d+$`, `rst|clk`); text that is not a valid expression yet is matched as it is. Jumping to a result leaves any open block, zooms in on the component and selects it.
 
 The **Properties** panel on the right of the Schematic Editor shows the settings of the selected component (number of inputs, register type, source values, and so on) and lets you change them after the component has been placed. With nothing selected, it says so and shows the settings for the next component you place. A change that would remove a pin with a wire on it is refused until you remove the wire.
 
@@ -114,6 +117,11 @@ Every port of every block is recorded from the first tick, so a port added later
 Arrays such as a register file reach the netlist as one wide port: `output logic [31:0] regs_out [31:0]` becomes the 1024-bit `regs_out[1023:0]`. **Split into › 32-bit words** shows it as `regs_out[31]` … `regs_out[0]`, one register per row.
 
 The tab has its own **Start / Pause** and **Reset** buttons, the same as the ones on the circuit's toolbar, so a run can be started, paused, continued and reset without leaving the waveforms. While the simulation runs, **Follow** keeps the newest tick in view; dragging turns it off and the button turns it back on. When the run stops, its waveforms stay until the next Start; **Reset** clears them at once (the signals shown and their settings stay). The next run of the same circuit keeps the signals and their settings; compiling or clearing starts over with the new circuit's inputs and outputs.
+
+## Saving and Opening Circuits
+The **Files** tab has **New**, **Open...**, **Save** and **Save As...** (also Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S), and lists the circuits in the `saves` folder next to the executable; double-click one to open it, or right-click it to delete it. **Save As** asks for a name and saves into that folder; **Open** can open a `.bitsim` file from anywhere.
+
+A `.bitsim` file is JSON: every component with its settings, position and name, and every wire. A circuit compiled from HDL is saved with its compiled design, blocks included, so it opens without the HDL files or tools. The window title shows the file's name, with a `*` while there are unsaved changes; closing, New, Open, Clear or a compile then asks whether to save them first. A compiled circuit counts as untitled and unchanged until it is edited, since it can always be compiled again.
 
 # Compiling the Project
 The easiet way to compile the project is to install **Qt Creator** IDE and clone and open the project there. Then use the IDE to build the project. The IDE will install the Qt dependancies.  

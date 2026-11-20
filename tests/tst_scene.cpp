@@ -40,6 +40,147 @@ u32 netOf(const PortItem* port)
 class TestScene : public QObject {
     Q_OBJECT
 private slots:
+    void aSavedCircuitOpensExactlyAsItWas()
+    {
+        CircuitScene scene;
+        SourceProps wide = SourceProps::list({(std::uint64_t(1) << 63) + 5, 7}, 64);   // past 2^53: JSON numbers would round it
+        wide.repeat = false;
+        auto* list = add<SourceItem>(scene, wide, QPointF(80000, 50000));
+        SourceProps pattern = SourceProps::waveform({true, false, true});
+        pattern.bits = 2;
+        auto* waves = add<SourceItem>(scene, normalized(pattern), QPointF(80000, 50300));
+        auto* gate = add<GateItem>(scene, GateProps{GType::NAND, 3}, QPointF(80300, 50000));
+        auto* reg = add<RegisterItem>(scene, RegisterProps{RType::D, true, true, true, true}, QPointF(80300, 50300));
+        auto* mux = add<MuxItem>(scene, MuxProps{MType::MUX, 4}, QPointF(80600, 50000));
+        auto* out = add<DisplayItem>(scene, DisplayProps{2, 1}, QPointF(80900, 50000));
+        QVERIFY(scene.renameComponent(list, u"data_in"_s));
+        QVERIFY(connectPorts(&scene, list->getOutputPorts()[0], gate->getInputPort(0)));
+        QVERIFY(connectPorts(&scene, waves->getOutputPorts()[1], gate->getInputPort(2)));
+        QVERIFY(connectPorts(&scene, gate->getOutputPort(), reg->getInputPort()));
+        QVERIFY(connectPorts(&scene, waves->getOutputPorts()[0], reg->getClkPort()));
+        QVERIFY(connectPorts(&scene, reg->getOutputPort(), mux->getInputPorts()[3]));
+        QVERIFY(connectPorts(&scene, mux->getOutputPort(), out->getInputPorts()[1]));
+        QVERIFY(connectPorts(&scene, gate->getOutputPort(), mux->getAddressPorts()[0]));   // an output feeds two inputs
+
+        const QByteArray json = circuitToJson(scene.circuitData());
+        const auto data = circuitFromJson(json);
+        QVERIFY2(data, qPrintable(data.error()));
+        QCOMPARE(data->components.size(), 6);
+        QCOMPARE(data->wires.size(), 7);
+        QCOMPARE(std::get<SourceProps>(data->components[0].props), wide);
+        QCOMPARE(data->components[0].name, u"data_in"_s);
+        QCOMPARE(data->components[1].name, u"Source 2"_s);
+
+        CircuitScene loaded;
+        const auto result = loaded.loadCircuit(*data);
+        QVERIFY2(result, qPrintable(result.error()));
+        QCOMPARE(circuitToJson(loaded.circuitData()), json);                // the same circuit, byte for byte
+        QCOMPARE(itemsOfType<WireItem>(&loaded).size(), 7);
+        for (WireItem* wire : itemsOfType<WireItem>(&loaded)) QVERIFY(wire->isConnected());
+    }
+
+    void everySettingAndPositionIsSaved()
+    {
+        // Every field away from its default, so one the file forgot would come back different
+        SourceProps source;
+        source.mode = SourceMode::Random;     // the other modes' settings are kept too
+        source.bits = 12;
+        source.ticksPerStep = 3;
+        source.countDown = true;
+        source.start = 0xABCDEF0123456789;
+        source.step = 7;
+        source.seed = 4242;
+        source.values = {1, 2, 3, std::uint64_t(-1)};
+        source.waves = {{true, true, false}, {false, true}};
+        source.constant = 0x8000000000000001;
+        source.repeat = false;
+        const QList<ItemProps> all{source, GateProps{GType::XNOR, 5}, RegisterProps{RType::T, false, false, true, true},
+                                   MuxProps{MType::DEMUX, 8}, DisplayProps{3, 2}};
+        for (const ItemProps& props : all) QVERIFY(props != ItemProps(std::visit([](auto p) -> ItemProps { return decltype(p){}; }, props)));
+
+        CircuitScene scene;
+        QList<QPointF> positions;
+        for (qsizetype i = 0; i < all.size(); i++) {
+            positions << QPointF(80000 + 137.5 * i, 50000 - 61.25 * i);
+            QVERIFY(scene.addComponent(all[i], positions.last()));
+        }
+        const auto data = circuitFromJson(circuitToJson(scene.circuitData()));
+        QVERIFY(data);
+        CircuitScene loaded;
+        QVERIFY(loaded.loadCircuit(*data));
+        const CircuitData back = loaded.circuitData();
+        QCOMPARE(back.components.size(), all.size());
+        for (qsizetype i = 0; i < all.size(); i++) {
+            const auto found = std::ranges::find(back.components, positions[i], &SavedComponent::position);
+            QVERIFY2(found != back.components.end(), qPrintable(u"component %1 moved"_s.arg(i)));
+            QVERIFY2(found->props == std::visit([](auto p) -> ItemProps { return normalized(p); }, all[i]), qPrintable(u"component %1 changed"_s.arg(i)));
+        }
+    }
+
+    void aDamagedFileChangesNothing()
+    {
+        CircuitScene scene;
+        auto* source = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50000));
+        auto* display = add<DisplayItem>(scene, DisplayProps{1, 0}, QPointF(80300, 50000));
+        QVERIFY(connectPorts(&scene, source->getOutputPorts()[0], display->getInputPorts()[0]));
+        const QByteArray good = circuitToJson(scene.circuitData());
+
+        QVERIFY(!circuitFromJson("not json"));
+        QVERIFY(!circuitFromJson(R"({"app": "Something else", "version": 1})"));
+        QVERIFY(circuitFromJson(R"({"app": "BitSimulator", "version": 99})").error().contains(u"newer"_s));
+        QVERIFY(circuitFromJson(R"({"app": "BitSimulator", "version": 1, "components": [{"kind": "toaster"}]})").error().contains(u"unknown kind"_s));
+
+        CircuitData data = *circuitFromJson(good);
+        CircuitScene other;
+        add<GateItem>(other, GateProps{}, QPointF(80000, 50000));
+        const auto refuse = [&other](const CircuitData& broken, const QString& why) {
+            const auto result = other.loadCircuit(broken);
+            QVERIFY(!result);
+            QVERIFY2(result.error().contains(why), qPrintable(result.error()));
+            QCOMPARE(itemsOfType<GateItem>(&other).size(), 1);                // the canvas it had
+        };
+        CircuitData missingPin = data;
+        missingPin.wires[0].toPin = 5;
+        refuse(missingPin, u"Wire 1"_s);
+        CircuitData twice = data;
+        twice.wires.append(data.wires[0]);                                 // a second wire into the same input
+        refuse(twice, u"Wire 2"_s);
+        CircuitData noModule = data;
+        noModule.components.append({BlockProps{u"u"_s, u"adder"_s, {}}, {}, {}});
+        refuse(noModule, u"adder"_s);
+    }
+
+    void searchFindsInputsAndOutputsByName()
+    {
+        CircuitScene scene;
+        auto* clk = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50000));
+        auto* rst = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50200));
+        auto* s10 = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50400));
+        auto* s2 = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50600));
+        auto* out = add<DisplayItem>(scene, DisplayProps{1, 0}, QPointF(80300, 50000));
+        add<GateItem>(scene, GateProps{}, QPointF(80300, 50300));       // not an input or output
+        QVERIFY(scene.renameComponent(clk, u"CLK_main"_s));
+        QVERIFY(scene.renameComponent(rst, u"rst_n"_s));
+        QVERIFY(scene.renameComponent(s10, u"data10"_s));
+        QVERIFY(scene.renameComponent(s2, u"data2"_s));
+        QVERIFY(scene.renameComponent(out, u"data_out"_s));
+        const auto find = [&scene](const QString& pattern) {
+            QStringList names;
+            for (ComponentItem* item : scene.findInputsAndOutputs(pattern)) {
+                if (auto* source = dynamic_cast<SourceItem*>(item)) names << source->name();
+                else names << dynamic_cast<DisplayItem*>(item)->name();
+            }
+            return names;
+        };
+
+        QCOMPARE(find(u"data"_s), (QStringList{u"data2"_s, u"data10"_s, u"data_out"_s}));   // inputs first, numbers in order
+        QCOMPARE(find(u"clk"_s), QStringList{u"CLK_main"_s});                              // any case
+        QCOMPARE(find(u"^data\\d+$"_s), (QStringList{u"data2"_s, u"data10"_s}));         // a regex
+        QCOMPARE(find(u"rst|clk"_s), (QStringList{u"CLK_main"_s, u"rst_n"_s}));
+        QCOMPARE(find(u"data["_s), QStringList{});                                         // invalid: literal text, no match
+        QCOMPARE(find(u"nothing"_s), QStringList{});
+    }
+
     void sourcesAndDisplaysGetNames()
     {
         CircuitScene scene;

@@ -9,6 +9,7 @@
 #include <QMouseEvent>
 #include <QGuiApplication>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QScrollBar>
 #include <QSet>
@@ -16,6 +17,7 @@
 #include <QWheelEvent>
 #include <cmath>
 #include <limits>
+#include <memory>
 
 using namespace Qt::StringLiterals;
 
@@ -93,6 +95,7 @@ ComponentItem* CircuitScene::addComponent(const ItemProps& props, QPointF positi
     else if (auto* display = dynamic_cast<DisplayItem*>(item)) display->setName(automaticName(item));
     item->setPos(position);
     addItem(item);
+    watchMoves(item);
     circuitEdited();
     return item;
 }
@@ -147,6 +150,30 @@ ComponentItem::EditResult CircuitScene::editComponent(ComponentItem* item, const
 
     auto result = item->setProps(props);
     if (result) circuitEdited();
+    return result;
+}
+
+QList<ComponentItem*> CircuitScene::findInputsAndOutputs(const QString& pattern) const
+{
+    QRegularExpression regex(pattern, QRegularExpression::CaseInsensitiveOption);
+    if (!regex.isValid()) regex.setPattern(QRegularExpression::escape(pattern));   // e.g. "a[" while still typing
+    QList<std::pair<ComponentItem*, QString>> found;
+    for (QGraphicsItem* item : items()) {
+        QString name;
+        if (auto* source = dynamic_cast<SourceItem*>(item)) name = source->name();
+        else if (auto* display = dynamic_cast<DisplayItem*>(item)) name = display->name();
+        else continue;
+        if (regex.match(name).hasMatch()) found.append({static_cast<ComponentItem*>(item), name});
+    }
+    QCollator collator;
+    collator.setNumericMode(true);
+    std::ranges::stable_sort(found, [&collator](const auto& a, const auto& b) {
+        const bool aIn = dynamic_cast<SourceItem*>(a.first), bIn = dynamic_cast<SourceItem*>(b.first);
+        if (aIn != bIn) return aIn;
+        return collator.compare(a.second, b.second) < 0;
+    });
+    QList<ComponentItem*> result;
+    for (const auto& [item, name] : found) result.append(item);
     return result;
 }
 
@@ -251,6 +278,13 @@ void CircuitScene::stopSim()
 void CircuitScene::circuitEdited()
 {
     if (m_simState == SimState::Paused) stopSim();
+    circuitModified();
+}
+
+void CircuitScene::watchMoves(QGraphicsObject* item)
+{
+    connect(item, &QGraphicsObject::xChanged, this, &CircuitScene::circuitModified);
+    connect(item, &QGraphicsObject::yChanged, this, &CircuitScene::circuitModified);
 }
 
 void CircuitScene::cancelWireConnection()
@@ -589,6 +623,77 @@ void CircuitScene::receiveDesign(const NetDesign& design)
     buildModule(m_design, m_design.top, true);
 }
 
+CircuitData CircuitScene::circuitData() const
+{
+    CircuitData data;
+    data.design = m_design;
+    QHash<const QGraphicsObject*, int> indexOf;
+    for (QGraphicsItem* item : items(Qt::AscendingOrder)) {
+        auto* component = dynamic_cast<ComponentItem*>(item);
+        if (!component) continue;
+        QString name;
+        if (auto* source = dynamic_cast<SourceItem*>(component)) name = source->name();
+        else if (auto* display = dynamic_cast<DisplayItem*>(component)) name = display->name();
+        indexOf.insert(component, int(data.components.size()));
+        data.components.append({component->props(), component->pos(), name});
+    }
+    for (QGraphicsItem* item : items(Qt::AscendingOrder)) {
+        auto* wire = dynamic_cast<WireItem*>(item);
+        if (!wire || !wire->isConnected()) continue;
+        const auto end = [&indexOf](PortItem* pin) -> std::pair<int, int> {
+            auto* component = dynamic_cast<ComponentItem*>(pin->getParent());
+            if (!component || !indexOf.contains(component)) return {-1, -1};
+            return {indexOf[component], int(componentPins(component).indexOf(pin))};
+        };
+        const auto [from, fromPin] = end(wire->getStartPort());
+        const auto [to, toPin] = end(wire->getEndPort());
+        if (from >= 0 && to >= 0) data.wires.append({from, fromPin, to, toPin});
+    }
+    return data;
+}
+
+std::expected<void, QString> CircuitScene::loadCircuit(const CircuitData& data)
+{
+    // Built and checked off the scene first, so a damaged file changes nothing
+    std::vector<std::unique_ptr<ComponentItem>> built;
+    for (const SavedComponent& saved : data.components) {
+        if (const auto* block = std::get_if<BlockProps>(&saved.props); block && !data.design.module(block->module))
+            return std::unexpected(tr("A block uses the module %1, which the file does not have.").arg(block->module));
+        built.emplace_back(createComponent(saved.props));
+    }
+    QList<std::pair<PortItem*, PortItem*>> wires;
+    QSet<PortItem*> usedInputs;
+    for (qsizetype i = 0; i < data.wires.size(); i++) {
+        const SavedWire& saved = data.wires[i];
+        const auto pin = [&built](int component, int index) -> PortItem* {
+            if (component < 0 || component >= int(built.size())) return nullptr;
+            return componentPins(built[component].get()).value(index);
+        };
+        PortItem* from = pin(saved.from, saved.fromPin);
+        PortItem* to = pin(saved.to, saved.toPin);
+        PortItem* input = from && from->getPortType() == PortType::IN ? from : to;
+        if (!from || !to || !to->canConnectTo(from) || usedInputs.contains(input))
+            return std::unexpected(tr("Wire %1 does not connect an output to a free input.").arg(i + 1));
+        usedInputs.insert(input);
+        wires.append(std::pair{from, to});
+    }
+
+    resetCircuit();
+    m_design = data.design;
+    for (qsizetype i = 0; i < data.components.size(); i++) {
+        ComponentItem* item = built[i].release();
+        const QString& name = data.components[i].name;   // as saved: a compiled design's constant 1 has none
+        if (auto* source = dynamic_cast<SourceItem*>(item)) source->setName(name);
+        else if (auto* display = dynamic_cast<DisplayItem*>(item)) display->setName(name);
+        item->setPos(data.components[i].position);
+        addItem(item);
+        watchMoves(item);
+    }
+    for (const auto& [from, to] : std::as_const(wires)) addWire(from, to);
+    circuitEdited();
+    return {};
+}
+
 WireItem* CircuitScene::addWire(PortItem* from, PortItem* to)
 {
     auto* wire = new WireItem(from->mapToScene(QPointF(0, 0)), to->mapToScene(QPointF(0, 0)));
@@ -668,6 +773,7 @@ void CircuitScene::buildModule(const NetDesign& design, const QString& moduleNam
             item->setFlag(QGraphicsItem::ItemIsSelectable, false);
         }
         addItem(item);
+        if (topLevel) watchMoves(item);
     }
 
     for (const auto& [bit, reader] : std::as_const(readers)) {
@@ -988,14 +1094,7 @@ void CircuitCanvas::openBlock(BlockItem* block)
     m_levels.append(level);
 
     showScene(level.scene);
-    // All of the module, never magnified
-    const QRectF contents = level.scene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
-    resetTransform();
-    if (!contents.isEmpty()) {
-        fitInView(contents, Qt::KeepAspectRatio);
-        if (transform().m11() > 1) resetTransform();
-        centerOn(contents.center());
-    }
+    showWholeCircuit();
     refreshBlockValues();
     updateBreadcrumb();
     depthChanged(depth());
@@ -1017,6 +1116,32 @@ void CircuitCanvas::showLevel(int level)
     refreshBlockValues();
     updateBreadcrumb();
     depthChanged(depth());
+}
+
+void CircuitCanvas::showWholeCircuit()
+{
+    // Never magnified
+    const QRectF contents = currentScene()->itemsBoundingRect().adjusted(-60, -60, 60, 60);
+    resetTransform();
+    if (contents.isEmpty()) return;
+    fitInView(contents, Qt::KeepAspectRatio);
+    if (transform().m11() > 1) resetTransform();
+    centerOn(contents.center());
+}
+
+void CircuitCanvas::focusOn(ComponentItem* item)
+{
+    if (!item || item->scene() != m_scene) return;
+    showLevel(0);
+    // The component with a few times its size around it, at most 2x magnified
+    const QRectF body = item->sceneBoundingRect();
+    const qreal margin = std::max({body.width(), body.height(), 100.0}) * 2;
+    resetTransform();
+    fitInView(body.adjusted(-margin, -margin, margin, margin), Qt::KeepAspectRatio);
+    if (transform().m11() > 2) setTransform(QTransform::fromScale(2, 2));
+    centerOn(body.center());
+    m_scene->clearSelection();
+    item->setSelected(true);
 }
 
 void CircuitCanvas::showScene(CircuitScene* scene)

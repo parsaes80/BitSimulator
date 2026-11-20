@@ -32,6 +32,8 @@ set(PROJECT_SOURCES
     simulator.h
     hdlcompiler.cpp
     hdlcompiler.h
+    CircuitFile.cpp
+    CircuitFile.h
     general.h
     BitSimulator.ui
     theme/theme.qrc

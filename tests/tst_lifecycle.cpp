@@ -1,7 +1,13 @@
 // Start, Pause, Reset, Clear and Compile on the real window, simulator in its own thread
 
 #include "TestSupport.h"
+#include <QAbstractItemView>
+#include <QCompleter>
 #include <QDir>
+#include <functional>
+#include <QInputDialog>
+#include <QTreeWidget>
+#include <QLineEdit>
 #include <QFileInfo>
 #include <QTabWidget>
 #include <QListWidget>
@@ -47,6 +53,35 @@ struct ClockCircuit {
     bool notOut() const { return inv->getOutputPort()->getValue(); }
     int step() const { return int(clock->tick() % u64(pattern.size())); }   // position in the pattern
 };
+
+// Answers the next modal dialog once it opens, as the user would
+void whenDialogOpens(std::function<void(QWidget*)> answer)
+{
+    auto* poll = new QTimer;
+    QObject::connect(poll, &QTimer::timeout, poll, [poll, answer] {
+        QWidget* dialog = QApplication::activeModalWidget();
+        if (!dialog) return;
+        poll->deleteLater();
+        poll->stop();
+        answer(dialog);
+    });
+    poll->start(10);
+}
+
+void typeName(QWidget* dialog, const QString& name)
+{
+    auto* input = dialog->findChild<QLineEdit*>();
+    QVERIFY(input);
+    input->setText(name);
+    static_cast<QDialog*>(dialog)->accept();
+}
+
+void pressButton(QWidget* dialog, QMessageBox::StandardButton button)
+{
+    auto* box = qobject_cast<QMessageBox*>(dialog);
+    QVERIFY(box && box->button(button));
+    box->button(button)->click();
+}
 
 bool waitForCompile(App& app)
 {
@@ -288,6 +323,153 @@ private slots:
         QTest::qWait(130);
         QCOMPARE(app.scene->simState(), SimState::Running);
         QVERIFY2(circuit.step() <= 2, qPrintable(u"step %1"_s.arg(circuit.step())));
+    }
+
+    //===================== Files ========================
+
+    void savingAndOpeningOnTheFilesTab()
+    {
+        App app;
+        auto* tabs = child<QTabWidget>(&app.window, "tabWidget");
+        auto* list = child<QTreeWidget>(&app.window, "savesList");
+        auto* fileName = child<QLabel>(&app.window, "currentFileName");
+        auto* source = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(2), app.centre));
+        auto* display = dynamic_cast<DisplayItem*>(app.scene->addComponent(DisplayProps{2, 0}, app.centre + QPointF(200, 0)));
+        QVERIFY(connectPorts(app.scene, source->getOutputPorts()[0], display->getInputPorts()[0]));
+        QVERIFY(app.window.isWindowModified());
+        QCOMPARE(fileName->text(), u"Untitled (unsaved changes)"_s);
+
+        // Save on an untitled circuit asks for a name and saves into the saves folder
+        whenDialogOpens([](QWidget* dialog) { typeName(dialog, u"half adder"_s); });
+        child<QPushButton>(&app.window, "saveButton")->click();
+        const QString path = QDir(app.saves.path()).filePath(u"half adder.bitsim"_s);
+        QVERIFY(QFileInfo::exists(path));
+        QCOMPARE(app.window.currentFile(), QFileInfo(path).absoluteFilePath());
+        QVERIFY(!app.window.isWindowModified());
+        QCOMPARE(app.window.windowTitle(), u"half adder[*] - BitSimulator"_s);
+        QCOMPARE(list->topLevelItemCount(), 1);
+        QCOMPARE(list->topLevelItem(0)->text(0), u"half adder"_s);
+
+        // A move counts as a change; with the prompt on, New asks, and Cancel keeps everything
+        app.window.setAskToSave(true);
+        const QPointF savedPos = source->pos();
+        source->setPos(savedPos + QPointF(400, 0));
+        QVERIFY(app.window.isWindowModified());
+        whenDialogOpens([](QWidget* dialog) { pressButton(dialog, QMessageBox::Cancel); });
+        child<QPushButton>(&app.window, "newButton")->click();
+        QVERIFY(app.scene->items().contains(source));
+
+        // Discard: an empty, untitled canvas
+        whenDialogOpens([](QWidget* dialog) { pressButton(dialog, QMessageBox::Discard); });
+        child<QPushButton>(&app.window, "newButton")->click();
+        QVERIFY(itemsOfType<ComponentItem>(app.scene).isEmpty());
+        QVERIFY(app.window.currentFile().isEmpty());
+        QVERIFY(!app.window.isWindowModified());
+
+        // Opening from the list brings back the saved circuit, as it was saved
+        tabs->setCurrentWidget(child<QWidget>(&app.window, "filesTab"));
+        emit list->itemActivated(list->topLevelItem(0), 0);
+        QCOMPARE(tabs->currentWidget(), child<QWidget>(&app.window, "CircuitTab"));
+        const QList<SourceItem*> sources = itemsOfType<SourceItem>(app.scene);
+        QCOMPARE(sources.size(), 1);
+        QCOMPARE(sources[0]->pos(), savedPos);
+        QCOMPARE(itemsOfType<WireItem>(app.scene).size(), 1);
+        QVERIFY(!app.window.isWindowModified());
+        QCOMPARE(app.window.currentFile(), QFileInfo(path).absoluteFilePath());
+
+        // Ctrl+S writes the file again without asking for a name
+        sources[0]->setPos(savedPos + QPointF(0, 300));
+        app.window.activateWindow();                                     // shortcuts need the active window
+        QVERIFY(QTest::qWaitForWindowActive(&app.window));
+        QTest::keyClick(app.canvas->viewport(), Qt::Key_S, Qt::ControlModifier);
+        QVERIFY(!app.window.isWindowModified());
+        app.window.setAskToSave(false);
+        app.clear->click();
+        QVERIFY(app.window.openCircuit(path));
+        QCOMPARE(itemsOfType<SourceItem>(app.scene)[0]->pos(), savedPos + QPointF(0, 300));
+
+        // The run can go on while saving; a compile's result is untitled
+        app.start->click();
+        QVERIFY(app.window.saveCircuit(path));
+        QCOMPARE(app.scene->simState(), SimState::Running);
+        app.clear->click();
+    }
+
+    void aDamagedFileIsReportedAndTheCircuitKept()
+    {
+        App app;
+        app.scene->addComponent(GateProps{}, app.centre);
+        QFile file(QDir(app.saves.path()).filePath(u"broken.bitsim"_s));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(R"({"app": "BitSimulator", "version": 1, "components": [{"kind": "toaster"}]})");
+        file.close();
+        QString message;
+        whenDialogOpens([&message](QWidget* dialog) {
+            message = qobject_cast<QMessageBox*>(dialog)->text();
+            pressButton(dialog, QMessageBox::Ok);
+        });
+        QVERIFY(!app.window.openCircuit(file.fileName()));
+        QVERIFY2(message.contains(u"unknown kind"_s), qPrintable(message));
+        QCOMPARE(itemsOfType<GateItem>(app.scene).size(), 1);
+        QVERIFY(app.window.currentFile().isEmpty());
+    }
+
+    //===================== Search ========================
+
+    void theSearchBarListsMatchesAndJumpsToThem()
+    {
+        App app;
+        auto* bar = child<QLineEdit>(&app.window, "searchBar");
+        auto* completer = app.window.findChild<QCompleter*>();
+        QVERIFY(completer);
+        auto* near = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(1), app.centre));
+        auto* far = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(1), app.centre + QPointF(5000, 3000)));
+        auto* other = dynamic_cast<DisplayItem*>(app.scene->addComponent(DisplayProps{1, 0}, app.centre + QPointF(300, 0)));
+        QVERIFY(app.scene->renameComponent(near, u"alu_a"_s));
+        QVERIFY(app.scene->renameComponent(far, u"alu_b"_s));
+        QVERIFY(app.scene->renameComponent(other, u"result"_s));
+        const auto viewCentre = [&] { return app.canvas->mapToScene(app.canvas->viewport()->rect().center()); };
+        const auto shows = [&](ComponentItem* item) {
+            const double pixels = QLineF(viewCentre(), item->sceneBoundingRect().center()).length() * app.canvas->transform().m11();
+            return pixels < 3 && item->isSelected();                     // centred, to the pixel
+        };
+
+        // Typing lists the matches below the bar, none highlighted
+        bar->setFocus();
+        QTest::keyClicks(bar, u"alu"_s);
+        QTRY_VERIFY(completer->popup()->isVisible());
+        QCOMPARE(completer->popup()->model()->rowCount(), 2);
+        QVERIFY(completer->popup()->model()->index(0, 0).data().toString().startsWith(u"alu_a"_s));
+        QVERIFY(!completer->popup()->currentIndex().isValid());
+
+        // Enter with two matches does not jump
+        QTest::keyClick(completer->popup(), Qt::Key_Return);
+        QVERIFY(!far->isSelected() && !near->isSelected());
+
+        // Clicking a row jumps to it, zooms in and selects it
+        QTest::keyClicks(bar, u"_"_s);
+        QTRY_VERIFY(completer->popup()->isVisible());
+        QAbstractItemView* list = completer->popup();
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, {}, list->visualRect(list->model()->index(1, 0)).center());
+        QVERIFY(shows(far));
+        QVERIFY(!completer->popup()->isVisible());
+        QVERIFY(app.canvas->transform().m11() > 1);
+
+        // One match: Enter jumps to it, also from inside the run
+        app.start->click();
+        bar->clear();
+        QTest::keyClicks(bar, u"^res"_s);
+        QTRY_VERIFY(completer->popup()->isVisible());
+        QCOMPARE(completer->popup()->model()->rowCount(), 1);
+        QTest::keyClick(completer->popup(), Qt::Key_Return);
+        QVERIFY(shows(other));
+        QCOMPARE(app.scene->simState(), SimState::Running);              // the search leaves the run alone
+
+        // No match: no list
+        bar->clear();
+        QTest::keyClicks(bar, u"zzz"_s);
+        QTest::qWait(50);
+        QVERIFY(!completer->popup()->isVisible());
     }
 
     //===================== Clear ========================

@@ -318,6 +318,24 @@ QComboBox QAbstractItemView {
     padding: 2px;
 }
 
+/* The search bar's results */
+#searchResults {
+    background-color: @panel;
+    color: @text;
+    border: 1px solid @border;
+    outline: none;
+    padding: 2px;
+}
+
+#searchResults::item {
+    padding: 3px 6px;
+}
+
+#searchResults::item:hover, #searchResults::item:selected {
+    background-color: @buttonChecked;
+    color: @text;
+}
+
 QCheckBox {
     spacing: 8px;
 }

@@ -1,12 +1,16 @@
 #pragma once
 
 #include <QtWidgets/QMainWindow>
+#include <QPointer>
 #include <QThread>
 #include "ui_BitSimulator.h"
 #include "simulator.h"
 #include "Theme.h"
 
+class ComponentItem;
 class FloatingPanel;
+class QCompleter;
+class QStandardItemModel;
 class PropertiesPanel;
 class WaveformModel;
 enum class SimState;
@@ -19,6 +23,14 @@ public:
     ~MainWindow();
 
     ColorScheme colorScheme() const { return m_colorScheme; }
+
+    //----- Files -----
+    bool openCircuit(const QString& path);   // asks about unsaved changes first
+    bool saveCircuit(const QString& path);
+    const QString& currentFile() const { return m_currentFile; }   // empty: untitled
+    const QString& savesDir() const { return m_savesDir; }
+    void setSavesDir(const QString& dir);
+    void setAskToSave(bool ask) { m_askToSave = ask; }            // off in tests
     // Restyles the whole window
     void setColorScheme(ColorScheme scheme);
 protected:
@@ -37,6 +49,16 @@ private:
     void compileDir();
     void updateTimerPeriod(int sliderValue);
     void toggleColorScheme();                // stops following the system setting
+    void newCircuit();
+    void openCircuitDialog();
+    bool save();                             // false if cancelled or failed
+    bool saveAs();                           // asks for a name in the saves folder
+    bool maybeSave();                        // false: the user cancelled
+    void showFileState();                    // title, Files tab labels
+    void refreshSavesList();
+    void showSavesMenu(const QPoint& pos);
+    void updateSearch(const QString& text);  // lists the matches under the search bar
+    void jumpToSearchMatch(int match);
 
 signals:
     void sendTimerPeriod(int milliseconds);
@@ -48,13 +70,21 @@ private:
     void setupPropertiesPanel();
     void setupColorScheme();
     void setupWaveforms();
+    void setupSearch();
+    void setupFiles();
     void updateWaveStatus();
-    void beginCompile(const QString& message);   // stops the run, disables both compile buttons
+    bool beginCompile(const QString& message);   // stops the run, disables both compile buttons; false if cancelled
 
     Ui::BitSimulatorClass ui;
     PropertiesPanel* m_properties = nullptr;
     FloatingPanel* m_propertiesFrame = nullptr;
     WaveformModel* m_waveModel = nullptr;
+    QStandardItemModel* m_searchModel = nullptr;
+    QCompleter* m_searchCompleter = nullptr;
+    QList<QPointer<ComponentItem>> m_searchMatches;   // the listed ones, by row
+    QString m_currentFile;
+    QString m_savesDir;
+    bool m_askToSave = true;
     ColorScheme m_colorScheme = ColorScheme::Dark;
     bool m_followSystemScheme = true;        // until the user picks a mode
     QString m_compileError;                  // shown if the compile fails
