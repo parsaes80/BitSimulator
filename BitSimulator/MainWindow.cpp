@@ -481,7 +481,7 @@ void MainWindow::jumpToSearchMatch(int match)
 void MainWindow::updateWaveStatus()
 {
     const WaveHistory& history = m_waveModel->history();
-    QString text;
+    QString text = tr("No run yet");
     if (!history.isEmpty()) {
         switch (ui.camera->getScene()->simState()) {
         case SimState::Running: text = tr("Tick %1").arg(history.lastTick()); break;

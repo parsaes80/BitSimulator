@@ -413,7 +413,8 @@ public:
     QList<PortItem*> getInputPorts() const { return m_inputPorts; }
     QList<PortItem*> getOutputPorts() const { return m_outputPorts; }
     void updateValue();
-    int getValue() const { return m_value; }
+    u64 getValue() const;                                  // the lowest 64 bits
+    const QString& valueText() const { return m_text; }   // decimal, any width
 
     // See SourceItem::name
     const QString& name() const { return m_name; }
@@ -424,7 +425,8 @@ private:
 
     DisplayProps m_props;
     QString m_name;
-    int m_value = 0;
+    std::vector<bool> m_bits;          // lowest first; the top pin is bit 0
+    QString m_text{QChar(u'0')};
     QList<PortItem*> m_inputPorts;
     QList<PortItem*> m_outputPorts;
 };

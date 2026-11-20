@@ -804,7 +804,7 @@ private slots:
         QCOMPARE(model->rows().size(), 2);
         QCOMPARE(model->radix(0), Radix::Binary);
         QVERIFY(!view->cursorTick());
-        QVERIFY(status->text().isEmpty());
+        QCOMPARE(status->text(), u"No run yet"_s);
         QVERIFY(!waveReset->isEnabled() && !reset->isEnabled());
         QTest::qWait(200);                                                  // late reports are dropped
         QVERIFY(model->history().isEmpty());

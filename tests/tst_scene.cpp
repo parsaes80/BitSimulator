@@ -261,6 +261,21 @@ private slots:
         QCOMPARE(itemsOfType<GateItem>(&scene).size(), 10);             // the oldest steps were dropped
     }
 
+    void displaysShowNumbersOfAnyWidth()
+    {
+        const auto show = [](int width, const QList<int>& ones) {
+            DisplayItem display(DisplayProps{width, 0});
+            for (int bit : ones) display.getInputPorts()[bit]->setValue(true);   // the top pin is bit 0
+            display.updateValue();
+            return std::pair{display.valueText(), display.getValue()};
+        };
+        QCOMPARE(show(4, {0, 2}), std::pair(u"5"_s, u64(5)));
+        QCOMPARE(show(32, {31}), std::pair(u"2147483648"_s, u64(1) << 31));          // an int made this negative
+        QCOMPARE(show(64, {63, 0}), std::pair(u"9223372036854775809"_s, (u64(1) << 63) + 1));
+        QCOMPARE(show(100, {99}).first, u"633825300114114700748351602688"_s);         // 2^99
+        QCOMPARE(show(100, {99, 3}).second, u64(8));                                  // getValue: the lowest 64 bits
+    }
+
     void searchFindsInputsAndOutputsByName()
     {
         CircuitScene scene;

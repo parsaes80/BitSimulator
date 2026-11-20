@@ -1,5 +1,6 @@
 #include "Items.h"
 #include <QFontMetricsF>
+#include "Waveform.h"   // formatValue
 #include <QPainterPath>
 #include <algorithm>
 
@@ -384,6 +385,23 @@ double nameWidth(const QString& name)
 {
     return name.isEmpty() ? 0 : QFontMetricsF(nameFont()).horizontalAdvance(name) + 12;
 }
+// Too long for `box`, a number runs along it when the box is tall, and shrinks if it still doesn't fit
+void drawNumber(QPainter* painter, const QRectF& box, const QString& text, QFont font)
+{
+    painter->save();
+    QRectF area = box;
+    if (QFontMetricsF(font).horizontalAdvance(text) > box.width() - 4 && box.height() > box.width()) {
+        painter->translate(box.center());
+        painter->rotate(-90);
+        area = QRectF(-box.height() / 2, -box.width() / 2, box.height(), box.width());
+    }
+    const qreal needed = QFontMetricsF(font).horizontalAdvance(text);
+    if (needed > area.width() - 4) font.setPointSizeF(std::max(5.0, font.pointSizeF() * (area.width() - 4) / needed));
+    painter->setFont(font);
+    painter->drawText(area, Qt::AlignCenter, text);
+    painter->restore();
+}
+
 void drawName(QPainter* painter, const QRectF& rect, const QString& name, const QColor& text, const QColor& line)
 {
     if (name.isEmpty()) return;
@@ -450,22 +468,7 @@ void SourceItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
     painter->setPen(textColor);
     drawName(painter, m_rect, m_name, textColor, nameLine);
 
-    // A wide source is tall and narrow: a number that doesn't fit runs along it, smaller if needed
-    const QRectF body = m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0);
-    QRectF box = body;
-    painter->save();
-    if (QFontMetricsF(font).horizontalAdvance(text) > box.width() - 4 && box.height() > box.width()) {
-        painter->translate(box.center());
-        painter->rotate(-90);
-        box = QRectF(-body.height() / 2, -body.width() / 2, body.height(), body.width());
-    }
-    const qreal needed = QFontMetricsF(font).horizontalAdvance(text);
-    if (needed > box.width() - 4) {
-        font.setPointSizeF(std::max(5.0, font.pointSizeF() * (box.width() - 4) / needed));
-        painter->setFont(font);
-    }
-    painter->drawText(box, Qt::AlignCenter, text);
-    painter->restore();
+    drawNumber(painter, m_rect.adjusted(0, m_name.isEmpty() ? 0 : NameHeight, 0, 0), text, font);
 }
 
 void SourceItem::setName(const QString& name)
@@ -713,10 +716,7 @@ void DisplayItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     font.setBold(true);
     font.setFamily("Courier");
     font.setPointSize(16);
-    painter->setFont(font);
-    
-    QString displayText = QString::number(m_value);
-    painter->drawText(displayArea, Qt::AlignCenter, displayText);
+    drawNumber(painter, displayArea, m_text, font);
 
     if (!m_name.isEmpty()) return;
     QFont labelFont = painter->font();
@@ -765,12 +765,19 @@ void DisplayItem::layoutPorts()
 
 void DisplayItem::updateValue()
 {
-    // The top pin is bit 0
-    int value = 0;
-    for (qsizetype i = m_inputPorts.size() - 1; i >= 0; i--) value = (value << 1) | int(m_inputPorts[i]->getValue());
-    if (value == m_value) return;
-    m_value = value;
+    std::vector<bool> bits(size_t(m_inputPorts.size()));
+    for (qsizetype i = 0; i < m_inputPorts.size(); i++) bits[size_t(i)] = m_inputPorts[i]->getValue();
+    if (bits == m_bits) return;
+    m_bits = std::move(bits);
+    m_text = formatValue(m_bits, Radix::Unsigned);
     update();
+}
+
+u64 DisplayItem::getValue() const
+{
+    u64 value = 0;
+    for (size_t i = std::min<size_t>(m_bits.size(), 64); i-- > 0;) value = (value << 1) | u64(m_bits[i]);
+    return value;
 }
 
 //===================== BlockItem ========================
