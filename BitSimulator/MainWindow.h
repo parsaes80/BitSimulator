@@ -49,6 +49,7 @@ private:
     void compileDir();
     void updateTimerPeriod(int sliderValue);
     void toggleColorScheme();                // stops following the system setting
+    void undoOrRedo(bool redo);              // Ctrl+Z / Ctrl+Y
     void newCircuit();
     void openCircuitDialog();
     bool save();                             // false if cancelled or failed

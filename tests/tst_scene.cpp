@@ -150,6 +150,117 @@ private slots:
         refuse(noModule, u"adder"_s);
     }
 
+    void undoAndRedoWalkThroughEveryEdit()
+    {
+        CircuitScene scene;
+        QList<QByteArray> states{circuitToJson(scene.circuitData())};
+        const auto step = [&] { states << circuitToJson(scene.circuitData()); };
+        auto* source = add<SourceItem>(scene, SourceProps::counter(2), QPointF(80000, 50000));
+        step();
+        auto* display = add<DisplayItem>(scene, DisplayProps{2, 0}, QPointF(80300, 50000));
+        step();
+        QVERIFY(connectPorts(&scene, source->getOutputPorts()[0], display->getInputPorts()[0]));
+        step();
+        QVERIFY(scene.editComponent(display, DisplayProps{4, 0}));
+        step();
+        QVERIFY(scene.renameComponent(source, u"clk"_s));
+        step();
+        scene.clearSelection();
+        display->setSelected(true);
+        itemsOfType<WireItem>(&scene)[0]->setSelected(true);
+        scene.deleteSelection();                                          // the wire and the display, one step
+        QVERIFY(itemsOfType<DisplayItem>(&scene).isEmpty());
+        step();
+
+        // Back through every step, then forward again
+        for (qsizetype i = states.size() - 2; i >= 0; i--) {
+            QVERIFY(scene.canUndo());
+            scene.undo();
+            QCOMPARE(circuitToJson(scene.circuitData()), states[i]);
+        }
+        QVERIFY(!scene.canUndo());
+        for (qsizetype i = 1; i < states.size(); i++) {
+            QVERIFY(scene.canRedo());
+            scene.redo();
+            QCOMPARE(circuitToJson(scene.circuitData()), states[i]);
+        }
+        QVERIFY(!scene.canRedo());
+
+        // A new change after undoing drops what could be redone
+        scene.undo();
+        scene.undo();
+        add<GateItem>(scene, GateProps{}, QPointF(80000, 50300));
+        QVERIFY(!scene.canRedo());
+        scene.undo();
+        QCOMPARE(circuitToJson(scene.circuitData()), states[states.size() - 3]);
+    }
+
+    void typingIntoOneFieldIsOneStep()
+    {
+        CircuitScene scene;
+        auto* source = add<SourceItem>(scene, SourceProps::list({1}, 8), QPointF(80000, 50000));
+        const QByteArray before = circuitToJson(scene.circuitData());
+        for (const QList<std::uint64_t>& typed : {QList<std::uint64_t>{1}, {12}, {12, 3}, {12, 30}})   // "1", "12", "12, 3", "12, 30"
+            QVERIFY(scene.editComponent(source, SourceProps::list(typed, 8)));
+        scene.undo();
+        QCOMPARE(circuitToJson(scene.circuitData()), before);
+
+        // Another component, or a save in between, starts a new step
+        auto* other = add<SourceItem>(scene, SourceProps::list({1}, 8), QPointF(80000, 50300));
+        QVERIFY(scene.editComponent(source, SourceProps::list({5}, 8)));
+        QVERIFY(scene.editComponent(other, SourceProps::list({6}, 8)));
+        scene.markSaved();
+        QVERIFY(scene.editComponent(other, SourceProps::list({7}, 8)));
+        const auto otherValues = [&scene] {
+            for (SourceItem* item : itemsOfType<SourceItem>(&scene))
+                if (item->pos() == QPointF(80000, 50300)) return std::get<SourceProps>(item->props()).values;
+            return QList<std::uint64_t>{};
+        };
+        scene.undo();
+        QVERIFY(scene.isAtSavedState());
+        QCOMPARE(otherValues(), QList<std::uint64_t>{6});
+        scene.undo();
+        QCOMPARE(otherValues(), QList<std::uint64_t>{1});
+        QVERIFY(!scene.isAtSavedState());
+    }
+
+    void undoKeepsTheSelectionAndRespectsTheRun()
+    {
+        CircuitScene scene;
+        SimLink link(scene);
+        auto* gate = add<GateItem>(scene, GateProps{GType::AND, 2}, QPointF(80000, 50000));
+        add<GateItem>(scene, GateProps{GType::OR, 2}, QPointF(80000, 50300));
+        QVERIFY(scene.editComponent(gate, GateProps{GType::AND, 4}));
+        scene.clearSelection();
+        gate->setSelected(true);
+        scene.undo();
+        QCOMPARE(scene.selectedItems().size(), 1);                      // the same gate, back to 2 inputs
+        QCOMPARE(std::get<GateProps>(dynamic_cast<ComponentItem*>(scene.selectedItems()[0])->props()).numInputs, 2);
+
+        scene.startOrResumeSim();                                        // running: the circuit is read-only
+        const QByteArray running = circuitToJson(scene.circuitData());
+        scene.undo();
+        scene.redo();
+        QCOMPARE(circuitToJson(scene.circuitData()), running);
+        scene.pauseSim();
+        scene.redo();                                                    // paused: undo and redo end the run, like an edit
+        QCOMPARE(scene.simState(), SimState::Stopped);
+        QCOMPARE(std::get<GateProps>(dynamic_cast<ComponentItem*>(scene.selectedItems()[0])->props()).numInputs, 4);
+    }
+
+    void theHistoryHasALimit()
+    {
+        CircuitScene scene;
+        for (int i = 0; i < CircuitScene::MaxUndoSteps + 10; i++) add<GateItem>(scene, GateProps{}, QPointF(80000 + i * 100, 50000));
+        int undone = 0;
+        while (scene.canUndo()) {
+            scene.undo();
+            undone++;
+        }
+        QCOMPARE(undone, CircuitScene::MaxUndoSteps);
+        QCOMPARE(itemsOfType<GateItem>(&scene).size(), 10);             // the oldest steps were dropped
+    }
+
     void searchFindsInputsAndOutputsByName()
     {
         CircuitScene scene;

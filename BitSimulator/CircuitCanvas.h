@@ -111,6 +111,17 @@ public:
     CircuitData circuitData() const;
     // Replaces the circuit; refused with a reason if the data doesn't fit together (nothing changes then)
     std::expected<void, QString> loadCircuit(const CircuitData& data);
+
+    //----- Undo: a snapshot per change; drags count once, typing in one field merges -----
+    bool canUndo() const { return m_historyIndex > 0; }
+    bool canRedo() const { return m_historyIndex + 1 < m_history.size(); }
+    void undo();                       // nothing while running; ends a paused run
+    void redo();
+    void clearHistory();               // the circuit as it is becomes the only, saved state
+    void markSaved();
+    void markUnsaved();                // its file is gone: no state is saved any more
+    bool isAtSavedState() const { return m_historyIndex == m_savedIndex; }
+    static constexpr int MaxUndoSteps = 200;
 signals:
     // To the simulator, queued across threads so they arrive in order
     void startSimSIG(ExportGraph graph);
@@ -123,6 +134,7 @@ signals:
     void designChanged();              // also when cleared: the view returns to the top
     void valuesChanged();              // block views follow it
     void circuitModified();            // a change worth saving: an edit or a move
+    void historyChanged();             // a step recorded, undone or redone, or the saved state moved
 private:
     ExportGraph buildGraph();          // also fills the wire map
     WireItem* addWire(PortItem* from, PortItem* to);
@@ -133,6 +145,15 @@ private:
     void setSimState(SimState state);
     void circuitEdited();              // after every structural change
     void watchMoves(QGraphicsObject* item);
+    // designId: which design the data belongs to; a different one restarts the views and waveforms
+    std::expected<void, QString> replaceCircuit(const CircuitData& data, int designId);
+    void recordStep();
+    struct Snapshot {
+        CircuitData data;
+        int designId = 0;
+        bool operator==(const Snapshot& o) const { return designId == o.designId && data.components == o.data.components && data.wires == o.data.wires; }
+    };
+    void restore(const Snapshot& snapshot);
     QString automaticName(const ComponentItem* item) const;   // "Source 3"; empty for other kinds
     void cancelWireConnection();
     void resetValues();
@@ -151,6 +172,15 @@ private:
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
     WireMap m_wireMap;                 // cleared when the run ends
+
+    QList<Snapshot> m_history{Snapshot{}};
+    qsizetype m_historyIndex = 0;
+    qsizetype m_savedIndex = 0;        // -1: no state in the history is saved
+    int m_designId = 0;                // changes with m_design (the netlist itself is shared, never compared)
+    int m_lastDesignId = 0;
+    bool m_restoring = false;
+    int m_lastEdited = -1;             // the component the last step only changed the settings of
+    QElapsedTimer m_sinceEdit;
 
     // m_toolDefaults[i].index() == i
     std::array<ItemProps, itemKindCount> m_toolDefaults{GateProps{}, RegisterProps{}, MuxProps{}, SourceProps{}, DisplayProps{}, BlockProps{}};

@@ -12,11 +12,13 @@ struct SavedComponent {
     ItemProps props;
     QPointF position;
     QString name;            // sources and displays
+    bool operator==(const SavedComponent&) const = default;
 };
 
 struct SavedWire {
     int from = -1, fromPin = -1;   // component index, index in componentPins()
     int to = -1, toPin = -1;
+    bool operator==(const SavedWire&) const = default;
 };
 
 struct CircuitData {

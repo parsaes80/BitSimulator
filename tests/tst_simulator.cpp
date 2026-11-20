@@ -452,7 +452,8 @@ private slots:
         QTRY_VERIFY(results.size() > paused);
         const SimResult next = results[paused];
         QCOMPARE(next.sourceTick, last.sourceTick + 1);                                   // the next tick, not tick 0
-        QCOMPARE(bool(next.netValues[4]), bool(last.registerValues[0]));                  // the register kept its value
+        const bool risingEdge = next.sourceTick % 2 == 1;                                  // the clock is 1 at odd ticks
+        QCOMPARE(bool(next.netValues[4]), bool(last.registerValues[0]) != risingEdge);    // kept, toggled only by an edge
     }
 
     void unloadStopsTheSimulation()

@@ -218,7 +218,9 @@ void CircuitScene::resetCircuit()
     m_wireBits.clear();
     m_registerNodes.clear();
     m_design = {};
+    m_designId = ++m_lastDesignId;
     designChanged();
+    recordStep();
 }
 
 //===================== Simulation state ========================
@@ -279,6 +281,121 @@ void CircuitScene::circuitEdited()
 {
     if (m_simState == SimState::Paused) stopSim();
     circuitModified();
+    recordStep();
+}
+
+//===================== Undo ========================
+
+namespace {
+// The one component whose settings alone changed, or -1
+int onlySettingsChanged(const CircuitData& before, const CircuitData& after)
+{
+    if (before.components.size() != after.components.size() || before.wires != after.wires) return -1;
+    int changed = -1;
+    for (qsizetype i = 0; i < before.components.size(); i++) {
+        const SavedComponent& a = before.components[i];
+        const SavedComponent& b = after.components[i];
+        if (a == b) continue;
+        if (changed >= 0 || a.position != b.position || a.name != b.name) return -1;
+        changed = int(i);
+    }
+    return changed;
+}
+}
+
+void CircuitScene::recordStep()
+{
+    if (m_restoring || m_readOnly) return;
+    const Snapshot now{circuitData(), m_designId};
+    if (now == m_history[m_historyIndex]) {
+        historyChanged();
+        return;
+    }
+    m_history.resize(m_historyIndex + 1);   // a new change drops what could be redone
+    if (m_savedIndex > m_historyIndex) m_savedIndex = -1;
+
+    // Typing into one field of one component: one step, not one per keystroke
+    const int edited = now.designId == m_history[m_historyIndex].designId ? onlySettingsChanged(m_history[m_historyIndex].data, now.data) : -1;
+    const bool merge = edited >= 0 && edited == m_lastEdited && m_sinceEdit.isValid() && m_sinceEdit.elapsed() < 1500
+                       && m_historyIndex > 0 && m_historyIndex != m_savedIndex;
+    if (merge) {
+        m_history[m_historyIndex] = now;
+    } else {
+        m_history.append(now);
+        m_historyIndex++;
+    }
+    m_lastEdited = edited;
+    m_sinceEdit.start();
+
+    while (m_history.size() > MaxUndoSteps + 1) {
+        m_history.removeFirst();
+        m_historyIndex--;
+        m_savedIndex = m_savedIndex > 0 ? m_savedIndex - 1 : -1;
+    }
+    historyChanged();
+}
+
+void CircuitScene::undo()
+{
+    if (isLocked() || m_readOnly) return;
+    recordStep();   // anything not recorded yet comes back with redo
+    if (!canUndo()) return;
+    restore(m_history[--m_historyIndex]);
+}
+
+void CircuitScene::redo()
+{
+    if (isLocked() || m_readOnly || !canRedo()) return;
+    restore(m_history[++m_historyIndex]);
+}
+
+void CircuitScene::restore(const Snapshot& snapshot)
+{
+    // The same components stay selected, so the properties panel keeps showing them
+    QList<int> selected;
+    const QList<QGraphicsItem*> before = items(Qt::AscendingOrder);
+    int index = 0;
+    for (QGraphicsItem* item : before) {
+        if (!dynamic_cast<ComponentItem*>(item)) continue;
+        if (item->isSelected()) selected << index;
+        index++;
+    }
+
+    m_restoring = true;
+    const auto restored = replaceCircuit(snapshot.data, snapshot.designId);
+    m_restoring = false;
+    Q_ASSERT_X(restored, "CircuitScene::restore", "a snapshot of the canvas always fits");
+    m_lastEdited = -1;
+
+    index = 0;
+    for (QGraphicsItem* item : items(Qt::AscendingOrder)) {
+        if (!dynamic_cast<ComponentItem*>(item)) continue;
+        if (selected.contains(index++)) item->setSelected(true);
+    }
+    historyChanged();
+}
+
+void CircuitScene::clearHistory()
+{
+    m_history = {Snapshot{circuitData(), m_designId}};
+    m_historyIndex = 0;
+    m_savedIndex = 0;
+    m_lastEdited = -1;
+    historyChanged();
+}
+
+void CircuitScene::markUnsaved()
+{
+    m_savedIndex = -1;
+    historyChanged();
+}
+
+void CircuitScene::markSaved()
+{
+    recordStep();
+    m_savedIndex = m_historyIndex;
+    m_lastEdited = -1;   // the saved state is never merged into
+    historyChanged();
 }
 
 void CircuitScene::watchMoves(QGraphicsObject* item)
@@ -620,6 +737,7 @@ void CircuitScene::receiveDesign(const NetDesign& design)
 {
     resetCircuit();   // the simulation must never outlive its items
     m_design = design;
+    m_designId = ++m_lastDesignId;
     buildModule(m_design, m_design.top, true);
 }
 
@@ -654,6 +772,11 @@ CircuitData CircuitScene::circuitData() const
 
 std::expected<void, QString> CircuitScene::loadCircuit(const CircuitData& data)
 {
+    return replaceCircuit(data, m_lastDesignId + 1);
+}
+
+std::expected<void, QString> CircuitScene::replaceCircuit(const CircuitData& data, int designId)
+{
     // Built and checked off the scene first, so a damaged file changes nothing
     std::vector<std::unique_ptr<ComponentItem>> built;
     for (const SavedComponent& saved : data.components) {
@@ -678,8 +801,19 @@ std::expected<void, QString> CircuitScene::loadCircuit(const CircuitData& data)
         wires.append(std::pair{from, to});
     }
 
-    resetCircuit();
-    m_design = data.design;
+    if (designId != m_designId) {
+        const bool restoringBefore = m_restoring;
+        m_restoring = true;   // no step for the empty canvas in between
+        resetCircuit();
+        m_restoring = restoringBefore;
+        m_design = data.design;
+        m_designId = designId;
+        m_lastDesignId = std::max(m_lastDesignId, designId);
+    } else {
+        stopSim();
+        cancelWireConnection();
+        clear();
+    }
     for (qsizetype i = 0; i < data.components.size(); i++) {
         ComponentItem* item = built[i].release();
         const QString& name = data.components[i].name;   // as saved: a compiled design's constant 1 has none
@@ -1031,6 +1165,7 @@ void CircuitScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
         finishWireConnection(event->scenePos());
     } else {
         QGraphicsScene::mouseReleaseEvent(event);
+        recordStep();   // the end of a drag: one step for the whole move
     }
 }
 

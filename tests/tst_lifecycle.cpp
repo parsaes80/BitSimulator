@@ -395,6 +395,52 @@ private slots:
         app.clear->click();
     }
 
+    void ctrlZAndCtrlYUndoAndRedo()
+    {
+        App app;
+        app.window.activateWindow();                                     // shortcuts need the active window
+        QVERIFY(QTest::qWaitForWindowActive(&app.window));
+        auto* source = dynamic_cast<SourceItem*>(app.scene->addComponent(SourceProps::counter(1), app.centre));
+        QVERIFY(app.window.saveCircuit(QDir(app.saves.path()).filePath(u"one.bitsim"_s)));
+        QVERIFY(!app.window.isWindowModified());
+        const auto key = [&](Qt::Key k) { QTest::keyClick(app.canvas->viewport(), k, Qt::ControlModifier); };
+
+        // A drag is one step, and undoing it is back at the saved state
+        const QPointF start = source->pos();
+        app.canvas->centerOn(source);
+        const QPoint grab = app.canvas->mapFromScene(source->sceneBoundingRect().center());
+        QTest::mousePress(app.canvas->viewport(), Qt::LeftButton, {}, grab);
+        for (int x = 10; x <= 80; x += 10) QTest::mouseMove(app.canvas->viewport(), grab + QPoint(x, 0));
+        QTest::mouseRelease(app.canvas->viewport(), Qt::LeftButton, {}, grab + QPoint(80, 0));
+        QVERIFY(source->pos() != start);
+        QVERIFY(app.window.isWindowModified());
+        key(Qt::Key_Z);
+        QCOMPARE(itemsOfType<SourceItem>(app.scene)[0]->pos(), start);
+        QVERIFY(!app.window.isWindowModified());
+        key(Qt::Key_Y);
+        QVERIFY(itemsOfType<SourceItem>(app.scene)[0]->pos() != start);
+        QVERIFY(app.window.isWindowModified());
+
+        // Clear can be undone too
+        app.clear->click();
+        QVERIFY(itemsOfType<SourceItem>(app.scene).isEmpty());
+        key(Qt::Key_Z);
+        QCOMPARE(itemsOfType<SourceItem>(app.scene).size(), 1);
+
+        // In a text field, Ctrl+Z is the field's own; while running, nothing changes
+        auto* bar = child<QLineEdit>(&app.window, "searchBar");
+        bar->setFocus();
+        QTest::keyClicks(bar, u"ab"_s);
+        QTest::keyClick(bar, Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(itemsOfType<SourceItem>(app.scene).size(), 1);
+        app.canvas->setFocus();
+        app.start->click();
+        key(Qt::Key_Z);
+        QCOMPARE(itemsOfType<SourceItem>(app.scene).size(), 1);
+        QVERIFY(app.window.statusBar()->currentMessage().contains(u"Pause"_s));
+        app.clear->click();
+    }
+
     void aDamagedFileIsReportedAndTheCircuitKept()
     {
         App app;

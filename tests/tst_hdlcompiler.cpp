@@ -699,6 +699,26 @@ private slots:
         QCOMPARE(itemsOfType<GateItem>(canvas.currentScene()).size(), 2);
     }
 
+    void clearingACompiledDesignCanBeUndone()
+    {
+        const CompileRun run = compile(hierarchicalVerilog);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        CircuitCanvas canvas;
+        CircuitScene* scene = canvas.getScene();
+        scene->receiveDesign(run.design);
+        scene->clearHistory();
+        const QByteArray compiled = circuitToJson(scene->circuitData());
+        scene->resetCircuit();
+        QVERIFY(scene->design().isEmpty());
+        scene->undo();
+        QCOMPARE(circuitToJson(scene->circuitData()), compiled);
+        canvas.openBlock(blockNamed(scene, u"u"_s));                    // the design came back with it
+        QCOMPARE(canvas.depth(), 1);
+        canvas.showLevel(0);
+        scene->redo();
+        QVERIFY(scene->design().isEmpty() && itemsOfType<ComponentItem>(scene).isEmpty());
+    }
+
     void resetInputsStayZero()
     {
         // A reset toggling with the clock would reset the circuit on every clock edge

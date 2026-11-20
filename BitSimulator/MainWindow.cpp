@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QPlainTextEdit>
+#include <QAbstractSpinBox>
 #include <QCompleter>
 #include <QDebug>
 #include <QDir>
@@ -243,6 +246,8 @@ void MainWindow::setupFiles()
     connect(new QShortcut(QKeySequence::Open, this), &QShortcut::activated, this, &MainWindow::openCircuitDialog);
     connect(new QShortcut(QKeySequence::Save, this), &QShortcut::activated, this, &MainWindow::save);
     connect(new QShortcut(QKeySequence::SaveAs, this), &QShortcut::activated, this, &MainWindow::saveAs);
+    connect(new QShortcut(QKeySequence::Undo, this), &QShortcut::activated, this, [this] { undoOrRedo(false); });
+    connect(new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Y), this), &QShortcut::activated, this, [this] { undoOrRedo(true); });
 
     ui.savesList->header()->setStretchLastSection(false);
     ui.savesList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -255,9 +260,14 @@ void MainWindow::setupFiles()
         if (ui.tabWidget->currentWidget() == ui.filesTab) refreshSavesList();   // files may have changed outside the app
     });
 
-    connect(ui.camera->getScene(), &CircuitScene::circuitModified, this, [this] {
+    CircuitScene* scene = ui.camera->getScene();
+    connect(scene, &CircuitScene::circuitModified, this, [this] {
         if (isWindowModified()) return;   // moves report every pixel
         setWindowModified(true);
+        showFileState();
+    });
+    connect(scene, &CircuitScene::historyChanged, this, [this, scene] {
+        setWindowModified(!scene->isAtSavedState());   // undoing back to the saved state is unchanged again
         showFileState();
     });
     setSavesDir(QDir(QCoreApplication::applicationDirPath()).filePath(u"saves"_s));
@@ -314,7 +324,7 @@ void MainWindow::showSavesMenu(const QPoint& pos)
         }
         if (QFileInfo(path) == QFileInfo(m_currentFile)) {
             m_currentFile.clear();   // the circuit stays on the canvas, now unsaved
-            setWindowModified(true);
+            ui.camera->getScene()->markUnsaved();
         }
         refreshSavesList();
     });
@@ -336,7 +346,7 @@ void MainWindow::newCircuit()
     if (!maybeSave()) return;
     ui.camera->getScene()->resetCircuit();
     m_currentFile.clear();
-    setWindowModified(false);
+    ui.camera->getScene()->clearHistory();
     showFileState();
     ui.tabWidget->setCurrentWidget(ui.CircuitTab);
 }
@@ -364,7 +374,7 @@ bool MainWindow::openCircuit(const QString& path)
         return false;
     }
     m_currentFile = QFileInfo(path).absoluteFilePath();
-    setWindowModified(false);
+    ui.camera->getScene()->clearHistory();
     showFileState();
     ui.tabWidget->setCurrentWidget(ui.CircuitTab);
     ui.camera->showWholeCircuit();
@@ -407,7 +417,7 @@ bool MainWindow::saveCircuit(const QString& path)
         return false;
     }
     m_currentFile = QFileInfo(path).absoluteFilePath();
-    setWindowModified(false);
+    ui.camera->getScene()->markSaved();
     refreshSavesList();
     statusBar()->showMessage(tr("Saved %1.").arg(name), 4000);
     return true;
@@ -573,10 +583,30 @@ void MainWindow::resetSimulation()
 void MainWindow::clearCircuit()
 {
     if (!maybeSave()) return;
-    ui.camera->getScene()->resetCircuit();
+    ui.camera->getScene()->resetCircuit();   // undoable
     m_currentFile.clear();   // Save must not write the empty canvas over the file
-    setWindowModified(false);
+    ui.camera->getScene()->markSaved();
     showFileState();
+}
+
+void MainWindow::undoOrRedo(bool redo)
+{
+    // A text field undoes its own text
+    QWidget* focus = QApplication::focusWidget();
+    if (qobject_cast<QLineEdit*>(focus) || qobject_cast<QPlainTextEdit*>(focus) || qobject_cast<QAbstractSpinBox*>(focus)) return;
+    CircuitScene* scene = ui.camera->getScene();
+    if (scene->isLocked()) {
+        statusBar()->showMessage(tr("Pause or reset the simulation to undo or redo."), 4000);
+        return;
+    }
+    if (redo ? !scene->canRedo() : !scene->canUndo()) {
+        statusBar()->showMessage(redo ? tr("Nothing to redo.") : tr("Nothing to undo."), 3000);
+        return;
+    }
+    ui.tabWidget->setCurrentWidget(ui.CircuitTab);
+    ui.camera->showLevel(0);   // the change is on the circuit itself
+    if (redo) scene->redo();
+    else scene->undo();
 }
 
 bool MainWindow::beginCompile(const QString& message)
@@ -608,7 +638,7 @@ void MainWindow::compileFinished(bool ok)
     if (ok) {
         // A new, untitled circuit; it can be compiled again, so it doesn't count as unsaved
         m_currentFile.clear();
-        setWindowModified(false);
+        ui.camera->getScene()->clearHistory();
         showFileState();
         statusBar()->showMessage(tr("Compiled. The new circuit is on the canvas."), 6000);
         ui.tabWidget->setCurrentWidget(ui.CircuitTab);

@@ -26,8 +26,11 @@ Controls in the Schematic Editor:
 | Select / move a component | Left click on it / left click and drag it |
 | Deselect | Left click on empty space |
 | Delete the selected component | Delete or Backspace |
+| Undo / redo | Ctrl+Z / Ctrl+Y (not while the simulation runs; a paused run ends, as with any edit) |
 | Zoom in / out | Mouse wheel |
 | Find an input or output | Type in the search bar (top right); click a result, or press Enter when there is only one |
+
+Undo covers every change to the circuit: placing, deleting, wiring, settings, names, moving (one step per drag) and Clear. Typing into one settings field is a single step. New, Open and a compile start a new history; undoing back to the saved state clears the `*` in the title again.
 
 The search bar matches the names of sources and displays as a regular expression, in any case (`^data\d+$`, `rst|clk`); text that is not a valid expression yet is matched as it is. Jumping to a result leaves any open block, zooms in on the component and selects it.
 
