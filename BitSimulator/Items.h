@@ -185,6 +185,8 @@ QSizeF terminalSize(const QString& name, int width);
 
 // Fills `body` with the gate's shape (and bubble); used on the canvas and the toolbar
 void drawGateSymbol(QPainter* painter, GType type, const QRectF& body);
+// A source's or display's number turns to run along its box: 4+ digits that don't fit across a tall box
+bool numberRunsAlong(const QString& text, const QFont& font, const QRectF& box);
 
 //===================== 2. Canvas items ========================
 

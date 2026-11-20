@@ -385,12 +385,12 @@ double nameWidth(const QString& name)
 {
     return name.isEmpty() ? 0 : QFontMetricsF(nameFont()).horizontalAdvance(name) + 12;
 }
-// Too long for `box`, a number runs along it when the box is tall, and shrinks if it still doesn't fit
+// Up to 3 digits stay across (shrunk if needed); longer numbers turn when they don't fit, then shrink too
 void drawNumber(QPainter* painter, const QRectF& box, const QString& text, QFont font)
 {
     painter->save();
     QRectF area = box;
-    if (QFontMetricsF(font).horizontalAdvance(text) > box.width() - 4 && box.height() > box.width()) {
+    if (numberRunsAlong(text, font, box)) {
         painter->translate(box.center());
         painter->rotate(-90);
         area = QRectF(-box.height() / 2, -box.width() / 2, box.height(), box.width());
@@ -889,6 +889,11 @@ void TerminalItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWi
     painter->setPen(theme.componentText);
     const QString label = m_pins.size() > 1 ? u"%1[%2]"_s.arg(m_name).arg(m_pins.size()) : m_name;
     painter->drawText(r.adjusted(6, 0, -tip, 0), Qt::AlignCenter, label);
+}
+
+bool numberRunsAlong(const QString& text, const QFont& font, const QRectF& box)
+{
+    return text.size() > 3 && QFontMetricsF(font).horizontalAdvance(text) > box.width() - 4 && box.height() > box.width();
 }
 
 //===================== Sizes ========================

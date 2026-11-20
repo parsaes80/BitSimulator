@@ -103,7 +103,7 @@ endmodule
 
 The **Waveforms** tab shows the circuit's inputs and outputs over the ticks of a run, like the wave window of an HDL simulator. When a run starts, every source and display of the circuit is listed; the tree on the left adds more: check a port of a block (or a whole block, for all of its ports) to show it, uncheck it to remove it. Internal wires are not signals; a block's ports are, at every level.
 
-Every port of every block is recorded from the first tick, so a port added later still shows its whole run. Recording happens in the simulator itself and costs no measurable time; it keeps up to about 256 MB of changes, then drops the oldest ticks.
+Every port of every block is recorded from the first tick, so a port added later still shows its whole run. Recording happens in the simulator itself and costs no measurable time; it keeps up to 1 GB of changes (134 million), then drops the oldest quarter of the run at a time.
 
 | Action | Control |
 |---|---|

@@ -401,6 +401,11 @@ private slots:
         QCOMPARE(model.radix(0), Radix::Hex);
     }
 
+    void theHistoryKeepsOneGigabyte()
+    {
+        QCOMPARE(WaveHistory::MaxChanges * sizeof(u64), size_t(1) << 30);
+    }
+
     void aBusCanBeSplitIntoWords()
     {
         // 8 bits on nets 1..8: a register file port in small

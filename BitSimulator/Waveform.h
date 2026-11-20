@@ -36,8 +36,8 @@ public:
     std::optional<u64> nextChange(u32 net, u64 tick) const;
     std::span<const u64> changeTicks(u32 net) const;   // oldest first; empty if not recorded
 
-    // 8 bytes each; beyond it the oldest quarter is dropped
-    static constexpr size_t MaxChanges = size_t(32) << 20;
+    // 1 GiB of change ticks (8 bytes each); beyond it the oldest quarter of the run is dropped
+    static constexpr size_t MaxChanges = (size_t(1) << 30) / sizeof(u64);
     void setMaxChanges(size_t changes) { m_maxChanges = changes; }   // for the tests
 
 private:

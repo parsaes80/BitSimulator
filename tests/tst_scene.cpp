@@ -276,6 +276,17 @@ private slots:
         QCOMPARE(show(100, {99, 3}).second, u64(8));                                  // getValue: the lowest 64 bits
     }
 
+    void onlyNumbersOfFourOrMoreDigitsTurn()
+    {
+        QFont huge;
+        huge.setPointSize(40);                                          // nothing fits across this box
+        const QRectF tall(0, 0, 30, 200), wide(0, 0, 200, 30), square(0, 0, 30, 30);
+        QVERIFY(!numberRunsAlong(u"999"_s, huge, tall));                 // 3 digits stay across, shrunk instead
+        QVERIFY(numberRunsAlong(u"1000"_s, huge, tall));
+        QVERIFY(!numberRunsAlong(u"1000"_s, huge, square));              // turning only helps in a tall box
+        QVERIFY(!numberRunsAlong(u"1000"_s, QFont(), wide));             // it fits
+    }
+
     void searchFindsInputsAndOutputsByName()
     {
         CircuitScene scene;
