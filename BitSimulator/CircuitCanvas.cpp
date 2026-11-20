@@ -12,6 +12,7 @@
 #include <QRegularExpression>
 #include <QScreen>
 #include <QScrollBar>
+#include <QStyleOptionGraphicsItem>
 #include <QSet>
 #include <QToolButton>
 #include <QWheelEvent>
@@ -65,6 +66,54 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     painter->drawPoints(dots.constData(), int(dots.size()));
 }
 
+void CircuitScene::drawForeground(QPainter* painter, const QRectF& rect)
+{
+    // Zoomed out, wire segments become screen-pixel runs; overlapping runs merge; one drawRects per color
+    const QTransform toScreen = painter->worldTransform();
+    const qreal scale = QStyleOptionGraphicsItem::levelOfDetailFromTransform(toScreen);
+    if (!WireItem::drawnByScene(scale)) return;
+    struct Run {
+        int fixed, from, to;   // the row (or column), and the span along it
+        auto operator<=>(const Run&) const = default;
+    };
+    std::array<std::vector<Run>, 4> rows, columns;   // editing, 0, 1, selected
+    for (WireItem* wire : std::as_const(m_wires)) {
+        if (wire->scene() != this || !wire->isVisible() || !rect.intersects(wire->sceneBoundingRect())) continue;
+        const int group = wire->isSelected() ? 3 : !sim_values_visible ? 0 : wire->value() ? 2 : 1;
+        for (const QLineF& segment : wire->sceneSegments()) {
+            const QLine px = toScreen.map(segment).toLine();
+            if (px.y1() == px.y2()) rows[group].push_back({px.y1(), std::min(px.x1(), px.x2()), std::max(px.x1(), px.x2())});
+            else columns[group].push_back({px.x1(), std::min(px.y1(), px.y2()), std::max(px.y1(), px.y2())});
+        }
+    }
+    const Theme& theme = currentTheme();
+    const QColor colors[] = {theme.wire, theme.wireLow, theme.wireHigh, theme.wireSelected};
+    const qreal dimmest[] = {0.2, 0.15, 0.35, 0.8};   //min alpha for lines : Editing view(not runnign sim), 0 value, 1 value, selected
+    painter->save();
+    painter->resetTransform();
+    painter->setRenderHint(QPainter::Antialiasing, false);
+    painter->setPen(Qt::NoPen);
+    QList<QRect> rects;
+    for (int group = 0; group < 4; group++) {
+        rects.clear();
+        for (auto* runs : {&rows[group], &columns[group]}) {
+            std::ranges::sort(*runs);
+            for (size_t i = 0; i < runs->size();) {
+                Run run = (*runs)[i++];
+                while (i < runs->size() && (*runs)[i].fixed == run.fixed && (*runs)[i].from <= run.to + 1) run.to = std::max(run.to, (*runs)[i++].to);
+                if (runs == &rows[group]) rects.append(QRect(run.from, run.fixed, run.to - run.from + 1, 1));
+                else rects.append(QRect(run.fixed, run.from, 1, run.to - run.from + 1));
+            }
+        }
+        if (rects.isEmpty()) continue;
+        QColor color = colors[group];
+        color.setAlphaF(std::clamp(2 * scale, dimmest[group], 1.0));   // dimmed with zoom, down to a floor
+        painter->setBrush(color);
+        painter->drawRects(rects);
+    }
+    painter->restore();
+}
+
 namespace {
 ComponentItem* createComponent(const ItemProps& props)
 {
@@ -82,8 +131,9 @@ ComponentItem* createComponent(const ItemProps& props)
 
 CircuitScene::~CircuitScene()
 {
-    // ~QGraphicsScene may emit selectionChanged into listeners after our members are gone
+    // ~QGraphicsScene may emit selectionChanged into listeners after our members are gone, and wires their destroyed
     disconnect(this, &QGraphicsScene::selectionChanged, nullptr, nullptr);
+    for (WireItem* wire : std::as_const(m_wires)) disconnect(wire, &QObject::destroyed, this, nullptr);
 }
 
 ComponentItem* CircuitScene::addComponent(const ItemProps& props, QPointF position)
@@ -457,12 +507,14 @@ PortItem* CircuitScene::findNearestPort(const QPointF& scenePos, double threshol
     PortItem* nearestPort = nullptr;
     double minDistance = threshold;
 
+    // Through the components: zoomed far out, the canvas hides pins, and items() skips hidden ones
     for (QGraphicsItem* item : items(QRectF(scenePos - QPointF(threshold, threshold),
         QSizeF(threshold * 2, threshold * 2)))) {
-        PortItem* port = dynamic_cast<PortItem*>(item);
-        if (port) {
-            QPointF portPos = port->mapToScene(QPointF(0, 0));
-            double distance = QLineF(scenePos, portPos).length();
+        auto* component = dynamic_cast<ComponentItem*>(item);
+        if (!component) continue;
+        for (PortItem* port : component->ports()) {
+            if (!port) continue;
+            const double distance = QLineF(scenePos, port->mapToScene(QPointF(0, 0))).length();
             if (distance < minDistance) {
                 minDistance = distance;
                 nearestPort = port;
@@ -837,6 +889,8 @@ WireItem* CircuitScene::addWire(PortItem* from, PortItem* to)
     to->addConnection(wire);
     wire->setPen(QPen(currentTheme().wire, 2));
     addItem(wire);
+    m_wires.insert(wire);
+    connect(wire, &QObject::destroyed, this, [this, wire] { m_wires.remove(wire); });
 
     for (QGraphicsObject* end : {from->getParent(), to->getParent()}) {
         if (!end) continue;
@@ -1195,6 +1249,7 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
 
     connect(m_scene, &CircuitScene::openBlock, this, &CircuitCanvas::openBlock);
     connect(m_scene, &CircuitScene::designChanged, this, [this] { showLevel(0); });
+    connect(m_scene, &CircuitScene::circuitModified, this, [this] { m_pinsScene = nullptr; });   // new pins start visible
     connect(m_scene, &CircuitScene::valuesChanged, this, &CircuitCanvas::refreshBlockValues);
     connect(m_scene, &CircuitScene::simStateChanged, this, [this](SimState state) {
         if (state == SimState::Stopped && !m_levels.isEmpty()) m_levels.last().scene->clearValues();
@@ -1411,4 +1466,22 @@ void CircuitCanvas::wheelEvent(QWheelEvent* event)
         return;
     }
     scale(factor, factor);
+}
+
+void CircuitCanvas::showPinsForZoom()
+{
+    const bool show = PortItem::drawnAt(transform().m11());
+    CircuitScene* scene = currentScene();
+    if (scene == m_pinsScene && show == m_pinsShown) return;
+    m_pinsScene = scene;
+    m_pinsShown = show;
+    for (QGraphicsItem* item : scene->items()) {
+        if (auto* pin = dynamic_cast<PortItem*>(item)) pin->setVisible(show);
+    }
+}
+
+void CircuitCanvas::paintEvent(QPaintEvent* event)
+{
+    showPinsForZoom();   // here, so every way of zooming is covered
+    QGraphicsView::paintEvent(event);
 }

@@ -56,6 +56,7 @@ struct Theme {
     QColor wire;
     QColor wireHigh;
     QColor wireLow;
+    QColor wireSelected;    // yellow: unlike teal, never mistaken for a 1
 
     QColor pin;             // unconnected
     QColor pinWired;

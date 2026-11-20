@@ -63,6 +63,7 @@ Theme makeTheme(ColorScheme scheme)
     t.wire          = pick(0xc3ced4, 0x3d4b53);
     t.wireHigh      = pick(0x2dd4bf, 0x0d9488);
     t.wireLow       = pick(0x3b4a52, 0xc3cdd2);
+    t.wireSelected  = pick(0xfacc15, 0xca8a04);
     t.pin           = pick(0x4a5960, 0xa3b0b6);
     t.pinWired      = pick(0x14b8a6, 0x14b8a6);
     t.selection     = pick(0x2dd4bf, 0x0d9488);

@@ -19,6 +19,7 @@ PortItem::PortItem(PortType portType, QGraphicsItem* parent)
 
 void PortItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
+    if (!drawnAt(QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform()))) return;
     // Colors set here, not with setPen()/setBrush(), which would schedule another repaint
     const Theme& theme = currentTheme();
     const bool wired = !m_connections.isEmpty();
@@ -313,6 +314,7 @@ void WireItem::setEndPort(PortItem* port)
 
 void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
+    if (isConnected() && drawnByScene(QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform()))) return;
     const QPainterPath path = this->path();
     painter->setRenderHint(QPainter::Antialiasing);
 
@@ -329,7 +331,7 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
     pen.setColor(!sim_values_visible ? theme.wire : (m_value ? theme.wireHigh : theme.wireLow));
 
     if (isSelected()) {
-        pen.setColor(theme.selection);
+        pen.setColor(theme.wireSelected);
         pen.setWidthF(3);
     }
     else if (sim_values_visible && m_value) {
@@ -343,6 +345,14 @@ void WireItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
 
     painter->strokePath(path, pen);
 }
+
+std::array<QLineF, 3> WireItem::sceneSegments() const
+{
+    const QPointF start = mapToScene(localStartPos), end = mapToScene(localEndPos);
+    const qreal midX = (start.x() + end.x()) / 2.0;
+    return {QLineF(start, {midX, start.y()}), QLineF({midX, start.y()}, {midX, end.y()}), QLineF({midX, end.y()}, end)};
+}
+
 void WireItem::setValue(bool value)
 {
     if (value == m_value) return;

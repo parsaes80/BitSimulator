@@ -2,6 +2,7 @@
 
 #include "TestSupport.h"
 #include <QSignalSpy>
+#include "Theme.h"
 
 using namespace Qt::StringLiterals;
 
@@ -285,6 +286,66 @@ private slots:
         QVERIFY(numberRunsAlong(u"1000"_s, huge, tall));
         QVERIFY(!numberRunsAlong(u"1000"_s, huge, square));              // turning only helps in a tall box
         QVERIFY(!numberRunsAlong(u"1000"_s, QFont(), wide));             // it fits
+    }
+
+    void zoomedOutWiresAreDrawnByTheSceneAndPinsHide()
+    {
+        CircuitCanvas canvas;
+        canvas.resize(800, 600);
+        canvas.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        CircuitScene* scene = canvas.getScene();
+        auto* source = add<SourceItem>(*scene, SourceProps::counter(1), QPointF(80000, 50000));
+        auto* display = add<DisplayItem>(*scene, DisplayProps{1, 0}, QPointF(83000, 52000));
+        WireItem* wire = connectPorts(scene, source->getOutputPorts()[0], display->getInputPorts()[0]);
+        QVERIFY(wire);
+        const QLineF vertical = wire->sceneSegments()[1];
+        const auto colorOnWire = [&] {
+            const QImage image = canvas.viewport()->grab().toImage();
+            return image.pixelColor(canvas.mapFromScene(vertical.center()));
+        };
+        // Zoomed out, a wire is its own color blended with the canvas, however its floor is tuned
+        const auto dimmed = [](const QColor& pixel, const QColor& color) {
+            const QColor canvas = currentTheme().canvas;
+            const int span = color.green() - canvas.green();
+            const double alpha = span ? double(pixel.green() - canvas.green()) / span : 1.0;
+            const QColor expected = Theme::mix(canvas, color, alpha);
+            return alpha > 0.05 && alpha < 1.01 && std::abs(pixel.red() - expected.red()) <= 3
+                   && std::abs(pixel.green() - expected.green()) <= 3 && std::abs(pixel.blue() - expected.blue()) <= 3;
+        };
+
+        // Zoomed out: drawn by the scene in one batch, pins hidden
+        canvas.setTransform(QTransform::fromScale(0.1, 0.1));
+        canvas.centerOn(vertical.center());
+        QVERIFY(WireItem::drawnByScene(0.1) && !PortItem::drawnAt(0.1));
+        QVERIFY(dimmed(colorOnWire(), currentTheme().wire));
+        QVERIFY(!source->getOutputPorts()[0]->isVisible());
+        sim_values_visible = true;                                       // as while a run is shown
+        wire->setValue(true);
+        QVERIFY(dimmed(colorOnWire(), currentTheme().wireHigh));
+        wire->setValue(false);
+        QVERIFY(dimmed(colorOnWire(), currentTheme().wireLow));
+        sim_values_visible = false;
+        wire->setSelected(true);                                         // selected: its own color, dimmed and thin too
+        QVERIFY(dimmed(colorOnWire(), currentTheme().wireSelected));
+        const QPoint centre = canvas.mapFromScene(vertical.center());
+        const QImage image = canvas.viewport()->grab().toImage();
+        QCOMPARE(image.pixelColor(centre + QPoint(1, 0)), image.pixelColor(centre + QPoint(8, 0)));   // 1 px: background beside it
+        wire->setSelected(false);
+
+        // A wire can still be drawn from a hidden pin
+        auto* gate = add<GateItem>(*scene, GateProps{GType::NOT, 1}, QPointF(80000, 54000));
+        canvas.viewport()->grab();                                       // a paint: the new gate's pin hides too
+        QVERIFY(!gate->getInputPort(0)->isVisible());
+        scene->startWireConnection(source->getOutputPorts()[0]->scenePos());
+        scene->finishWireConnection(gate->getInputPort(0)->scenePos());
+        QCOMPARE(gate->getInputPort(0)->getConnections().size(), 1);
+
+        // Zoomed in: pins come back, and each wire draws itself again
+        canvas.setTransform(QTransform::fromScale(1, 1));
+        canvas.centerOn(vertical.center());
+        QCOMPARE(colorOnWire(), currentTheme().wire);
+        QVERIFY(source->getOutputPorts()[0]->isVisible() && gate->getInputPort(0)->isVisible());
     }
 
     void searchFindsInputsAndOutputsByName()

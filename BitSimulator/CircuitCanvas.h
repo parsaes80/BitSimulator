@@ -4,6 +4,7 @@
 #include <QGraphicsView>
 #include <QElapsedTimer>
 #include <QPointer>
+#include <QSet>
 #include <QTimer>
 #include <array>
 #include <functional>
@@ -91,6 +92,7 @@ public:
     void clearValues() { resetValues(); }
 protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;   // canvas color and dot grid
+    void drawForeground(QPainter* painter, const QRectF& rect) override;   // zoomed out: every wire, batched
 
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
@@ -172,6 +174,7 @@ private:
     PortItem* findNearestPort(const QPointF& scenePos, double threshold = 15.0);
 
     WireMap m_wireMap;                 // cleared when the run ends
+    QSet<WireItem*> m_wires;           // the connected ones, for drawForeground
 
     QList<Snapshot> m_history{Snapshot{}};
     qsizetype m_historyIndex = 0;
@@ -237,6 +240,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 
 private:
     struct Level {
@@ -248,12 +252,15 @@ private:
     };
     void showScene(CircuitScene* scene);
     void updateBreadcrumb();
+    void showPinsForZoom();           // hidden while too small to draw: the view then skips thousands of items
     void refreshBlockValues();
     QPointF viewCentre() const { return mapToScene(viewport()->rect().center()); }
 
     CircuitScene* m_scene;
     QList<Level> m_levels;            // outermost first
     QFrame* m_breadcrumb = nullptr;   // "top > core (RISCV) > alu (ALU)"
+    CircuitScene* m_pinsScene = nullptr;   // the scene whose pins showPinsForZoom last set, and how
+    bool m_pinsShown = true;
     // Left-dragging empty canvas pans
     bool m_panning = false;
     QPoint m_lastPanPoint;

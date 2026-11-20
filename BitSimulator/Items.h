@@ -4,12 +4,14 @@
 #include <QCoreApplication>
 #include <QColor>
 #include <QGraphicsItem>
+#include <QLineF>
 #include <QList>
 #include <QPainter>
 #include <QString>
 #include <QStyleOptionGraphicsItem>
 #include <QWidget>
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -213,6 +215,7 @@ public:
     void setHighlighted(bool highlighted) { m_highlighted = highlighted; update(); }
     bool getValue() const { return m_value; }
     void setValue(bool value);
+    static bool drawnAt(qreal scale) { return scale * 8 >= 2.5; }   // under ~2.5 px a pin isn't drawn
 
 private:
     bool m_value = false;
@@ -328,6 +331,10 @@ public:
 
     void setEnds(QPointF start, QPointF end);   // while dragged, in scene coordinates
     void setValue(bool value);
+    bool value() const { return m_value; }
+    // Zoomed out this far, a connected wire is thinner than ~1.5 px: the scene draws them all in one go
+    static bool drawnByScene(qreal scale) { return scale < 0.75; }
+    std::array<QLineF, 3> sceneSegments() const;   // horizontal, vertical, horizontal
     QPen pen() const { return m_pen; }
     void setPen(const QPen& pen){ m_pen = pen;update();}
 
