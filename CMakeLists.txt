@@ -11,7 +11,7 @@ set(THIRD_PARTY_DIR ${CMAKE_SOURCE_DIR}/third_party)
 if(WIN32)
     # Windows: OSS CAD Suite yosys, sv2v, and GHDL's own build (ghdl/bin and ghdl/lib keep their layout)
     add_custom_target(copy_yosys_bundle ALL
-        COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/oss-cad-suite ${APP_DIR}/ghdl ${APP_DIR}/dot ${APP_DIR}/script.bat
+        COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/oss-cad-suite ${APP_DIR}/ghdl ${APP_DIR}/dot
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${THIRD_PARTY_DIR}/oss-cad-suite ${APP_DIR}/oss-cad-suite
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${THIRD_PARTY_DIR}/ghdl ${APP_DIR}/ghdl
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${THIRD_PARTY_DIR}/sv2v/windows/sv2v.exe ${APP_DIR}/sv2v.exe
