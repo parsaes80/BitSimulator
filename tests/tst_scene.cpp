@@ -453,6 +453,22 @@ private slots:
     }
     //===================== Components and their pins ========================
 
+    void theCanvasStaysCentredWhenTheWindowResizes()
+    {
+        CircuitCanvas canvas;
+        canvas.resize(800, 600);
+        canvas.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        const QPointF middle = canvas.sceneRect().center();
+        const auto viewCentre = [&] { return canvas.mapToScene(canvas.viewport()->rect().center()); };
+        QVERIFY((viewCentre() - middle).manhattanLength() < 5);
+
+        canvas.resize(1400, 1000);   // the window maximizing, with the mouse off the canvas
+        QApplication::processEvents();
+        QVERIFY2((viewCentre() - middle).manhattanLength() < 5,
+                 qPrintable(u"view centre %1, %2"_s.arg(viewCentre().x()).arg(viewCentre().y())));
+    }
+
     void componentsStartWithTheirProperties()
     {
         CircuitScene scene;

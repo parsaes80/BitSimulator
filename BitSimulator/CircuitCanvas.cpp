@@ -27,7 +27,7 @@ using namespace Qt::StringLiterals;
 CircuitScene::CircuitScene(QObject* parent)
     : QGraphicsScene(parent)
 {
-    setSceneRect(0, 0, 160000, 100000);
+    setSceneRect(0, 0, SceneSize::width, SceneSize::height);
 
     m_frameTimer.setSingleShot(true);
     m_frameTimer.setTimerType(Qt::PreciseTimer);
@@ -1233,7 +1233,8 @@ CircuitCanvas::CircuitCanvas(QWidget* parent)
 
     setDragMode(QGraphicsView::RubberBandDrag);
     setRenderHint(QPainter::Antialiasing);
-    setResizeAnchor(QGraphicsView::AnchorUnderMouse);
+    // Under the mouse, a resize with the mouse elsewhere (the window opening, maximizing) jumps to the scene's corner
+    setResizeAnchor(QGraphicsView::AnchorViewCenter);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     // Cached; MainWindow::setColorScheme drops it on a theme change
     setCacheMode(QGraphicsView::CacheBackground);

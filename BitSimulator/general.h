@@ -25,6 +25,12 @@ enum class PortType : u8 {IN,OUT};
 enum class MType : u8 {MUX,DEMUX};
 enum class IOType : u8 {IN,OUT};
 
+// The canvas, in scene units; compiled circuits are placed at its centre
+namespace SceneSize {
+inline constexpr double width = 1600000;
+inline constexpr double height = 1000000;
+}
+
 //===================== 1. Source properties ========================
 
 // A source's output is a pure function of the tick (sourceValueAt), so nothing is stored per step.

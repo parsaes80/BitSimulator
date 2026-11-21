@@ -223,7 +223,6 @@ void layoutInColumns(NetModule& module, bool topLevel)
     }
 }
 
-// The scene is 160000 x 100000 units
 void centreInScene(NetModule& module)
 {
     if (module.nodes.isEmpty()) return;
@@ -233,7 +232,7 @@ void centreInScene(NetModule& module)
         minX = std::min(minX, node.position.x()); maxX = std::max(maxX, node.position.x());
         minY = std::min(minY, node.position.y()); maxY = std::max(maxY, node.position.y());
     }
-    const QPointF shift(80000 - (minX + maxX) / 2, 50000 - (minY + maxY) / 2);
+    const QPointF shift(SceneSize::width / 2 - (minX + maxX) / 2, SceneSize::height / 2 - (minY + maxY) / 2);
     for (NetNode& node : module.nodes) node.position += shift;
 }
 
