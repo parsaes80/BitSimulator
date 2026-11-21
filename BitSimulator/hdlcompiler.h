@@ -6,14 +6,13 @@
 #include <QRegularExpression>
 #include <QString>
 #include <QStringList>
-
-class QProcess;
 #include <algorithm>
 #include <optional>
 #include <variant>
 #include "Items.h"   // BlockProps, componentSize
 #include <QOperatingSystemVersion>
 
+class QProcess;
 // Relative to the app's folder; the build copies them there from third_party/
 struct ToolPaths {
     QString yosys;   // Windows: OSS CAD Suite; Linux: yosys_bundle
@@ -21,8 +20,7 @@ struct ToolPaths {
     QString dot;
     QString ghdl;    // Windows: third_party/ghdl (the OSS CAD Suite has none); Linux: yosys_bundle
 };
-inline const ToolPaths WindowsToolPaths{".\\oss-cad-suite\\bin\\yosys.exe", ".\\sv2v.exe", ".\\dot.exe",
-                                        ".\\ghdl\\bin\\ghdl.exe"};
+inline const ToolPaths WindowsToolPaths{".\\oss-cad-suite\\bin\\yosys.exe", ".\\sv2v.exe", ".\\dot.exe",".\\ghdl\\bin\\ghdl.exe"};
 inline const ToolPaths LinuxToolPaths{"./yosys_bundle/bin/yosys", "./sv2v", "./dot", "./yosys_bundle/bin/ghdl"};
 inline const ToolPaths& toolPaths()
 {
@@ -32,8 +30,8 @@ inline const ToolPaths& toolPaths()
 // Bits: 0 = constant 0 (yosys "0", "x", "z"), 1 = constant 1, 2 and up = nets
 
 namespace NetBit {
-inline constexpr int Zero = 0;
-inline constexpr int One = 1;
+    inline constexpr int Zero = 0;
+    inline constexpr int One = 1;
 }
 
 struct ModuleRef {

@@ -93,9 +93,8 @@ void MainWindow::setup()
     ui.tabWidget->setCurrentWidget(ui.CircuitTab);
     CircuitScene* scene = ui.camera->getScene();
 
-    // Set up before connecting, so a not-yet-started simulator gets no value; 3350 ~ 100 ms per tick
     ui.slider->setRange(1, 10000);
-    ui.slider->setValue(3350);
+    ui.slider->setValue(2500); // starting value
 
     setupPropertiesPanel();
     setupColorScheme();
@@ -120,6 +119,9 @@ void MainWindow::setup()
     connect(ui.regButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<RegisterProps>); });
     connect(ui.muxButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<MuxProps>); });
     connect(ui.displayButton, &QPushButton::clicked, scene, [scene] { scene->selectTool(itemKind<DisplayProps>); });
+
+    //----- Canvas messages (copy, cut, paste) -----
+    connect(ui.camera, &CircuitCanvas::statusMessage, this, [this](const QString& text, int timeoutMs) { statusBar()->showMessage(text, timeoutMs); });
 
     //----- Start/Pause, Reset, Clear and the speed slider -----
     connect(ui.startButton, &QPushButton::clicked, this, &MainWindow::toggleSimulation);
@@ -554,7 +556,7 @@ void MainWindow::toggleColorScheme()
 void MainWindow::updateTimerPeriod(int value) {
     double minInput = 1.0;
     double maxInput = 10000.0;
-    double minOutput = 1.0;     // ms per tick
+    double minOutput = 0.5;     // ms per tick
     double maxOutput = 1000.0;
 
     double normalizedInput = (value - minInput) / (maxInput - minInput);

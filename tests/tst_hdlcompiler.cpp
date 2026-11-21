@@ -719,6 +719,41 @@ private slots:
         QVERIFY(scene->design().isEmpty() && itemsOfType<ComponentItem>(scene).isEmpty());
     }
 
+    void blocksPasteOnlyIntoTheirOwnDesign()
+    {
+        const CompileRun run = compile(hierarchicalVerilog);
+        QVERIFY2(run.ok, qPrintable(run.errors.join(u'\n')));
+        CircuitCanvas canvas;
+        CircuitScene* scene = canvas.getScene();
+        scene->receiveDesign(run.design);
+
+        BlockItem* u = blockNamed(scene, u"u"_s);
+        u->setSelected(true);
+        QCOMPARE(scene->copySelection(), 1);
+        const CircuitScene::PasteResult same = scene->paste(u->pos() + QPointF(0, 2000));
+        QCOMPARE(same.blocksLeftOut, 0);
+        QCOMPARE(same.pasted.size(), 1);
+        auto* copy = dynamic_cast<BlockItem*>(same.pasted.first());
+        QVERIFY(copy);
+        QCOMPARE(copy->blockProps().module, u->blockProps().module);
+        QCOMPARE(copy->blockProps().ports, u->blockProps().ports);
+        QCOMPARE(copy->blockProps().instance, u"u_2"_s);                // instance names stay unique
+        canvas.openBlock(copy);                                          // opens like the original
+        QCOMPARE(canvas.currentPath(), u"u_2"_s);
+
+        QVERIFY(canvas.currentScene()->paste(QPointF(0, 0)).pasted.isEmpty());   // read-only in there
+        canvas.showLevel(0);
+
+        // A new compile is another design, even from the same code
+        scene->clearSelection();
+        blockNamed(scene, u"u"_s)->setSelected(true);
+        scene->copySelection();
+        scene->receiveDesign(run.design);
+        const CircuitScene::PasteResult other = scene->paste(QPointF(80000, 50000));
+        QCOMPARE(other.blocksLeftOut, 1);
+        QVERIFY(other.pasted.isEmpty());
+    }
+
     void resetInputsStayZero()
     {
         // A reset toggling with the clock would reset the circuit on every clock edge

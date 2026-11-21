@@ -1,6 +1,7 @@
 #include "CircuitCanvas.h"
 #include <QApplication>
 #include <QCollator>
+#include <QCursor>
 #include <QGraphicsSceneMouseEvent>
 #include <QHBoxLayout>
 #include <QHash>
@@ -39,11 +40,10 @@ void CircuitScene::drawBackground(QPainter* painter, const QRectF& rect)
     const Theme& theme = currentTheme();
     painter->fillRect(rect, theme.canvas);
 
-    constexpr qreal DotSpacing = 20;     // scene units
     constexpr qreal MinDotGap = 12;      // screen pixels; zoomed out, only every 2nd, 4th, ... dot
     constexpr qreal DotSize = 2;         // screen pixels
 
-    qreal spacing = DotSpacing;
+    qreal spacing = GridSpacing;
     const qreal pixelsPerUnit = painter->worldTransform().m11();
     if (pixelsPerUnit <= 0) return;
     while (spacing * pixelsPerUnit < MinDotGap) spacing *= 2;
@@ -232,28 +232,136 @@ void CircuitScene::deleteSelection()
     if (isLocked() || m_readOnly) return;
     cancelWireConnection();   // a dragged wire must not end at a pin that goes away
 
-    const QList<QGraphicsItem*> selected = selectedItems();
-    bool removedAny = false;
-
-    // Wires first, so a component selected with all its wires goes too
-    for (QGraphicsItem* item : selected) {
+    QSet<WireItem*> wires;
+    QList<ComponentItem*> components;
+    for (QGraphicsItem* item : selectedItems()) {
         if (auto* wire = dynamic_cast<WireItem*>(item)) {
-            wire->setStartPort(nullptr);
-            wire->setEndPort(nullptr);
-            removeItem(wire);
-            wire->deleteLater();
-            removedAny = true;
+            wires.insert(wire);
+        } else if (auto* component = dynamic_cast<ComponentItem*>(item)) {
+            components.append(component);
+            for (PortItem* port : component->ports()) {
+                if (port) for (WireItem* wire : port->getConnections()) wires.insert(wire);
+            }
         }
     }
-    for (QGraphicsItem* item : selected) {
-        if (auto* component = dynamic_cast<ComponentItem*>(item); component && !component->hasConnections()) {
-            removeItem(component);
-            component->deleteLater();
-            removedAny = true;
+    for (WireItem* wire : std::as_const(wires)) {
+        wire->setStartPort(nullptr);
+        wire->setEndPort(nullptr);
+        removeItem(wire);
+        wire->deleteLater();
+    }
+    for (ComponentItem* component : std::as_const(components)) {
+        removeItem(component);
+        component->deleteLater();
+    }
+    if (!wires.isEmpty() || !components.isEmpty()) circuitEdited();
+}
+
+//===================== Clipboard ========================
+
+int CircuitScene::copySelection()
+{
+    QList<ComponentItem*> selected;
+    for (QGraphicsItem* item : items(Qt::AscendingOrder)) {
+        if (auto* component = dynamic_cast<ComponentItem*>(item); component && component->isSelected()) selected.append(component);
+    }
+    if (selected.isEmpty()) return 0;
+    s_clipboard = componentsData(selected);
+    s_clipboardDesignId = m_designId;
+    m_lastPasteCentre = QPointF(qQNaN(), qQNaN());
+    return int(selected.size());
+}
+
+int CircuitScene::cutSelection()
+{
+    if (isLocked() || m_readOnly) return 0;
+    const int copied = copySelection();
+    if (copied > 0) deleteSelection();
+    return copied;
+}
+
+CircuitScene::PasteResult CircuitScene::paste(QPointF centre)
+{
+    PasteResult result;
+    if (isLocked() || m_readOnly || !hasClipboard()) return result;
+    cancelWireConnection();
+
+    QList<bool> included;
+    QPointF low(qInf(), qInf()), high(-qInf(), -qInf());
+    for (const SavedComponent& saved : std::as_const(s_clipboard.components)) {
+        const auto* block = std::get_if<BlockProps>(&saved.props);
+        const bool fits = !block || (s_clipboardDesignId == m_designId && m_design.module(block->module));
+        included.append(fits);
+        if (!fits) {
+            result.blocksLeftOut++;
+            continue;
         }
+        low = QPointF(std::min(low.x(), saved.position.x()), std::min(low.y(), saved.position.y()));
+        high = QPointF(std::max(high.x(), saved.position.x()), std::max(high.y(), saved.position.y()));
+    }
+    if (!included.contains(true)) return result;
+
+    m_pasteRepeats = centre == m_lastPasteCentre ? m_pasteRepeats + 1 : 0;
+    m_lastPasteCentre = centre;
+    // Whole grid steps, so the copies keep their place on the dots
+    const QPointF shift = centre - (low + high) / 2;
+    const qreal stagger = 2 * GridSpacing * m_pasteRepeats;
+    const QPointF offset(std::round(shift.x() / GridSpacing) * GridSpacing + stagger,
+                         std::round(shift.y() / GridSpacing) * GridSpacing + stagger);
+
+    // Instance names stay unique: they name a block's values and waveforms
+    QSet<QString> instances;
+    for (QGraphicsItem* item : items()) {
+        if (auto* block = dynamic_cast<BlockItem*>(item)) instances.insert(block->blockProps().instance);
     }
 
-    if (removedAny) circuitEdited();
+    QList<ComponentItem*> made(s_clipboard.components.size(), nullptr);
+    for (qsizetype i = 0; i < s_clipboard.components.size(); i++) {
+        if (!included[i]) continue;
+        const SavedComponent& saved = s_clipboard.components[i];
+        ItemProps props = saved.props;
+        if (auto* block = std::get_if<BlockProps>(&props)) {
+            const QString wanted = block->instance;
+            for (int n = 2; instances.contains(block->instance); n++) block->instance = wanted + u'_' + QString::number(n);
+            instances.insert(block->instance);
+        }
+        ComponentItem* item = createComponent(props);
+        item->setPos(saved.position + offset);
+        addItem(item);
+        const QString name = saved.name.isEmpty() || nameInUse(item, saved.name) ? automaticName(item) : saved.name;
+        if (auto* source = dynamic_cast<SourceItem*>(item)) source->setName(name);
+        else if (auto* display = dynamic_cast<DisplayItem*>(item)) display->setName(name);
+        watchMoves(item);
+        made[i] = item;
+    }
+    for (const SavedWire& saved : std::as_const(s_clipboard.wires)) {
+        ComponentItem* from = made.value(saved.from);
+        ComponentItem* to = made.value(saved.to);
+        if (!from || !to) continue;
+        PortItem* fromPin = componentPins(from).value(saved.fromPin);
+        PortItem* toPin = componentPins(to).value(saved.toPin);
+        if (fromPin && toPin && toPin->canConnectTo(fromPin)) addWire(fromPin, toPin);
+    }
+
+    clearSelection();
+    for (ComponentItem* item : std::as_const(made)) {
+        if (!item) continue;
+        item->setSelected(true);
+        result.pasted.append(item);
+    }
+    circuitEdited();
+    return result;
+}
+
+bool CircuitScene::nameInUse(const ComponentItem* item, const QString& name) const
+{
+    const bool isSource = dynamic_cast<const SourceItem*>(item);
+    for (QGraphicsItem* other : items()) {
+        if (other == item) continue;
+        if (const auto* source = dynamic_cast<const SourceItem*>(other); source && isSource && source->name() == name) return true;
+        if (const auto* display = dynamic_cast<const DisplayItem*>(other); display && !isSource && display->name() == name) return true;
+    }
+    return false;
 }
 
 void CircuitScene::resetCircuit()
@@ -268,7 +376,7 @@ void CircuitScene::resetCircuit()
     m_wireBits.clear();
     m_registerNodes.clear();
     m_design = {};
-    m_designId = ++m_lastDesignId;
+    m_designId = ++s_lastDesignId;
     designChanged();
     recordStep();
 }
@@ -789,18 +897,26 @@ void CircuitScene::receiveDesign(const NetDesign& design)
 {
     resetCircuit();   // the simulation must never outlive its items
     m_design = design;
-    m_designId = ++m_lastDesignId;
+    m_designId = ++s_lastDesignId;
     buildModule(m_design, m_design.top, true);
 }
 
 CircuitData CircuitScene::circuitData() const
 {
-    CircuitData data;
-    data.design = m_design;
-    QHash<const QGraphicsObject*, int> indexOf;
+    QList<ComponentItem*> components;
     for (QGraphicsItem* item : items(Qt::AscendingOrder)) {
-        auto* component = dynamic_cast<ComponentItem*>(item);
-        if (!component) continue;
+        if (auto* component = dynamic_cast<ComponentItem*>(item)) components.append(component);
+    }
+    CircuitData data = componentsData(components);
+    data.design = m_design;
+    return data;
+}
+
+CircuitData CircuitScene::componentsData(const QList<ComponentItem*>& components) const
+{
+    CircuitData data;
+    QHash<const QGraphicsObject*, int> indexOf;
+    for (ComponentItem* component : components) {
         QString name;
         if (auto* source = dynamic_cast<SourceItem*>(component)) name = source->name();
         else if (auto* display = dynamic_cast<DisplayItem*>(component)) name = display->name();
@@ -824,7 +940,7 @@ CircuitData CircuitScene::circuitData() const
 
 std::expected<void, QString> CircuitScene::loadCircuit(const CircuitData& data)
 {
-    return replaceCircuit(data, m_lastDesignId + 1);
+    return replaceCircuit(data, s_lastDesignId + 1);
 }
 
 std::expected<void, QString> CircuitScene::replaceCircuit(const CircuitData& data, int designId)
@@ -860,7 +976,7 @@ std::expected<void, QString> CircuitScene::replaceCircuit(const CircuitData& dat
         m_restoring = restoringBefore;
         m_design = data.design;
         m_designId = designId;
-        m_lastDesignId = std::max(m_lastDesignId, designId);
+        s_lastDesignId = std::max(s_lastDesignId, designId);
     } else {
         stopSim();
         cancelWireConnection();
@@ -1379,6 +1495,50 @@ void CircuitCanvas::updateBreadcrumb()
     m_breadcrumb->raise();
 }
 
+void CircuitCanvas::copyOrCut(bool cut)
+{
+    CircuitScene* scene = currentScene();
+    if (scene->isReadOnly()) {
+        statusMessage(tr("Inside a block nothing can be copied or cut; go back to the top level."), 4000);
+        return;
+    }
+    if (cut && scene->isLocked()) {
+        statusMessage(tr("Pause or reset the simulation to cut."), 4000);
+        return;
+    }
+    const int count = cut ? scene->cutSelection() : scene->copySelection();
+    if (count == 0) {
+        statusMessage(tr("Select the components to copy first."), 3000);
+        return;
+    }
+    const QString what = count == 1 ? tr("1 component") : tr("%1 components").arg(count);
+    statusMessage(cut ? tr("Cut %1.").arg(what) : tr("Copied %1.").arg(what), 3000);
+}
+
+void CircuitCanvas::pasteAtMouse()
+{
+    CircuitScene* scene = currentScene();
+    if (scene->isReadOnly()) {
+        statusMessage(tr("Inside a block nothing can be pasted; go back to the top level."), 4000);
+        return;
+    }
+    if (scene->isLocked()) {
+        statusMessage(tr("Pause or reset the simulation to paste."), 4000);
+        return;
+    }
+    if (!CircuitScene::hasClipboard()) {
+        statusMessage(tr("Nothing to paste: select components and press Ctrl+C first."), 4000);
+        return;
+    }
+    const QPoint mouse = viewport()->mapFromGlobal(QCursor::pos());
+    const QPoint at = viewport()->rect().contains(mouse) ? mouse : viewport()->rect().center();
+    const CircuitScene::PasteResult result = scene->paste(mapToScene(at));
+    if (result.blocksLeftOut > 0) {
+        statusMessage(tr("%1 left out: a block can only be pasted into the compiled design it was copied from.")
+                          .arg(result.blocksLeftOut == 1 ? tr("1 block was") : tr("%1 blocks were").arg(result.blocksLeftOut)), 6000);
+    }
+}
+
 void CircuitCanvas::resizeEvent(QResizeEvent* event)
 {
     QGraphicsView::resizeEvent(event);
@@ -1387,7 +1547,14 @@ void CircuitCanvas::resizeEvent(QResizeEvent* event)
 
 void CircuitCanvas::keyPressEvent(QKeyEvent* event)
 {
-    if (event->key() == Qt::Key_Escape && !m_levels.isEmpty()) {
+    // Before Delete: Shift+Delete is also Cut
+    if (event->matches(QKeySequence::Cut)) {
+        copyOrCut(true);
+    } else if (event->matches(QKeySequence::Copy)) {
+        copyOrCut(false);
+    } else if (event->matches(QKeySequence::Paste)) {
+        pasteAtMouse();
+    } else if (event->key() == Qt::Key_Escape && !m_levels.isEmpty()) {
         showLevel(depth() - 1);
     } else if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
         currentScene()->deleteSelection();   // nothing inside a block

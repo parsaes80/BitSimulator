@@ -703,11 +703,8 @@ private slots:
         auto* loose = add<GateItem>(scene, GateProps{}, {0, 150});
         WireItem* wire = connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(0));
 
-        gate->setSelected(true);
-        scene.deleteSelection();
-        QVERIFY(scene.items().contains(gate));                           // still wired, so it stays
-
-        scene.clearSelection(); wire->setSelected(true);
+        // A wire alone goes, and its pins are free again
+        wire->setSelected(true);
         scene.deleteSelection();
         QVERIFY(!scene.items().contains(wire));
         QVERIFY(gate->getInputPort(0)->getConnections().isEmpty() && source->getOutputPorts()[0]->getConnections().isEmpty());
@@ -716,15 +713,145 @@ private slots:
         scene.deleteSelection();
         QVERIFY(!scene.items().contains(gate) && !scene.items().contains(loose));
 
-        // A component selected together with its wires goes in one step
+        // A wired component goes with all its wires, in one step
         auto* gate2 = add<GateItem>(scene, GateProps{GType::NOT, 1});
         WireItem* wire2 = connectPorts(&scene, source->getOutputPorts()[0], gate2->getInputPort(0));
-        scene.clearSelection(); gate2->setSelected(true); wire2->setSelected(true);
+        scene.clearSelection(); gate2->setSelected(true);
         scene.deleteSelection();
         QVERIFY(!scene.items().contains(gate2) && !scene.items().contains(wire2));
         QVERIFY(scene.items().contains(source));
+        QVERIFY(source->getOutputPorts()[0]->getConnections().isEmpty());
+        scene.undo();                                                    // both come back
+        QCOMPARE(itemsOfType<GateItem>(&scene).size(), 1);
+        QCOMPARE(itemsOfType<WireItem>(&scene).size(), 1);
 
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
+    //===================== Clipboard ========================
+
+    void pasteCopiesTheComponentsAndTheWiresBetweenThem()
+    {
+        CircuitScene scene;
+        auto* source = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50000));
+        auto* gate = add<GateItem>(scene, GateProps{GType::NOT, 1}, QPointF(80200, 50040));
+        auto* display = add<DisplayItem>(scene, DisplayProps{1, 0}, QPointF(80400, 50000));
+        connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(0));
+        connectPorts(&scene, gate->getOutputPort(), display->getInputPorts()[0]);
+
+        source->setSelected(true); gate->setSelected(true);
+        QCOMPARE(scene.copySelection(), 2);
+        const qsizetype stepsBefore = scene.circuitData().components.size();
+        const CircuitScene::PasteResult result = scene.paste(QPointF(90000, 60020));
+        QCOMPARE(result.pasted.size(), 2);
+        QCOMPARE(result.blocksLeftOut, 0);
+        QCOMPARE(scene.circuitData().components.size(), stepsBefore + 2);
+
+        auto* newSource = dynamic_cast<SourceItem*>(result.pasted[0]);
+        auto* newGate = dynamic_cast<GateItem*>(result.pasted[1]);
+        QVERIFY(newSource && newGate);
+        QCOMPARE(newSource->props(), source->props());
+        QCOMPARE(newGate->props(), gate->props());
+        // Centred on the spot, same layout as the originals
+        QCOMPARE((newSource->pos() + newGate->pos()) / 2, QPointF(90000, 60020));
+        QCOMPARE(newGate->pos() - newSource->pos(), gate->pos() - source->pos());
+
+        // Only the wire between the copied components came along
+        QCOMPARE(newGate->getInputPort(0)->getConnections().size(), 1);
+        QCOMPARE(newGate->getInputPort(0)->getConnections().first()->getStartPort(), newSource->getOutputPorts()[0]);
+        QVERIFY(newGate->getOutputPort()->getConnections().isEmpty());
+        QCOMPARE(itemsOfType<WireItem>(&scene).size(), 3);
+
+        // The copies are selected instead of the originals
+        QVERIFY(newSource->isSelected() && newGate->isSelected());
+        QVERIFY(!source->isSelected() && !gate->isSelected());
+
+        scene.undo();                                                    // one step
+        QCOMPARE(itemsOfType<ComponentItem>(&scene).size(), 3);
+        QCOMPARE(itemsOfType<WireItem>(&scene).size(), 2);
+    }
+
+    void pastingAgainAtTheSameSpotStaggers()
+    {
+        CircuitScene scene;
+        auto* gate = add<GateItem>(scene, GateProps{}, QPointF(80000, 50000));
+        gate->setSelected(true);
+        scene.copySelection();
+        const QPointF spot(81000, 51000);
+        const QPointF first = scene.paste(spot).pasted.first()->pos();
+        const QPointF second = scene.paste(spot).pasted.first()->pos();
+        const QPointF elsewhere = scene.paste(spot + QPointF(500, 0)).pasted.first()->pos();
+        QCOMPARE(first, spot);
+        QCOMPARE(second, spot + QPointF(2, 2) * CircuitScene::GridSpacing);
+        QCOMPARE(elsewhere, spot + QPointF(500, 0));
+
+        // Off the grid, the copy stays on the originals' dots
+        const QPointF offGrid = scene.paste(spot + QPointF(7, -8)).pasted.first()->pos();
+        QCOMPARE(offGrid, spot);
+    }
+
+    void pastedNamesStayUnlessTaken()
+    {
+        CircuitScene scene;
+        auto* clk = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50000));
+        QVERIFY(scene.renameComponent(clk, u"clk"_s).has_value());
+        add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50200));   // "Source 1"
+
+        clk->setSelected(true);
+        scene.copySelection();
+        auto* copy = dynamic_cast<SourceItem*>(scene.paste(QPointF(81000, 50000)).pasted.first());
+        QCOMPARE(copy->name(), u"Source 2"_s);                           // "clk" is taken
+
+        scene.clearSelection(); clk->setSelected(true);
+        QCOMPARE(scene.cutSelection(), 1);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        auto* moved = dynamic_cast<SourceItem*>(scene.paste(QPointF(82000, 50000)).pasted.first());
+        QCOMPARE(moved->name(), u"clk"_s);                               // free again after the cut
+    }
+
+    void cutTakesTheWiresAndIsOneStep()
+    {
+        CircuitScene scene;
+        auto* source = add<SourceItem>(scene, SourceProps::counter(1), QPointF(80000, 50000));
+        auto* gate = add<GateItem>(scene, GateProps{GType::NOT, 1}, QPointF(80200, 50000));
+        auto* display = add<DisplayItem>(scene, DisplayProps{1, 0}, QPointF(80400, 50000));
+        connectPorts(&scene, source->getOutputPorts()[0], gate->getInputPort(0));
+        connectPorts(&scene, gate->getOutputPort(), display->getInputPorts()[0]);
+
+        gate->setSelected(true);
+        QCOMPARE(scene.cutSelection(), 1);
+        QVERIFY(!scene.items().contains(gate));
+        QVERIFY(itemsOfType<WireItem>(&scene).isEmpty());
+        QVERIFY(source->getOutputPorts()[0]->getConnections().isEmpty() && display->getInputPorts()[0]->getConnections().isEmpty());
+
+        scene.undo();
+        QCOMPARE(itemsOfType<GateItem>(&scene).size(), 1);
+        QCOMPARE(itemsOfType<WireItem>(&scene).size(), 2);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
+    void theClipboardFollowsTheEditingRules()
+    {
+        CircuitScene scene;
+        SimLink sim(scene);
+        auto* gate = add<GateItem>(scene, GateProps{}, QPointF(80000, 50000));
+        QCOMPARE(scene.copySelection(), 0);                              // nothing selected
+        gate->setSelected(true);
+
+        scene.startOrResumeSim();
+        QCOMPARE(scene.copySelection(), 1);                              // copying is no edit
+        QCOMPARE(scene.cutSelection(), 0);
+        QVERIFY(scene.paste(QPointF(81000, 50000)).pasted.isEmpty());
+        QCOMPARE(itemsOfType<GateItem>(&scene).size(), 1);
+
+        scene.pauseSim();                                                // paused: a paste is an edit and ends the run
+        QCOMPARE(scene.paste(QPointF(81000, 50000)).pasted.size(), 1);
+        QCOMPARE(scene.simState(), SimState::Stopped);
+
+        CircuitScene inside;
+        inside.setReadOnly(true);
+        QVERIFY(inside.paste(QPointF(0, 0)).pasted.isEmpty());
+        QVERIFY(inside.items().isEmpty());
     }
 
     //===================== Tools ========================

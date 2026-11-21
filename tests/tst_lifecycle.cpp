@@ -412,6 +412,46 @@ private slots:
         app.clear->click();
     }
 
+    void ctrlCXAndVCopyCutAndPasteAtTheMouse()
+    {
+        App app;
+        auto* gate = app.scene->addComponent(GateProps{GType::OR, 2}, app.centre);
+        app.select(gate);
+        app.canvas->setFocus();
+        const auto key = [&](Qt::Key k) { QTest::keyClick(app.canvas, k, Qt::ControlModifier); };
+
+        key(Qt::Key_C);
+        QCOMPARE(app.window.statusBar()->currentMessage(), u"Copied 1 component."_s);
+
+        // At the mouse when it is over the canvas
+        const QPointF spot = app.centre + QPointF(200, 100);
+        QCursor::setPos(app.canvas->viewport()->mapToGlobal(app.viewPos(spot)));
+        key(Qt::Key_V);
+        QList<GateItem*> gates = itemsOfType<GateItem>(app.scene);
+        QCOMPARE(gates.size(), 2);
+        GateItem* pasted = gates[0] == gate ? gates[1] : gates[0];
+        QVERIFY2((pasted->pos() - spot).manhattanLength() <= 2 * CircuitScene::GridSpacing, qPrintable(u"pasted at %1, %2"_s.arg(pasted->pos().x()).arg(pasted->pos().y())));
+        QVERIFY(pasted->isSelected() && !gate->isSelected());
+
+        key(Qt::Key_X);
+        QCOMPARE(itemsOfType<GateItem>(app.scene).size(), 1);
+        QCOMPARE(app.window.statusBar()->currentMessage(), u"Cut 1 component."_s);
+
+        // In a text field, Ctrl+C and Ctrl+V are the field's own
+        auto* bar = child<QLineEdit>(&app.window, "searchBar");
+        bar->setFocus();
+        QTest::keyClick(bar, Qt::Key_V, Qt::ControlModifier);
+        QCOMPARE(itemsOfType<GateItem>(app.scene).size(), 1);
+
+        // While running nothing is pasted, and the status bar says why
+        app.canvas->setFocus();
+        app.start->click();
+        key(Qt::Key_V);
+        QCOMPARE(itemsOfType<GateItem>(app.scene).size(), 1);
+        QVERIFY(app.window.statusBar()->currentMessage().contains(u"Pause"_s));
+        app.clear->click();
+    }
+
     void aDamagedFileIsReportedAndTheCircuitKept()
     {
         App app;

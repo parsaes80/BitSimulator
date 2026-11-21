@@ -61,7 +61,7 @@ public:
     ComponentItem::EditResult editComponent(ComponentItem* item, const ItemProps& props);
     // Sources and displays only; an empty name gives back the automatic one ("Source 3")
     ComponentItem::EditResult renameComponent(ComponentItem* item, const QString& name);
-    // Selected components go only if they have no wires left
+    // Selected components go with all their wires
     void deleteSelection();
     // Stops the run and empties the canvas
     void resetCircuit();
@@ -114,6 +114,18 @@ public:
     // Replaces the circuit; refused with a reason if the data doesn't fit together (nothing changes then)
     std::expected<void, QString> loadCircuit(const CircuitData& data);
 
+    //----- Clipboard: selected components and the wires between them, shared by every scene -----
+    int copySelection();               // how many components were copied
+    int cutSelection();                // nothing while running or inside a block
+    static bool hasClipboard() { return !s_clipboard.components.isEmpty(); }
+    struct PasteResult {
+        QList<ComponentItem*> pasted;  // selected afterwards
+        int blocksLeftOut = 0;         // copied from another compiled design
+    };
+    // Centred on `centre`; again at the same spot, each copy a little further down and right
+    PasteResult paste(QPointF centre);
+    static constexpr qreal GridSpacing = 20;   // scene units between the canvas dots
+
     //----- Undo: a snapshot per change; drags count once, typing in one field merges -----
     bool canUndo() const { return m_historyIndex > 0; }
     bool canRedo() const { return m_historyIndex + 1 < m_history.size(); }
@@ -156,6 +168,8 @@ private:
         bool operator==(const Snapshot& o) const { return designId == o.designId && data.components == o.data.components && data.wires == o.data.wires; }
     };
     void restore(const Snapshot& snapshot);
+    CircuitData componentsData(const QList<ComponentItem*>& components) const;   // with the wires between them
+    bool nameInUse(const ComponentItem* item, const QString& name) const;        // by another of its kind
     QString automaticName(const ComponentItem* item) const;   // "Source 3"; empty for other kinds
     void cancelWireConnection();
     void resetValues();
@@ -180,7 +194,12 @@ private:
     qsizetype m_historyIndex = 0;
     qsizetype m_savedIndex = 0;        // -1: no state in the history is saved
     int m_designId = 0;                // changes with m_design (the netlist itself is shared, never compared)
-    int m_lastDesignId = 0;
+    static inline int s_lastDesignId = 0;   // shared, so a design's id is unique in the app
+
+    static inline CircuitData s_clipboard;   // no design: blocks paste only into the design they came from
+    static inline int s_clipboardDesignId = -1;
+    QPointF m_lastPasteCentre{qQNaN(), qQNaN()};
+    int m_pasteRepeats = 0;
     bool m_restoring = false;
     int m_lastEdited = -1;             // the component the last step only changed the settings of
     QElapsedTimer m_sinceEdit;
@@ -231,6 +250,7 @@ public:
     void showWholeCircuit();                             // everything on screen, never magnified                   // jumps and zooms to a component of the circuit, and selects it
 signals:
     void depthChanged(int depth);
+    void statusMessage(const QString& text, int timeoutMs);
 public:
 
 protected:
@@ -254,6 +274,8 @@ private:
     void updateBreadcrumb();
     void showPinsForZoom();           // hidden while too small to draw: the view then skips thousands of items
     void refreshBlockValues();
+    void copyOrCut(bool cut);
+    void pasteAtMouse();
     QPointF viewCentre() const { return mapToScene(viewport()->rect().center()); }
 
     CircuitScene* m_scene;

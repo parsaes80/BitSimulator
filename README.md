@@ -25,7 +25,9 @@ Controls in the Schematic Editor:
 | Pan the schematic | Left click on empty space and drag |
 | Select / move a component | Left click on it / left click and drag it |
 | Deselect | Left click on empty space |
-| Delete the selected component | Delete or Backspace |
+| Delete the selected components (with their wires) | Delete or Backspace |
+| Copy / cut the selected components | Ctrl+C / Ctrl+X (the wires between them come along) |
+| Paste | Ctrl+V: at the mouse pointer, or in the middle of the view if the pointer is elsewhere; pasting again at the same spot puts each copy a little lower and to the right |
 | Undo / redo | Ctrl+Z / Ctrl+Y (not while the simulation runs; a paused run ends, as with any edit) |
 | Zoom in / out | Mouse wheel |
 | Find an input or output | Type in the search bar (top right); click a result, or press Enter when there is only one |
@@ -59,7 +61,7 @@ Flip-flops and latches are simulated as the Verilog describes them: on the risin
 Running the simulation:
 
 - **Start** runs the circuit. The button then turns into **Pause**.
-- While the simulation is running the circuit is read-only: you cannot place, wire, delete or edit components. You can still move them, pan and zoom.
+- While the simulation is running the circuit is read-only: you cannot place, wire, delete, cut, paste or edit components. You can still move and copy them, pan and zoom.
 - **Pause** freezes the simulation with its values still shown. Pressing **Start** again continues from where it stopped.
 - **Reset** ends the run, running or paused, and keeps the circuit: every value goes back to 0, the run's waveforms are cleared, and the next **Start** begins again from the first tick with every flip-flop at its starting value. Changing the circuit while it is paused also ends the run, but keeps its waveforms.
 - **Clear** stops the simulation and empties the Schematic Editor.
@@ -80,6 +82,7 @@ Every submodule instance in the design is drawn as one **block**: a box with the
 - The path at the top left shows where you are, e.g. `RISCV_FPGA › core (RISCV) › alu (ALU)`. Click an entry to go back to it, or press **Esc** to go back one level. Compiling again or pressing Clear goes back to the top.
 - The whole design is simulated, blocks included. While the simulation runs or is paused, the inside of a block shows its live values.
 - Only the top level can be edited. Inside a block you can pan, zoom and watch, but not place, wire, move or delete anything; change the Verilog and compile again instead.
+- A block can be copied and pasted at the top level like any component. The copy gets its own instance name (`u` becomes `u_2`), so its values and waveforms stay apart. Blocks paste only into the compiled design they were copied from: after compiling again, they are left out.
 
 Each module is laid out by Graphviz dot. A module with fewer than 2,000 cells (gates, multiplexers, flip-flops and blocks) gets dot's full layout. A bigger one gets a fast dot: dot stops its two slowest steps early, so the layout is a little less tidy but done in seconds instead of minutes. A full layout can still take a while: the 1,215-cell core of a RISC-V CPU takes about a minute. All modules are laid out at the same time, each by its own dot, so a design takes as long as its slowest module. If dot takes longer than 2 minutes, the next faster layout is used: full dot, then fast dot, then placing the module in columns by logic level. The limits are `FastDotCells` and `DotTimeoutMs` in `BitSimulator/hdlcompiler.h`.
 
