@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- BitSimulator in the browser: a loading screen with the logo, then the app, which Qt's qtloader.js starts -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- One CSS pixel per Qt device-independent pixel, as in Qt's own page -->
+  <meta name="viewport" content="width=device-width, height=device-height, user-scalable=0">
+  <meta name="description" content="BitSimulator: draw and simulate digital circuits, and compile Verilog into them, in your browser.">
+  <meta name="theme-color" content="#0a0e11">
+  <title>BitSimulator</title>
+  <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <style>
+    /* The app's dark canvas color, and its muted text, teal accent and dot colors (Theme.cpp) */
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a0e11; }
+    #screen { width: 100%; height: 100%; }
+    #loading {
+      position: fixed; inset: 0; z-index: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+      background: #0a0e11; color: #7a8890; font: 15px "Noto Sans", system-ui, sans-serif;
+    }
+    #loading img { width: min(480px, 70vw); }
+    #bar { width: min(320px, 50vw); height: 4px; border-radius: 2px; background: #1e282e; overflow: hidden; }
+    #bar::after {
+      content: ""; display: block; width: 35%; height: 100%; border-radius: 2px; background: #2dd4bf;
+      animation: slide 1.2s ease-in-out infinite;
+    }
+    @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+    @media (prefers-reduced-motion: reduce) { #bar::after { animation: none; width: 100%; } }
+    #status.error { color: #ff9e80; }
+    #loading a { color: #2dd4bf; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <img src="logo.svg" alt="BitSimulator">
+    <div id="bar"></div>
+    <div id="status">Loading BitSimulator...</div>
+    <noscript>BitSimulator needs JavaScript. The desktop app is at
+      <a href="https://github.com/parsaes80/BitSimulator/releases">github.com/parsaes80/BitSimulator</a>.</noscript>
+  </div>
+  <div id="screen"></div>
+
+  <script src="BitSimulator.js"></script>
+  <script src="qtloader.js"></script>
+  <script>
+    const loading = document.querySelector('#loading');
+    const status = document.querySelector('#status');
+    const fail = message => {
+      document.querySelector('#bar').style.display = 'none';
+      status.textContent = message;
+      status.className = 'error';
+      loading.style.display = 'flex';
+    };
+
+    window.addEventListener('load', async () => {
+      if (typeof WebAssembly !== 'object') {
+        fail('This browser cannot run WebAssembly, which BitSimulator needs. Try a current Firefox, Chrome, Edge or Safari.');
+        return;
+      }
+      try {
+        await qtLoad({
+          qt: {
+            onLoaded: () => { loading.style.display = 'none'; },
+            onExit: exit => fail('BitSimulator stopped' + (exit.code !== undefined ? ` with code ${exit.code}` : '')
+                                 + (exit.text !== undefined ? ` (${exit.text})` : '') + '. Reload the page to start it again.'),
+            entryFunction: window.BitSimulator_entry,
+            containerElements: [document.querySelector('#screen')],
+          }
+        });
+      } catch (error) {
+        console.error(error);
+        fail(`BitSimulator could not start: ${error}`);
+      }
+    });
+  </script>
+</body>
+</html>

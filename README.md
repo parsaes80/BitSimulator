@@ -1,3 +1,5 @@
+<p align="center"><img src="BitSimulator/icons/logo.png" alt="BitSimulator" width="480"></p>
+
 # Bit Simulator 
 
 An interactive **digital circuit simulator** and **Verilog synthesiser**.
@@ -146,6 +148,23 @@ The first build also builds Graphviz's `dot` (a few minutes) and puts it next to
 
 Building Graphviz needs `bison` and `flex`. On Linux install them from your package manager (Arch: `pacman -S bison flex`, Debian/Ubuntu: `apt install bison flex`). On Windows nothing is needed: CMake fetches Graphviz's own copies (the small `graphviz-build-utilities` submodule inside `third_party/graphviz`).
 
+# The Browser Version
+
+BitSimulator also builds for web browsers with Qt for WebAssembly, as a demo of the desktop app: its **?** button says so and links to the downloads. Drawing, simulating, waveforms, undo, copy and paste work as in the desktop app. The differences:
+
+- **Compiling:** plain Verilog only, and the SystemVerilog that Yosys reads itself. VHDL (GHDL) and SystemVerilog packages and imports (sv2v) need the desktop app, as does the **Compile Dir** tab, since a web page cannot read a folder. Yosys ([YoWASP](https://yowasp.org/), about 50 MB, downloaded when the **Compile file** tab is first opened) and Graphviz dot run in Web Workers, the browser's background threads, so the page keeps working while a design compiles. As on the desktop, every module is laid out by its own dot at the same time, a dot that takes longer than 2 minutes is stopped and the next faster layout used, and a design is laid out exactly as on the desktop.
+- **Saving:** the saves are kept in the browser's storage. **Open...** opens a `.bitsim` file from your computer and adds it to the saves; right-click a save and choose **Download** to get the file. **Export** in the Waveforms tab downloads the VCD file.
+- Closing the tab with unsaved changes asks before leaving the page.
+
+To build it, install the **WebAssembly (single-threaded)** component of Qt 6.12 and the Emscripten version that Qt was built with, 5.0.5 for Qt 6.12.0. Qt stops with an error on any other version, so a distribution's `emscripten` package usually does not fit; install it with [emsdk](https://github.com/emscripten-core/emsdk) instead. The build looks for the emsdk in `/usr/local/bin/emsdk`; for another folder, set the `EMSDK` environment variable or pass `-DBITSIM_EMSDK=<folder>`. Then:
+
+```
+~/Qt/6.12.0/wasm_singlethread/bin/qt-cmake -S . -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/wasm
+```
+
+The first build fetches YoWASP with npm and builds Graphviz. `build/wasm/BitSimulator` then holds the whole site (the page, `dot-worker.js` and `yosys-worker.js` from `BitSimulator/web`, `graphviz/` and `yowasp/`): serve that folder with any web server (for example `python3 -m http.server -d build/wasm/BitSimulator`) and open the site's address: its `index.html` (from `BitSimulator/web`) shows the logo while the app loads. A host should send `.wasm` files compressed, which makes them about a third of their size.
+
 # Light and Dark Mode
 
 BitSimulator starts in your system's light or dark setting and follows it while it runs. The round button at the right end of the toolbar switches between the two modes; once you have used it, the app keeps your choice until it is closed.
@@ -158,6 +177,7 @@ BitSimulator starts in your system's light or dark setting and follows it while 
 - **Widget styles:** the style sheet in `Theme.cpp` (`SheetTemplate`) is written once for both modes. It names colors as `@name`, e.g. `@accent` for `Theme::accent`, and the app fills in the colors of the current mode. A style sheet may use only the colors listed in `SheetColors` next to it; the app warns about any other name, and the `tst_theme` test fails on one.
 - **Canvas, components and toolbar icons** are painted in code with `currentTheme()`, e.g. `wireHigh` for a wire carrying 1 and `dot` for the dot grid. A component's inside is tinted with its outline color; `componentTint` sets how strongly (0 = no tint, 0.5 = halfway, 1 = the outline color).
 - The arrow, check-mark, sun and moon images are in `BitSimulator/theme`.
+- **Logo and app icon:** `BitSimulator/icons/source` has the two logos (`logo.svg`, `logo-square.svg`). After changing them, run `python3 BitSimulator/icons/make_icons.py` (it needs `rsvg-convert`, ImageMagick, fontTools and Noto Sans Bold). It writes the logos with their text as outlines, the window icon at every size (the rising edge alone up to 48 px, where text can't be read, the square logo from 64 px), `bitsimulator.ico` for the Windows `.exe` and `favicon.ico` for the browser tab.
 
 # Running the Tests
 
@@ -200,6 +220,12 @@ This project includes binaries from:
   Copyright (C) 2012-2025 Claire Xenia Wolf.
   License in ./licenses/Yosys-ISC.txt
 
+- Noto Sans (browser version only) – the interface font, licensed under the SIL Open Font License 1.1.
+  BitSimulator/fonts/NotoSans-Regular.ttf and NotoSans-Bold.ttf. License in ./licenses/NotoSans-OFL-1.1.txt
+
+- YoWASP Yosys (browser version only) – Yosys compiled to WebAssembly by the YoWASP project, licensed under the ISC License.
+  Fetched from npm (@yowasp/yosys) when the browser version is built. License in ./licenses/Yosys-ISC.txt
+
 - sv2v – Licensed under the BSD 3-Clause License. Converts SystemVerilog (packages, imports, enums, ...) to the Verilog yosys reads.
   Binaries in third_party/sv2v. License in ./licenses/sv2v-BSD-3.txt
 
@@ -235,7 +261,13 @@ This project includes binaries from:
     (libwinpthread-1.dll, MIT and BSD style), libffi 3.4 (libffi-8.dll, MIT), Tcl 8.6.12 (tcl86.dll,
     Tcl/BSD style) and zlib 1.2.13 and 1.3.2 (zlib1.dll, zlib License).
 
-This project uses Qt under the terms of the LGPLv3, dynamically linked and unmodified. The source
-contains no Qt code. A binary release that includes the Qt libraries ships them unmodified; their
-source is available from https://download.qt.io/archive/qt/. License in ./licenses/Qt-LGPL3.txt,
-together with ./licenses/GPL-3.0.txt, which the LGPLv3 builds on.
+This project uses Qt under the terms of the LGPLv3, unmodified. The source contains no Qt code. The
+desktop app links Qt dynamically, and a binary release that includes the Qt libraries ships them
+unmodified. The browser version links Qt statically into the page; since BitSimulator's source is
+public, it can be rebuilt with a modified Qt. Qt's source is available from
+https://download.qt.io/archive/qt/. License in ./licenses/Qt-LGPL3.txt, together with
+./licenses/GPL-3.0.txt, which the LGPLv3 builds on. The browser version also serves Qt's page
+loader, qtloader.js, which Qt licenses under the GPLv3 only (./licenses/GPL-3.0.txt).
+
+The build copies ./licenses next to the executable (and next to the page in the browser version), and
+the **?** button at the right end of the toolbar lists every part with its license.

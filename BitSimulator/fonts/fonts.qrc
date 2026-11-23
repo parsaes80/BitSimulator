@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- Browser build only: a web page can't use the system's fonts, so the desktop's (KDE's default) comes with it -->
+    <qresource prefix="/fonts">
+        <file>NotoSans-Regular.ttf</file>
+        <file>NotoSans-Bold.ttf</file>
+    </qresource>
+</RCC>

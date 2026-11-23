@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(BitSimulator VERSION 2.0 LANGUAGES CXX)
+project(BitSimulator VERSION 3.0 LANGUAGES CXX)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -37,7 +37,11 @@ set(PROJECT_SOURCES
     general.h
     BitSimulator.ui
     theme/theme.qrc
+    icons/icons.qrc
 )
+if(WIN32)
+    list(APPEND PROJECT_SOURCES bitsimulator.rc)   # the .exe's icon
+endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(BitSimulator
@@ -63,6 +67,20 @@ target_include_directories(BitSimulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_source_files_properties(main.cpp MainWindow.cpp PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/BitSimulator.ui)
 
 target_link_libraries(BitSimulator PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_compile_definitions(BitSimulator PRIVATE BITSIM_VERSION="${PROJECT_VERSION}")   # shown in the About dialog
+
+if(EMSCRIPTEN)
+    # Browser build: dialogs need nested event loops (Asyncify), and the saves folder lives in IndexedDB
+    target_link_options(BitSimulator PRIVATE "SHELL:-s ASYNCIFY" -Os -lidbfs.js)
+    target_sources(BitSimulator PRIVATE fonts/fonts.qrc)
+    # The site's own page (index.html: the logo while loading) and its icons, next to the app
+    add_custom_command(TARGET BitSimulator POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html ${CMAKE_CURRENT_SOURCE_DIR}/icons/logo.svg
+                ${CMAKE_CURRENT_SOURCE_DIR}/icons/favicon.ico ${CMAKE_CURRENT_SOURCE_DIR}/icons/apple-touch-icon.png
+                $<TARGET_FILE_DIR:BitSimulator>
+    )
+endif()
 
 if(${QT_VERSION} VERSION_LESS 6.1.0)
   set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.BitSimulator)

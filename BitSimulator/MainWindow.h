@@ -35,6 +35,9 @@ public:
     void setColorScheme(ColorScheme scheme);
 protected:
     void closeEvent(QCloseEvent* event) override;
+#ifdef Q_OS_WASM
+    void changeEvent(QEvent* event) override;   // unsaved changes: the browser asks before leaving the page
+#endif
 private:
     // Connected explicitly in setup(), no on_<object>_<signal> auto-connection
     void toggleSimulation();                 // Start/Pause
@@ -52,6 +55,10 @@ private:
     void undoOrRedo(bool redo);              // Ctrl+Z / Ctrl+Y
     void newCircuit();
     void openCircuitDialog();
+    bool loadCircuitFile(const QString& path);   // without asking about unsaved changes
+#ifdef Q_OS_WASM
+    void importCircuit(const QString& fileName, const QByteArray& content);   // a file picked in the browser
+#endif
     bool save();                             // false if cancelled or failed
     bool saveAs();                           // asks for a name in the saves folder
     bool maybeSave();                        // false: the user cancelled
@@ -83,6 +90,7 @@ private:
     WaveformModel* m_waveModel = nullptr;
     QStandardItemModel* m_searchModel = nullptr;
     QCompleter* m_searchCompleter = nullptr;
+    QAction* m_searchIcon = nullptr;         // the magnifier; recolored with the mode
     QList<QPointer<ComponentItem>> m_searchMatches;   // the listed ones, by row
     QString m_currentFile;
     QString m_savesDir;
@@ -96,4 +104,7 @@ private:
     QThread *simThread, *compilerThread;
     Simulator *simObj;
     HDLCompiler *compiler;
+
+    //----- About -----
+    void showAboutDialog();   // the ? button: version, license, source code, every third-party part with its license
 };

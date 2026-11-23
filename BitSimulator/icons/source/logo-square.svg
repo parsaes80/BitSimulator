@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="100%" height="100%" fill="#0a0e11"/>
+  <path d="M 79.3 774.0 H 464.6" stroke="#3b4a52" stroke-width="19.425" stroke-linecap="round" fill="none"/>
+  <path d="M 464.6 774.0 V 250.0 H 944.7" stroke="#2dd4bf" stroke-width="19.425" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <text x="423.0" y="711.6" text-anchor="end" font-family="Noto Sans" font-weight="700" font-size="222" fill="#e4ebee">Bit</text>
+  <text x="506.2" y="505.6" text-anchor="start" font-family="Noto Sans" font-weight="700" font-size="222" fill="#2dd4bf">Sim</text>
+</svg>

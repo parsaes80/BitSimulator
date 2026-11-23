@@ -98,6 +98,7 @@ void applyPalette(QApplication& app, const Theme& theme);
 
 // Shows the mode the button switches to
 QIcon colorSchemeIcon(ColorScheme scheme);
+QIcon searchIcon(const Theme& theme);   // the magnifier in the search bar
 
 // Dark if the system does not say
 ColorScheme systemColorScheme();

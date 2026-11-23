@@ -235,11 +235,15 @@ public:
     void receiveCode(const QString& code);
     // Absolute paths, Verilog/SystemVerilog/VHDL mixed; includeDirs are for `include
     void receiveFiles(const QStringList& files, const QStringList& includeDirs);
+#ifdef Q_OS_WASM
+    static void preloadTools();   // starts fetching yosys, so the first compile waits less
+#endif
 
 signals:
     void error(const QString& err);
     void finished(bool ok);   // once per receive call, after any error() or sendDesign()
     void sendDesign(const NetDesign& design);   // every module, laid out
+    void progress(const QString& message);      // what the browser version is doing, for the status bar
 
 private:
     // ghdl, sv2v, yosys, read the netlist, layout, sendDesign(); false after error()
@@ -259,6 +263,7 @@ private:
     static constexpr int FastDotCells = 2000;
     // Then dot is stopped and the next faster layout used; all modules share this time
     static constexpr int DotTimeoutMs = 120000;
+    static constexpr int YosysTimeoutMs = 100000;
     QString yosysPath = toolPaths().yosys;
     QString sv2vPath = toolPaths().sv2v;
     QString dotPath = toolPaths().dot;

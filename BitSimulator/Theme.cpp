@@ -1,7 +1,9 @@
 #include "Theme.h"
 #include <QApplication>
 #include <QDebug>
+#include <QPainter>
 #include <QPalette>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QStyleFactory>
 #include <QStyleHints>
@@ -200,8 +202,8 @@ QPushButton:disabled {
     margin: 6px 4px;
 }
 
-/* Light / dark mode button (MainWindow sets the icon) */
-#themeButton {
+/* Light / dark mode button (MainWindow sets the icon) and the About button next to it */
+#themeButton, #aboutButton {
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: 18px;
@@ -209,12 +211,18 @@ QPushButton:disabled {
     icon-size: 18px;
 }
 
-#themeButton:hover {
+#aboutButton {
+    color: @mutedText;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+#themeButton:hover, #aboutButton:hover {
     background-color: @buttonHover;
     border-color: @borderHover;
 }
 
-#themeButton:pressed {
+#themeButton:pressed, #aboutButton:pressed {
     background-color: @buttonPressed;
 }
 
@@ -823,6 +831,26 @@ QIcon colorSchemeIcon(ColorScheme scheme)
 {
     // QIcon also loads the @2x image for high-DPI screens
     return QIcon(scheme == ColorScheme::Dark ? u":/theme/sun.png"_s : u":/theme/moon.png"_s);
+}
+
+QIcon searchIcon(const Theme& theme)
+{
+    // Drawn, not an image, so it takes each mode's muted text color; sharp at 1x, 2x and 3x
+    constexpr int Size = 16;   // logical pixels
+    QIcon icon;
+    for (const qreal scale : {1.0, 2.0, 3.0}) {
+        QPixmap pixmap(QSize(Size, Size) * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(theme.mutedText, 1.6, Qt::SolidLine, Qt::RoundCap));
+        painter.drawEllipse(QPointF(6.5, 6.5), 4.5, 4.5);
+        painter.drawLine(QPointF(9.9, 9.9), QPointF(14, 14));
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
 }
 
 ColorScheme systemColorScheme()

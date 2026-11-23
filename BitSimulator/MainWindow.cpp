@@ -5,12 +5,15 @@
 #include <QAbstractSpinBox>
 #include <QCompleter>
 #include <QDebug>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenu>
 #include <QSaveFile>
 #include <QShortcut>
@@ -29,12 +32,41 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QStyleHints>
+#include <QUrl>
+#include <QVBoxLayout>
 #include "CircuitCanvas.h"
 #include "PropertiesPanel.h"
 #include "Toolbar.h"
 #include "Waveform.h"
+#ifdef Q_OS_WASM
+#include <QBuffer>
+#include <QTimer>
+#include <emscripten.h>
+#endif
 
 using namespace Qt::StringLiterals;
+
+namespace {
+#ifdef Q_OS_WASM
+constexpr const char* BrowserSavesDir = "/saves";
+
+// The saves folder is kept in the browser's IndexedDB, so saves outlive the page
+EM_ASYNC_JS(void, loadBrowserSaves, (const char* dir), {
+    const path = UTF8ToString(dir);
+    FS.mkdirTree(path);
+    FS.mount(IDBFS, {}, path);
+    await new Promise(resolve => FS.syncfs(true, error => { if (error) console.warn('BitSimulator: reading the saves failed', error); resolve(); }));
+});
+EM_JS(void, storeBrowserSaves, (), {
+    FS.syncfs(false, error => { if (error) console.warn('BitSimulator: storing the saves failed', error); });
+});
+EM_JS(void, warnBeforeLeaving, (int warn), {
+    window.onbeforeunload = warn ? (event => { event.preventDefault(); event.returnValue = ""; }) : null;
+});
+#else
+void storeBrowserSaves() {}
+#endif
+}
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
 {
@@ -43,12 +75,21 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent)
     compilerThread = new QThread(this);
     compiler = new HDLCompiler(nullptr);
 
+#if QT_CONFIG(thread)
     simObj->moveToThread(simThread);
     compiler->moveToThread(compilerThread);
+#endif
     setup();
 
+#if QT_CONFIG(thread)
     simThread->start();
     compilerThread->start();
+#else
+    // The browser build has one thread: the simulator ticks on this window's timers
+    simObj->setParent(this);
+    compiler->setParent(this);
+    simObj->SimController();
+#endif
 }
 
 MainWindow::~MainWindow()
@@ -91,10 +132,19 @@ void MainWindow::setup()
     ui.setupUi(this);
     // Whatever tab Designer last saved
     ui.tabWidget->setCurrentWidget(ui.CircuitTab);
+#ifdef Q_OS_WASM
+    // A web page cannot read a folder; yosys (about 50 MB) starts downloading when the Compile tab opens
+    ui.tabWidget->removeTab(ui.tabWidget->indexOf(ui.CompileDirTab));
+    ui.hdlEditorHint->setText(tr("Put your Verilog code in the editor; the top module is found automatically. VHDL and "
+                                 "SystemVerilog packages need the desktop app. The first compile downloads Yosys (about 50 MB)."));
+    connect(ui.tabWidget, &QTabWidget::currentChanged, this, [this] {
+        if (ui.tabWidget->currentWidget() == ui.hdlEditorTab) HDLCompiler::preloadTools();
+    });
+#endif
     CircuitScene* scene = ui.camera->getScene();
 
     ui.slider->setRange(1, 10000);
-    ui.slider->setValue(2500); // starting value
+    ui.slider->setValue(3350); // starting value
 
     setupPropertiesPanel();
     setupColorScheme();
@@ -158,6 +208,7 @@ void MainWindow::setup()
     connect(ui.camera, &CircuitCanvas::depthChanged, this, [this](int depth) { m_propertiesFrame->setVisible(depth == 0); });
     connect(compiler, &HDLCompiler::error, this, [this](const QString& message) { m_compileError = message; });
     connect(compiler, &HDLCompiler::finished, this, &MainWindow::compileFinished);
+    connect(compiler, &HDLCompiler::progress, this, [this](const QString& message) { statusBar()->showMessage(message); });
 
     //----- Simulator thread -----
     connect(simThread, &QThread::started, simObj, &Simulator::SimController);
@@ -273,8 +324,24 @@ void MainWindow::setupFiles()
         setWindowModified(!scene->isAtSavedState());   // undoing back to the saved state is unchanged again
         showFileState();
     });
+#ifdef Q_OS_WASM
+    loadBrowserSaves(BrowserSavesDir);
+    setSavesDir(QString::fromLatin1(BrowserSavesDir));
+    ui.savesFolder->setText(tr("Stored in this browser"));
+    ui.openButtonHint->setText(tr("Open a .bitsim file from your computer (Ctrl+O)"));
+    ui.savesHint->setText(tr("Double-click a circuit to open it; right-click it to download or delete it."));
+#else
     setSavesDir(QDir(QCoreApplication::applicationDirPath()).filePath(u"saves"_s));
+#endif
 }
+
+#ifdef Q_OS_WASM
+void MainWindow::changeEvent(QEvent* event)
+{
+    if (event->type() == QEvent::ModifiedChange) warnBeforeLeaving(isWindowModified());
+    QMainWindow::changeEvent(event);
+}
+#endif
 
 void MainWindow::setSavesDir(const QString& dir)
 {
@@ -317,6 +384,12 @@ void MainWindow::showSavesMenu(const QPoint& pos)
     const QString path = item->data(0, Qt::UserRole).toString();
     QMenu menu(this);
     connect(menu.addAction(tr("Open")), &QAction::triggered, this, [this, path] { openCircuit(path); });
+#ifdef Q_OS_WASM
+    connect(menu.addAction(tr("Download")), &QAction::triggered, this, [this, path] {
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) QFileDialog::saveFileContent(file.readAll(), QFileInfo(path).fileName(), this);
+    });
+#endif
     connect(menu.addAction(tr("Delete...")), &QAction::triggered, this, [this, path] {
         const QString name = QFileInfo(path).completeBaseName();
         if (QMessageBox::question(this, tr("Delete circuit"), tr("Delete %1 from the saves folder? This cannot be undone.").arg(name),
@@ -325,6 +398,7 @@ void MainWindow::showSavesMenu(const QPoint& pos)
             QMessageBox::warning(this, tr("Delete circuit"), tr("%1 could not be deleted.").arg(name));
             return;
         }
+        storeBrowserSaves();
         if (QFileInfo(path) == QFileInfo(m_currentFile)) {
             m_currentFile.clear();   // the circuit stays on the canvas, now unsaved
             ui.camera->getScene()->markUnsaved();
@@ -356,14 +430,50 @@ void MainWindow::newCircuit()
 
 void MainWindow::openCircuitDialog()
 {
+#ifdef Q_OS_WASM
+    // The browser's file picker; the file goes into the saves and opens from there
+    const auto picked = [this](const QString& fileName, const QByteArray& content) {
+        if (fileName.isEmpty()) return;   // cancelled
+        // Out of the browser's callback first: the questions below wait in nested event loops
+        QTimer::singleShot(0, this, [this, fileName, content] { importCircuit(fileName, content); });
+    };
+    QFileDialog::getOpenFileContent(tr("BitSimulator circuits (*.%1)").arg(QLatin1StringView(CircuitFileSuffix)), picked, this);
+    return;
+#endif
     const QString path = QFileDialog::getOpenFileName(this, tr("Open circuit"), m_savesDir,
                                                       tr("BitSimulator circuits (*.%1)").arg(QLatin1StringView(CircuitFileSuffix)));
     if (!path.isEmpty()) openCircuit(path);
 }
 
+#ifdef Q_OS_WASM
+void MainWindow::importCircuit(const QString& fileName, const QByteArray& content)
+{
+    const QString name = QFileInfo(fileName).completeBaseName();
+    if (const auto data = circuitFromJson(content); !data) {
+        QMessageBox::warning(this, tr("Open circuit"), tr("%1 could not be opened. %2").arg(QFileInfo(fileName).fileName(), data.error()));
+        return;
+    }
+    if (!maybeSave()) return;
+    const QString path = QDir(m_savesDir).filePath(name + u'.' + QLatin1StringView(CircuitFileSuffix));
+    if (QFileInfo::exists(path) && QMessageBox::question(this, tr("Open circuit"), tr("%1 is already in the saves. Replace it?").arg(name),
+                                                         QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(content) < 0 || !file.commit()) {
+        QMessageBox::warning(this, tr("Open circuit"), tr("%1 could not be stored: %2").arg(name, file.errorString()));
+        return;
+    }
+    storeBrowserSaves();
+    loadCircuitFile(path);
+}
+#endif
+
 bool MainWindow::openCircuit(const QString& path)
 {
-    if (!maybeSave()) return false;
+    return maybeSave() && loadCircuitFile(path);
+}
+
+bool MainWindow::loadCircuitFile(const QString& path)
+{
     const QString name = QFileInfo(path).fileName();
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -419,6 +529,7 @@ bool MainWindow::saveCircuit(const QString& path)
         QMessageBox::warning(this, tr("Save circuit"), tr("%1 could not be saved: %2").arg(name, file.errorString()));
         return false;
     }
+    storeBrowserSaves();
     m_currentFile = QFileInfo(path).absoluteFilePath();
     ui.camera->getScene()->markSaved();
     refreshSavesList();
@@ -437,6 +548,8 @@ void MainWindow::setupSearch()
     m_searchCompleter->popup()->setParent(this, Qt::Popup);   // so the window's style sheet reaches it
     m_searchCompleter->popup()->setObjectName(u"searchResults"_s);
 
+    m_searchIcon = ui.searchBar->addAction(searchIcon(currentTheme()), QLineEdit::LeadingPosition);
+    connect(m_searchIcon, &QAction::triggered, ui.searchBar, qOverload<>(&QWidget::setFocus));
     connect(ui.searchBar, &QLineEdit::textEdited, this, &MainWindow::updateSearch);
     connect(m_searchCompleter, qOverload<const QModelIndex&>(&QCompleter::activated), this,
             [this](const QModelIndex& index) { jumpToSearchMatch(index.data(Qt::UserRole).toInt()); });
@@ -501,6 +614,17 @@ void MainWindow::exportWaveforms()
     // Next to the circuit's file, named after it (or after the compiled top module)
     const QString base = !m_currentFile.isEmpty() ? QFileInfo(m_currentFile).completeBaseName()
                          : !m_waveModel->topName().isEmpty() ? m_waveModel->topName() : u"waveforms"_s;
+#ifdef Q_OS_WASM
+    // The browser downloads it
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly);
+    if (const auto written = writeVcd(buffer, *m_waveModel); !written) {
+        QMessageBox::warning(this, tr("Export waveforms"), tr("The waveforms could not be written: %1").arg(written.error()));
+        return;
+    }
+    QFileDialog::saveFileContent(buffer.data(), base + u".vcd"_s, this);
+    return;
+#endif
     const QString dir = !m_currentFile.isEmpty() ? QFileInfo(m_currentFile).absolutePath() : m_savesDir;
     QString path = QFileDialog::getSaveFileName(this, tr("Export waveforms"), QDir(dir).filePath(base + u".vcd"_s),
                                                 tr("Value Change Dump (*.vcd)"));
@@ -523,6 +647,7 @@ void MainWindow::exportWaveforms()
 void MainWindow::setupColorScheme()
 {
     connect(ui.themeButton, &QPushButton::clicked, this, &MainWindow::toggleColorScheme);
+    connect(ui.aboutButton, &QPushButton::clicked, this, &MainWindow::showAboutDialog);
     // Follows the system until the user picks a mode
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this] {
         if (m_followSystemScheme) setColorScheme(systemColorScheme());
@@ -541,6 +666,7 @@ void MainWindow::setColorScheme(ColorScheme scheme)
     // Canvas items paint with the current theme; widgets get the palette and style sheet
     setCurrentTheme(scheme);
     const Theme& theme = currentTheme();
+    if (m_searchIcon) m_searchIcon->setIcon(searchIcon(theme));   // made in setupSearch(), after the first call
     applyPalette(*qApp, theme);
     setStyleSheet(themeStyleSheet(theme));
     ui.camera->resetCachedContent();   // the cached dot grid has the old colors
@@ -556,7 +682,7 @@ void MainWindow::toggleColorScheme()
 void MainWindow::updateTimerPeriod(int value) {
     double minInput = 1.0;
     double maxInput = 10000.0;
-    double minOutput = 0.5;     // ms per tick
+    double minOutput = 1.0;     // ms per tick
     double maxOutput = 1000.0;
 
     double normalizedInput = (value - minInput) / (maxInput - minInput);
@@ -781,3 +907,120 @@ void MainWindow::compileDir()
     sendFilesToCompiler(files, m_compileIncludeDirs);
 }
 
+//===================== About (the ? button) ========================
+
+namespace {
+
+const QString AboutRepository = u"https://github.com/parsaes80/BitSimulator"_s;
+
+// The build copies licenses/ next to the executable, or next to the page in the browser
+QString licenseLink(const QString& file, const QString& text)
+{
+#ifdef Q_OS_WASM
+    const QUrl page(QString::fromUtf8(emscripten_run_script_string("document.baseURI")));
+    const QString url = page.resolved(QUrl(u"licenses/"_s + file)).toString();
+#else
+    const QString url = QUrl::fromLocalFile(QDir(QCoreApplication::applicationDirPath()).filePath(u"licenses/"_s + file)).toString();
+#endif
+    return u"<a href=\"%1\">%2</a>"_s.arg(url, text);
+}
+
+QString htmlLink(const QString& url, const QString& text)
+{
+    return u"<a href=\"%1\">%2</a>"_s.arg(url, text);
+}
+
+QString aboutText(ColorScheme scheme)
+{
+    QString text = u"<p><img src=\":/icons/logo-%1.png\" width=\"300\"></p>"_s.arg(scheme == ColorScheme::Dark ? u"dark"_s : u"light"_s)
+                 + MainWindow::tr("<p><b>Version %1</b><br>An interactive digital circuit simulator and Verilog synthesiser.</p>")
+                       .arg(QCoreApplication::applicationVersion());
+
+#ifdef Q_OS_WASM
+    text += MainWindow::tr("<h3>This is the web demo</h3>"
+                           "<p>The full BitSimulator is a desktop app for Linux and Windows: %1. It is faster, "
+                           "and it does what a web page can't:</p>"
+                           "<ul>"
+                           "<li>VHDL, and SystemVerilog packages and imports</li>"
+                           "<li>Compiling a whole folder of files (the Compile Dir tab)</li>"
+                           "<li>Saving circuits as files anywhere on your computer</li>"
+                           "<li>Compiling right away, without first downloading Yosys (about 50 MB)</li>"
+                           "<li>Large designs: Yosys and dot run natively, and the simulation runs on its own thread</li>"
+                           "</ul>")
+                .arg(htmlLink(AboutRepository + u"/releases"_s, MainWindow::tr("download it from GitHub")));
+#endif
+
+    text += MainWindow::tr("<p>Copyright &copy; 2025 Parsa Eslami. Free software under the %1. Source code: %2.</p>")
+                .arg(licenseLink(u"BitSimulator-MIT.txt"_s, MainWindow::tr("MIT License")), htmlLink(AboutRepository, u"github.com/parsaes80/BitSimulator"_s));
+
+    text += MainWindow::tr("<h3>Third-party software</h3><ul>");
+#ifdef Q_OS_WASM
+    const QString qtLinking = MainWindow::tr("Linked into the page unmodified; BitSimulator's source code is public, so it can be rebuilt with a modified Qt. "
+                                             "Qt's page loader, qtloader.js, is under the %1 only.").arg(licenseLink(u"GPL-3.0.txt"_s, u"GNU GPLv3"_s));
+#else
+    const QString qtLinking = MainWindow::tr("Dynamically linked and unmodified.");
+#endif
+    text += MainWindow::tr("<li><b>Qt %1</b>: the user interface. Copyright &copy; The Qt Company Ltd. and other contributors. "
+                           "Used under the %2, which builds on the %3. %4 Its source code is at %5. See also About Qt below.</li>")
+                .arg(QString::fromLatin1(qVersion()), licenseLink(u"Qt-LGPL3.txt"_s, u"GNU LGPLv3"_s),
+                     licenseLink(u"GPL-3.0.txt"_s, u"GNU GPLv3"_s), qtLinking,
+                     htmlLink(u"https://download.qt.io/archive/qt/"_s, u"download.qt.io"_s));
+#ifdef Q_OS_WASM
+    text += MainWindow::tr("<li><b>Yosys</b>: synthesis, compiled to WebAssembly by the %1 project. %2.</li>")
+                .arg(htmlLink(u"https://yowasp.org/"_s, u"YoWASP"_s), licenseLink(u"Yosys-ISC.txt"_s, u"ISC License"_s));
+#else
+    text += MainWindow::tr("<li><b>Yosys</b>: synthesis. %1.</li>").arg(licenseLink(u"Yosys-ISC.txt"_s, u"ISC License"_s));
+    text += MainWindow::tr("<li><b>sv2v</b>: SystemVerilog to Verilog. %1.</li>").arg(licenseLink(u"sv2v-BSD-3.txt"_s, u"BSD 3-Clause License"_s));
+    text += MainWindow::tr("<li><b>GHDL</b>: VHDL to Verilog. %1; its source code is at %2.</li>")
+                .arg(licenseLink(u"GHDL-GPL-2.0-or-later.txt"_s, u"GNU GPL 2.0 or later"_s), htmlLink(u"https://github.com/ghdl/ghdl"_s, u"github.com/ghdl/ghdl"_s));
+#endif
+    text += MainWindow::tr("<li><b>Graphviz</b>: the layout of compiled circuits (dot), with BitSimulator's speed-up patch, "
+                           "which is in the source code. %1; its source code is at %2.</li>")
+                .arg(licenseLink(u"Graphviz-EPL-2.0.txt"_s, u"Eclipse Public License 2.0"_s), htmlLink(u"https://graphviz.org/download/source/"_s, u"graphviz.org"_s));
+#ifdef Q_OS_WASM
+    text += MainWindow::tr("<li><b>Noto Sans</b>: the interface font. %1.</li>").arg(licenseLink(u"NotoSans-OFL-1.1.txt"_s, u"SIL Open Font License 1.1"_s));
+#endif
+#ifdef Q_OS_WIN
+    text += MainWindow::tr("<li><b>Windows runtime libraries</b> next to yosys.exe and ghdl.exe: GNU Readline (%1), GNU termcap (%2), "
+                           "the GCC runtime (%1 with the %3) and others.</li>")
+                .arg(licenseLink(u"GPL-3.0.txt"_s, u"GNU GPLv3"_s), licenseLink(u"GPL-2.0.txt"_s, u"GNU GPLv2"_s),
+                     licenseLink(u"GCC-Runtime-Library-Exception-3.1.txt"_s, u"GCC Runtime Library Exception"_s));
+#endif
+    text += MainWindow::tr("</ul><p>The %1 lists every part with its version and where its source code is.</p>")
+                .arg(htmlLink(AboutRepository + u"#third-party-software"_s, MainWindow::tr("README")));
+    return text;
+}
+
+}
+
+void MainWindow::showAboutDialog()
+{
+    auto* dialog = new QDialog(this);
+    dialog->setObjectName(u"aboutDialog"_s);
+    dialog->setWindowTitle(MainWindow::tr("About BitSimulator"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->resize(560, 600);
+
+    auto* label = new QLabel(aboutText(m_colorScheme));
+    label->setTextFormat(Qt::RichText);
+    label->setWordWrap(true);
+    label->setOpenExternalLinks(true);
+    label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    label->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    label->setContentsMargins(4, 0, 4, 0);
+
+    auto* scroll = new QScrollArea;
+    scroll->setWidget(label);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    QPushButton* aboutQt = buttons->addButton(MainWindow::tr("About Qt"), QDialogButtonBox::HelpRole);
+    QObject::connect(aboutQt, &QPushButton::clicked, dialog, [dialog] { QMessageBox::aboutQt(dialog); });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+
+    auto* layout = new QVBoxLayout(dialog);
+    layout->addWidget(scroll);
+    layout->addWidget(buttons);
+    dialog->show();
+}

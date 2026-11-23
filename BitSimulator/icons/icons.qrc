@@ -1,0 +1,16 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- Made by make_icons.py from source/: the window icon at every size, and the logo for the About dialog -->
+    <qresource prefix="/icons">
+        <file>icon-16.png</file>
+        <file>icon-24.png</file>
+        <file>icon-32.png</file>
+        <file>icon-48.png</file>
+        <file>icon-64.png</file>
+        <file>icon-128.png</file>
+        <file>icon-256.png</file>
+        <file>icon-512.png</file>
+        <file>logo-dark.png</file>
+        <file>logo-light.png</file>
+    </qresource>
+</RCC>

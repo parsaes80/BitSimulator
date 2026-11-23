@@ -11,8 +11,84 @@
 #include <QTextStream>
 #include <limits>
 #include <memory>
+#ifdef Q_OS_WASM
+#include <QEventLoop>
+#include <QTimer>
+#include <emscripten.h>
+#endif
 
 using namespace Qt::StringLiterals;
+
+#ifdef Q_OS_WASM
+// yosys and dot run in Web Workers (web/*-worker.js); C++ starts them and asks how they are doing
+EM_JS_DEPS(bitsimulatorWorkers, "$stringToNewUTF8");
+
+// One yosys worker, kept between compiles; its files go through the page's working directory
+EM_JS(void, ensureYosysWorker, (), {
+    if (Module.bitsimYosys && !Module.bitsimYosys.broken) return;
+    const worker = new Worker(new URL("yosys-worker.js", document.baseURI), { type: "module" });
+    const yosys = { worker: worker, current: 0, nextId: 1, state: 0, broken: false, done: 0, total: 0 };
+    worker.onmessage = event => {
+        const data = event.data;
+        if (data.download) { yosys.done = data.download.done; yosys.total = data.download.total; return; }
+        if (data.id !== yosys.current) return;
+        if (data.ok && data.netlist) FS.writeFile("code_netlist.json", data.netlist);
+        else FS.writeFile("yosys_log.txt", data.log || "Yosys wrote no netlist.");
+        yosys.state = data.ok && data.netlist ? 1 : 2;
+    };
+    worker.onerror = event => {
+        FS.writeFile("yosys_log.txt", "Yosys could not be loaded: " + (event.message || "the worker failed to start"));
+        yosys.state = 2;
+        yosys.broken = true;
+    };
+    Module.bitsimYosys = yosys;
+});
+EM_JS(void, warmUpYosys, (), {
+    Module.bitsimYosys.worker.postMessage({ id: -1, args: ["-V"], files: {} });
+});
+EM_JS(void, startYosysJob, (const char* script, const char* inputNames), {
+    const yosys = Module.bitsimYosys;
+    yosys.current = yosys.nextId++;
+    yosys.state = 0;
+    const files = { "compile.ys": UTF8ToString(script) };
+    for (const name of JSON.parse(UTF8ToString(inputNames))) files[name] = FS.readFile(name, { encoding: "utf8" });
+    yosys.worker.postMessage({ id: yosys.current, args: ["-q", "-s", "compile.ys"], files: files });
+});
+EM_JS(int, yosysJobState, (), { return Module.bitsimYosys.state; });   // 0 running, 1 done, 2 failed
+EM_JS(double, yosysDownloaded, (), { return Module.bitsimYosys.done; });
+EM_JS(double, yosysDownloadSize, (), { return Module.bitsimYosys.total; });
+EM_JS(void, stopYosysJob, (), {
+    Module.bitsimYosys.worker.terminate();
+    Module.bitsimYosys.broken = true;
+});
+
+// A worker per dot run, ended when it reports, or to stop it
+EM_JS(void, startDotJob, (int id, const char* graph, int fast), {
+    Module.bitsimDot = Module.bitsimDot || new Map();
+    const worker = new Worker(new URL("dot-worker.js", document.baseURI), { type: "module" });
+    const job = { worker: worker, state: 0, text: "" };
+    worker.onmessage = event => { job.state = event.data.ok ? 1 : 2; job.text = event.data.text; worker.terminate(); };
+    worker.onerror = event => { job.state = 2; job.text = "dot could not run: " + (event.message || "the worker failed to start"); worker.terminate(); };
+    Module.bitsimDot.set(id, job);
+    const args = ["-Kdot", "-Tplain"];
+    if (fast) args.push("-Gnslimit=0.1", "-Gmclimit=0.1");
+    worker.postMessage({ graph: UTF8ToString(graph), args: args });
+});
+EM_JS(int, dotJobState, (int id), {   // 0 running, 1 done, 2 failed
+    const job = Module.bitsimDot.get(id);
+    return job ? job.state : 2;
+});
+EM_JS(char*, takeDotJobText, (int id), {   // the layout, or why it failed; the caller frees it
+    const job = Module.bitsimDot.get(id);
+    Module.bitsimDot.delete(id);
+    return stringToNewUTF8(job ? job.text : "");
+});
+EM_JS(void, killDotJob, (int id), {
+    const job = Module.bitsimDot.get(id);
+    if (job) job.worker.terminate();
+    Module.bitsimDot.delete(id);
+});
+#endif
 
 // receiveCode / receiveFiles -> compile (sv2v, yosys, netlist) -> layoutDesign (dot) -> sendDesign
 
@@ -236,6 +312,50 @@ void centreInScene(NetModule& module)
     for (NetNode& node : module.nodes) node.position += shift;
 }
 
+// Gates, muxes, flip-flops and blocks
+qsizetype cellCount(const NetModule& module)
+{
+    return std::ranges::count_if(module.nodes, [](const NetNode& node) {
+        return !std::holds_alternative<IOType>(node.type) && !std::holds_alternative<ConstOne>(node.type);
+    });
+}
+
+// -Tplain: "node <name> <x> <y> ..." in inches, y up; the canvas uses points, y down
+void applyPlainLayout(NetModule& module, const QString& plain)
+{
+    for (const QString& line : plain.split(u'\n')) {
+        const QStringList parts = line.split(u' ', Qt::SkipEmptyParts);
+        if (parts.size() < 4 || parts[0] != "node"_L1 || !parts[1].startsWith(u'n')) continue;
+        bool ok = false;
+        const int n = parts[1].mid(1).toInt(&ok);
+        if (!ok || n < 0 || n >= module.nodes.size()) continue;
+        module.nodes[n].position = QPointF(parts[2].toDouble() * 72.0, -parts[3].toDouble() * 72.0);
+    }
+}
+
+constexpr int PollMs = 20;   // how often a running tool is checked
+
+#ifdef Q_OS_WASM
+// Waits without blocking the page: it keeps drawing and taking input while the workers run (Asyncify allows the nested loop)
+void letThePageRun()
+{
+    QEventLoop loop;
+    QTimer::singleShot(PollMs, &loop, &QEventLoop::quit);
+    loop.exec();
+}
+#endif
+
+// Keeps the hierarchy; dfflegalize leaves only the flip-flop kinds in FlipFlop
+QString yosysScript(const QString& readVerilog)
+{
+    return readVerilog + u"\n"
+        "synth -auto-top -noalumacc\n"
+        "dfflegalize -cell $_DFF_P_ 0 -cell $_DFFE_PP_ 0 -cell $_DFF_PP?_ 0 -cell $_DFFE_PP?P_ 0 -cell $_SDFFCE_PP?P_ 0 -cell $_DLATCH_P_ 0\n"
+        "abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX\n"
+        "opt_clean\n"
+        "write_json code_netlist.json\n"_s;
+}
+
 }
 
 //===================== Compiling ========================
@@ -256,8 +376,17 @@ void HDLCompiler::receiveFiles(const QStringList& files, const QStringList& incl
     finished(compile(files, includeDirs));
 }
 
+#ifdef Q_OS_WASM
+void HDLCompiler::preloadTools()
+{
+    ensureYosysWorker();
+    warmUpYosys();
+}
+#endif
+
 bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDirs)
 {
+#if QT_CONFIG(process)
     // 0. ghdl: any VHDL to Verilog (vhdl.v)
     QStringList verilogFiles, vhdlFiles;
     for (const QString& file : files) (isVhdlFile(file) ? vhdlFiles : verilogFiles).append(file);
@@ -272,15 +401,45 @@ bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDi
     sv2vArguments << u"--write=converted.v"_s << verilogFiles;
     if (!runTool(u"sv2v"_s, sv2vPath, sv2vArguments, 60000)) return false;
 
-    // 2. yosys, keeping the hierarchy; dfflegalize leaves only the flip-flop kinds in FlipFlop
-    const QString script = u"read_verilog converted.v\n"
-        "synth -auto-top -noalumacc\n"
-        "dfflegalize -cell $_DFF_P_ 0 -cell $_DFFE_PP_ 0 -cell $_DFF_PP?_ 0 -cell $_DFFE_PP?P_ 0 -cell $_SDFFCE_PP?P_ 0 -cell $_DLATCH_P_ 0\n"
-        "abc -g AND,OR,XOR,NAND,NOR,XNOR,MUX\n"
-        "opt_clean\n"
-        "write_json code_netlist.json\n"_s;
-    if (!writeTextFile(u"compile.ys"_s, script)) return false;
-    if (!runTool(u"Yosys"_s, yosysPath, {u"-s"_s, u"compile.ys"_s}, 100000)) return false;
+    // 2. yosys
+    if (!writeTextFile(u"compile.ys"_s, yosysScript(u"read_verilog converted.v"_s))) return false;
+    if (!runTool(u"Yosys"_s, yosysPath, {u"-s"_s, u"compile.ys"_s}, YosysTimeoutMs)) return false;
+#else
+    // In the page: yosys in a Web Worker, and no ghdl or sv2v, so plain Verilog and what yosys's own reader takes
+    Q_UNUSED(includeDirs);
+    if (std::ranges::any_of(files, isVhdlFile)) {
+        error(u"VHDL needs the desktop app: GHDL, which turns VHDL into Verilog, does not run in a web page. "
+              "Download it from https://github.com/parsaes80/BitSimulator/releases"_s);
+        return false;
+    }
+    QFile::remove(u"code_netlist.json"_s);   // never read one left by an earlier compile
+    ensureYosysWorker();
+    const QByteArray inputs = QJsonDocument(QJsonArray::fromStringList(files)).toJson(QJsonDocument::Compact);
+    startYosysJob(yosysScript(u"read_verilog -sv "_s + files.join(u' ')).toUtf8().constData(), inputs.constData());
+    QElapsedTimer timer;
+    timer.start();
+    while (yosysJobState() == 0) {
+        // The first compile downloads yosys; that time doesn't count against the deadline
+        if (yosysDownloaded() < yosysDownloadSize()) {
+            progress(tr("Downloading Yosys: %1 of %2 MB").arg(int(yosysDownloaded() / 1e6)).arg(int(yosysDownloadSize() / 1e6)));
+            timer.restart();
+        } else {
+            progress(tr("Running Yosys..."));
+        }
+        if (timer.elapsed() > YosysTimeoutMs) {
+            stopYosysJob();
+            error(u"Yosys took longer than %1 seconds and was stopped."_s.arg(YosysTimeoutMs / 1000));
+            return false;
+        }
+        letThePageRun();
+    }
+    if (yosysJobState() != 1) {
+        QFile log(u"yosys_log.txt"_s);
+        error(log.open(QIODevice::ReadOnly) ? QString::fromUtf8(log.readAll()) : u"Yosys failed."_s);
+        return false;
+    }
+    qDebug() << "Yosys took" << timer.elapsed() << "ms";
+#endif
 
     // 3. The netlist, every module
     QFile netlist(u"code_netlist.json"_s);
@@ -321,14 +480,11 @@ bool HDLCompiler::compile(const QStringList& files, const QStringList& includeDi
     return true;
 }
 
+#if QT_CONFIG(process)
 // All dots at once against one deadline; one that runs out retries faster: full, fast, columns
 bool HDLCompiler::layoutDesign(NetDesign& design)
 {
-    const auto cellsOf = [](const NetModule& module) {   // gates, muxes, flip-flops, blocks
-        return std::ranges::count_if(module.nodes, [](const NetNode& node) {
-            return !std::holds_alternative<IOType>(node.type) && !std::holds_alternative<ConstOne>(node.type);
-        });
-    };
+    const auto cellsOf = cellCount;
     struct Job {
         NetModule* module = nullptr;
         bool topLevel = false;
@@ -349,7 +505,6 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
         if (!writeTextFile(job.graphFile, dotGraphOf(module, job.topLevel))) return false;
     }
 
-    constexpr int PollMs = 20;
     std::vector<Job*> round;
     for (Job& job : jobs) round.push_back(&job);
     while (!round.empty()) {
@@ -399,20 +554,12 @@ bool HDLCompiler::layoutDesign(NetDesign& design)
             if (!checkFinished(*job->dot, name)) return false;
             qDebug() << name << "took" << job->finishedMs << "ms";
 
-            // -Tplain: "node <name> <x> <y> ..." in inches, y up; the canvas uses points, y down
             QFile layout(job->layoutFile);
             if (!layout.open(QIODevice::ReadOnly | QIODevice::Text)) {
                 error("Could not read the layout of " + module.name + ": " + layout.errorString());
                 return false;
             }
-            for (const QString& line : QString::fromUtf8(layout.readAll()).split(u'\n')) {
-                const QStringList parts = line.split(u' ', Qt::SkipEmptyParts);
-                if (parts.size() < 4 || parts[0] != "node"_L1 || !parts[1].startsWith(u'n')) continue;
-                bool ok = false;
-                const int n = parts[1].mid(1).toInt(&ok);
-                if (!ok || n < 0 || n >= module.nodes.size()) continue;
-                module.nodes[n].position = QPointF(parts[2].toDouble() * 72.0, -parts[3].toDouble() * 72.0);
-            }
+            applyPlainLayout(module, QString::fromUtf8(layout.readAll()));
             centreInScene(module);
         }
         round = std::move(next);
@@ -515,6 +662,91 @@ bool HDLCompiler::convertVhdl(const QStringList& vhdlFiles, const QStringList& v
     }
     return writeTextFile(output, verilog);
 }
+
+#else
+// The desktop's rounds with Web Workers for processes: all dots at once against one deadline, then fast, then columns
+bool HDLCompiler::layoutDesign(NetDesign& design)
+{
+    struct Job {
+        NetModule* module = nullptr;
+        bool topLevel = false;
+        bool fast = false;
+        QByteArray graph;
+        int id = 0;
+        qint64 finishedMs = -1;          // from the start of its round; -1 while running
+    };
+    static int nextJobId = 1;
+    std::vector<Job> jobs;
+    jobs.reserve(design.modules.size());
+    for (NetModule& module : design.modules) {
+        Job& job = jobs.emplace_back();
+        job.module = &module;
+        job.topLevel = (module.name == design.top);
+        job.fast = cellCount(module) >= FastDotCells;
+        job.graph = dotGraphOf(module, job.topLevel).toUtf8();
+    }
+
+    std::vector<Job*> round;
+    for (Job& job : jobs) round.push_back(&job);
+    while (!round.empty()) {
+        for (Job* job : round) {
+            job->id = nextJobId++;
+            job->finishedMs = -1;
+            startDotJob(job->id, job->graph.constData(), job->fast);
+        }
+        progress(round.size() == 1 ? tr("Laying out 1 module...") : tr("Laying out %1 modules...").arg(round.size()));
+
+        QElapsedTimer clock;
+        clock.start();
+        for (bool waiting = true; waiting && clock.elapsed() < DotTimeoutMs;) {
+            waiting = false;
+            for (Job* job : round) {
+                if (job->finishedMs >= 0) continue;
+                if (dotJobState(job->id) != 0) job->finishedMs = clock.elapsed();
+                else waiting = true;
+            }
+            if (waiting) letThePageRun();
+        }
+        for (Job* job : round) {
+            if (job->finishedMs < 0) killDotJob(job->id);
+        }
+
+        std::vector<Job*> next;
+        for (qsizetype i = 0; i < qsizetype(round.size()); i++) {
+            Job* job = round[i];
+            NetModule& module = *job->module;
+            const QString name = u"dot%1 for %2 (%3 cells)"_s
+                                     .arg(job->fast ? u" (fast)"_s : QString(), module.name).arg(cellCount(module));
+            if (job->finishedMs < 0) {
+                if (!job->fast) {
+                    qDebug() << name << "ran out of time; trying a fast dot";
+                    job->fast = true;
+                    next.push_back(job);
+                } else {
+                    qDebug() << name << "ran out of time; placing it in columns";
+                    layoutInColumns(module, job->topLevel);
+                    centreInScene(module);
+                }
+                continue;
+            }
+            const bool ok = dotJobState(job->id) == 1;
+            char* text = takeDotJobText(job->id);
+            const QString result = QString::fromUtf8(text);
+            free(text);
+            if (!ok) {
+                for (qsizetype j = i + 1; j < qsizetype(round.size()); j++) killDotJob(round[j]->id);   // their results are no longer wanted
+                error(name + u": "_s + result);
+                return false;
+            }
+            qDebug() << name << "took" << job->finishedMs << "ms";
+            applyPlainLayout(module, result);
+            centreInScene(module);
+        }
+        round = std::move(next);
+    }
+    return true;
+}
+#endif
 
 bool HDLCompiler::writeTextFile(const QString& fileName, const QString& text)
 {

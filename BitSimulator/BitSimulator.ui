@@ -56,14 +56,14 @@
          <number>0</number>
         </property>
         <item>
-         <layout class="QGridLayout" name="gridLayout_2" columnstretch="1,0,0,0,0">
+         <layout class="QGridLayout" name="gridLayout_2" columnstretch="1,0,0,0,0,0">
           <property name="horizontalSpacing">
            <number>6</number>
           </property>
           <property name="verticalSpacing">
            <number>0</number>
           </property>
-          <item row="1" column="0" colspan="5">
+          <item row="1" column="0" colspan="6">
            <widget class="CircuitCanvas" name="camera"/>
           </item>
           <item row="0" column="2">
@@ -84,7 +84,7 @@
              <string>Find an input or output by name (a regular expression, any case); Enter jumps to a single match</string>
             </property>
             <property name="placeholderText">
-             <string>Search inputs and outputs</string>
+             <string>Search inputs/outputs</string>
             </property>
             <property name="clearButtonEnabled">
              <bool>true</bool>
@@ -622,6 +622,34 @@
             </property>
             <property name="text">
              <string/>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="5">
+           <widget class="QPushButton" name="aboutButton">
+            <property name="minimumSize">
+             <size>
+              <width>36</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>36</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="cursor">
+             <cursorShape>PointingHandCursor</cursorShape>
+            </property>
+            <property name="focusPolicy">
+             <enum>Qt::FocusPolicy::NoFocus</enum>
+            </property>
+            <property name="toolTip">
+             <string>About BitSimulator: version, licenses and source code</string>
+            </property>
+            <property name="text">
+             <string>?</string>
             </property>
            </widget>
           </item>
