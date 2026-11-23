@@ -56,6 +56,7 @@ jobs:
 
       - name: Build
         run: |
+          chmod +x ~/Qt/$QT_VERSION/wasm_singlethread/bin/*   # aqtinstall unpacks the WebAssembly kit's scripts without it
           ~/Qt/$QT_VERSION/wasm_singlethread/bin/qt-cmake -S . -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
               -DBITSIM_EMSDK=$HOME/emsdk -DQT_HOST_PATH=$HOME/Qt/$QT_VERSION/gcc_64
           cmake --build build/wasm
