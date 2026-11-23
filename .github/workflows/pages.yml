@@ -4,6 +4,9 @@ name: Web version
 on:
   push:
     branches: [main]
+    paths-ignore:   # a push that changes only these does not rebuild the site
+      - '**.md'
+      - 'tests/**'
   workflow_dispatch:   # adds a "Run workflow" button on the Actions tab
 
 permissions:
