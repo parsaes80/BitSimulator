@@ -1,0 +1,80 @@
+# Builds the browser version and publishes it on GitHub Pages
+name: Web version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # adds a "Run workflow" button on the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A newer push replaces a deploy that is still running
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: 6.12.0
+  EMSDK_VERSION: 5.0.5   # the only Emscripten that Qt 6.12.0 accepts
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build bison flex
+
+      - name: Cache Qt and Emscripten
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Qt
+            ~/emsdk
+          key: qt-${{ env.QT_VERSION }}-emsdk-${{ env.EMSDK_VERSION }}
+
+      - name: Install Qt for WebAssembly
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: pipx run --spec aqtinstall aqt install-qt all_os wasm $QT_VERSION wasm_singlethread --autodesktop -O ~/Qt
+
+      - name: Install Emscripten
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install $EMSDK_VERSION
+          ~/emsdk/emsdk activate $EMSDK_VERSION
+
+      - name: Build
+        run: |
+          ~/Qt/$QT_VERSION/wasm_singlethread/bin/qt-cmake -S . -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+              -DBITSIM_EMSDK=$HOME/emsdk -DQT_HOST_PATH=$HOME/Qt/$QT_VERSION/gcc_64
+          cmake --build build/wasm
+
+      # Only what the page loads; the build folder also holds CMake files and Qt's own sample page
+      - name: Collect the site
+        run: |
+          mkdir site
+          cd build/wasm/BitSimulator
+          cp -r index.html BitSimulator.js BitSimulator.wasm qtloader.js favicon.ico apple-touch-icon.png logo.svg \
+                dot-worker.js yosys-worker.js graphviz yowasp licenses "$GITHUB_WORKSPACE/site/"
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
