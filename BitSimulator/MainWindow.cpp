@@ -63,6 +63,7 @@ EM_JS(void, storeBrowserSaves, (), {
 EM_JS(void, warnBeforeLeaving, (int warn), {
     window.onbeforeunload = warn ? (event => { event.preventDefault(); event.returnValue = ""; }) : null;
 });
+EM_JS(char*, pageAddress, (), { return stringToNewUTF8(document.baseURI); });   // the caller frees it
 #else
 void storeBrowserSaves() {}
 #endif
@@ -136,7 +137,7 @@ void MainWindow::setup()
     // A web page cannot read a folder; yosys (about 50 MB) starts downloading when the Compile tab opens
     ui.tabWidget->removeTab(ui.tabWidget->indexOf(ui.CompileDirTab));
     ui.hdlEditorHint->setText(tr("Put your Verilog code in the editor; the top module is found automatically. VHDL and "
-                                 "SystemVerilog packages need the desktop app. The first compile downloads Yosys (about 50 MB)."));
+                                 "SystemVerilog code need the desktop app. The first compile downloads Yosys (about 50 MB)."));
     connect(ui.tabWidget, &QTabWidget::currentChanged, this, [this] {
         if (ui.tabWidget->currentWidget() == ui.hdlEditorTab) HDLCompiler::preloadTools();
     });
@@ -234,7 +235,11 @@ void MainWindow::setupHdlEditor()
     ui.hdlEditor->setFont(font);
     ui.hdlEditor->setTabStopDistance(4 * QFontMetricsF(font).horizontalAdvance(u' '));
     ui.hdlEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
-    ui.hdlEditor->setPlaceholderText(tr("Enter your Verilog or VHDL code here..."));
+#ifdef Q_OS_WASM
+    ui.hdlEditor->setPlaceholderText(tr("Enter your Verilog code here..."));
+#else
+    ui.hdlEditor->setPlaceholderText(tr("Enter your SystemVerilog, Verilog, or VHDL code here..."));
+#endif
 }
 
 void MainWindow::setupPropertiesPanel()
@@ -917,7 +922,9 @@ const QString AboutRepository = u"https://github.com/parsaes80/BitSimulator"_s;
 QString licenseLink(const QString& file, const QString& text)
 {
 #ifdef Q_OS_WASM
-    const QUrl page(QString::fromUtf8(emscripten_run_script_string("document.baseURI")));
+    char* address = pageAddress();
+    const QUrl page(QString::fromUtf8(address));
+    free(address);
     const QString url = page.resolved(QUrl(u"licenses/"_s + file)).toString();
 #else
     const QString url = QUrl::fromLocalFile(QDir(QCoreApplication::applicationDirPath()).filePath(u"licenses/"_s + file)).toString();
