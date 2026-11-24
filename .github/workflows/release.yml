@@ -91,12 +91,13 @@ jobs:
         run: echo "QT_DIR=$HOME/Qt/$QT_VERSION/gcc_64" >> "$GITHUB_ENV"
 
       - name: Install build tools
-        # The xcb libraries are what Qt's X11 plugin needs; linuxdeploy copies them into the zip
+        # What Qt's X11 and Wayland plugins need, which linuxdeploy copies into the zip; xvfb and weston run the smoke tests
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build bison flex patchelf xvfb libgl-dev libegl-dev libfontconfig1 \
+          sudo apt-get install -y ninja-build bison flex patchelf xvfb weston libgl-dev libegl-dev libfontconfig1 \
               libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
-              libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+              libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
+              libwayland-client0 libwayland-cursor0 libwayland-egl1 libxkbcommon0
 
       - name: Cache Qt
         id: cache
