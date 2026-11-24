@@ -9,7 +9,7 @@ if(CMAKE_TOOLCHAIN_FILE MATCHES "/wasm_" AND NOT DEFINED ENV{EMSDK})
     set(ENV{EMSDK} ${BITSIM_EMSDK})
 endif()
 
-project(BitSimulator VERSION 3.1)
+project(BitSimulator VERSION 3.2)
 
 add_subdirectory("BitSimulator")
 

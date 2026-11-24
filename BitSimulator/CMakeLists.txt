@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(BitSimulator VERSION 3.1 LANGUAGES CXX)
+project(BitSimulator VERSION 3.2 LANGUAGES CXX)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
