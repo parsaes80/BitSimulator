@@ -127,6 +127,14 @@ ComponentItem* createComponent(const ItemProps& props)
         else                                                 return new BlockItem(p);
     }, props);
 }
+
+// Names with numbers in order ("data2" < "data10"); the C locale would compare bytes, so it gets English rules
+QCollator nameCollator()
+{
+    QCollator collator(QLocale().language() == QLocale::C ? QLocale(QLocale::English) : QLocale());
+    collator.setNumericMode(true);
+    return collator;
+}
 }
 
 CircuitScene::~CircuitScene()
@@ -215,8 +223,7 @@ QList<ComponentItem*> CircuitScene::findInputsAndOutputs(const QString& pattern)
         else continue;
         if (regex.match(name).hasMatch()) found.append({static_cast<ComponentItem*>(item), name});
     }
-    QCollator collator;
-    collator.setNumericMode(true);
+    const QCollator collator = nameCollator();
     std::ranges::stable_sort(found, [&collator](const auto& a, const auto& b) {
         const bool aIn = dynamic_cast<SourceItem*>(a.first), bIn = dynamic_cast<SourceItem*>(b.first);
         if (aIn != bIn) return aIn;
@@ -786,8 +793,7 @@ void CircuitScene::buildWaveSignals(ExportGraph& graph, const QList<BlockItem*>&
         m_waveSignals.append(std::move(signal));
     }
     // Inputs, then outputs, by name with numbers in order ("Source 2" < "Source 10")
-    QCollator collator;
-    collator.setNumericMode(true);
+    const QCollator collator = nameCollator();
     std::ranges::stable_sort(m_waveSignals, [&collator](const WaveSignal& a, const WaveSignal& b) {
         if (a.output != b.output) return !a.output;
         return collator.compare(a.name, b.name) < 0;
