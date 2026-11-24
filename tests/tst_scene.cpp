@@ -65,7 +65,7 @@ private slots:
 
         const QByteArray json = circuitToJson(scene.circuitData());
         const auto data = circuitFromJson(json);
-        QVERIFY2(data, qPrintable(data.error()));
+        QVERIFY2(data, errorText(data).constData());
         QCOMPARE(data->components.size(), 6);
         QCOMPARE(data->wires.size(), 7);
         QCOMPARE(std::get<SourceProps>(data->components[0].props), wide);
@@ -74,7 +74,7 @@ private slots:
 
         CircuitScene loaded;
         const auto result = loaded.loadCircuit(*data);
-        QVERIFY2(result, qPrintable(result.error()));
+        QVERIFY2(result, errorText(result).constData());
         QCOMPARE(circuitToJson(loaded.circuitData()), json);                // the same circuit, byte for byte
         QCOMPARE(itemsOfType<WireItem>(&loaded).size(), 7);
         for (WireItem* wire : itemsOfType<WireItem>(&loaded)) QVERIFY(wire->isConnected());
@@ -205,6 +205,9 @@ private slots:
             QVERIFY(scene.editComponent(source, SourceProps::list(typed, 8)));
         scene.undo();
         QCOMPARE(circuitToJson(scene.circuitData()), before);
+        // Undo rebuilds the canvas, so the old pointer is gone
+        source = itemsOfType<SourceItem>(&scene).value(0);
+        QVERIFY(source);
 
         // Another component, or a save in between, starts a new step
         auto* other = add<SourceItem>(scene, SourceProps::list({1}, 8), QPointF(80000, 50300));

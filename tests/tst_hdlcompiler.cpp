@@ -686,9 +686,9 @@ private slots:
 
         CircuitCanvas canvas;
         const auto data = circuitFromJson(json);
-        QVERIFY2(data, qPrintable(data.error()));
+        QVERIFY2(data, errorText(data).constData());
         const auto loaded = canvas.getScene()->loadCircuit(*data);
-        QVERIFY2(loaded, qPrintable(loaded.error()));
+        QVERIFY2(loaded, errorText(loaded).constData());
         QCOMPARE(circuitToJson(canvas.getScene()->circuitData()), json);
         QCOMPARE(canvas.getScene()->design().modules.keys().size(), run.design.modules.keys().size());
 

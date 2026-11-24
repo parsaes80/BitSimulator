@@ -96,6 +96,13 @@ inline void choose(QComboBox* combo, const QString& text)
     combo->activated(index);
 }
 
+// QVERIFY2's message for a std::expected: QVERIFY2 evaluates it even on success, where error() is undefined (MSVC crashes)
+template <typename T>
+inline QByteArray errorText(const std::expected<T, QString>& result)
+{
+    return result ? QByteArray() : result.error().toLocal8Bit();
+}
+
 // The tools the Compile button needs
 inline bool hdlToolsAvailable()
 {

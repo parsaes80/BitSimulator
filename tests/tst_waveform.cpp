@@ -464,7 +464,7 @@ private slots:
         QBuffer buffer;
         QVERIFY(buffer.open(QIODevice::WriteOnly));
         const auto written = writeVcd(buffer, model);
-        QVERIFY2(written, qPrintable(written.error()));
+        QVERIFY2(written, errorText(written).constData());
         const Vcd vcd = readVcd(buffer.data());
 
         // A scope per instance, nested; names without spaces; 1 tick = 1 ns
