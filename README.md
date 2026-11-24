@@ -204,6 +204,8 @@ This project includes binaries from:
 
 - Yosys – Licensed under the ISC License.
   Copyright (C) 2012-2025 Claire Xenia Wolf.
+  Linux: yosys and yosys-abc 0.59+134 in third_party/yosys_bundle; Windows: third_party/oss-cad-suite.
+  Both come unmodified from the OSS CAD Suite release 2025-11-29 (https://github.com/YosysHQ/oss-cad-suite-build).
   License in ./licenses/Yosys-ISC.txt
 
 - Noto Sans (browser version only) – the interface font, licensed under the SIL Open Font License 1.1.
@@ -220,8 +222,9 @@ This project includes binaries from:
   License in ./licenses/Graphviz-EPL-2.0.txt
 
 - GHDL – Licensed under the GNU General Public License 2.0 or later. Turns VHDL into Verilog.
-  Linux: the unmodified ghdl binary and its VHDL libraries are in third_party/yosys_bundle (bin/ghdl, lib/ghdl).
-  Its source: https://github.com/ghdl/ghdl, version 6.0.0-dev, commit ed0da3cfa.
+  Linux: the unmodified ghdl binary and its VHDL libraries are in third_party/yosys_bundle (libexec/ghdl, lib/ghdl),
+  from the OSS CAD Suite release 2025-11-29 (https://github.com/YosysHQ/oss-cad-suite-build), which builds it.
+  Its source: https://github.com/ghdl/ghdl, version 6.0.0-dev, commit 043bb870e.
   Windows: the unmodified ghdl.exe and its VHDL libraries are in third_party/ghdl (bin/ghdl.exe, lib/ghdl),
   taken from GHDL's own Windows build ghdl-mcode-6.0.0-ucrt64.zip, because the OSS CAD Suite for Windows
   does not include ghdl. Its source: https://github.com/ghdl/ghdl/releases/tag/v6.0.0, version 6.0.0, commit e589c698c.
@@ -246,6 +249,23 @@ This project includes binaries from:
   - Under permissive licenses, with their notices in their sources: MinGW-w64 winpthreads
     (libwinpthread-1.dll, MIT and BSD style), libffi 3.4 (libffi-8.dll, MIT), Tcl 8.6.12 (tcl86.dll,
     Tcl/BSD style) and zlib 1.2.13 and 1.3.2 (zlib1.dll, zlib License).
+
+- Linux runtime libraries – yosys, yosys-abc and ghdl run with their own copies of these libraries
+  (third_party/yosys_bundle/lib), so they work whatever the system has. They come unmodified from the
+  OSS CAD Suite release 2025-11-29, which takes them from Ubuntu 22.04's packages.
+  - GNU C Library 2.35 (libc.so.6, libm.so.6, ld-linux-x86-64.so.2) – GNU Lesser General Public License 2.1
+    or later. License in ./licenses/LGPL-2.1.txt. Source: https://ftp.gnu.org/gnu/glibc/ and
+    https://launchpad.net/ubuntu/+source/glibc
+  - GNU Readline 8.1 (libreadline.so.8, needed by yosys and yosys-abc) – GNU General Public License 3.0 or later.
+    License in ./licenses/GPL-3.0.txt. Source: https://ftp.gnu.org/gnu/readline/ and
+    https://launchpad.net/ubuntu/+source/readline
+  - GCC runtime: libgcc_s.so.1 and libstdc++.so.6 (GCC 12) – GNU General Public License 3.0 or later with the
+    GCC Runtime Library Exception 3.1. Licenses in ./licenses/GPL-3.0.txt and
+    ./licenses/GCC-Runtime-Library-Exception-3.1.txt. Source: https://gcc.gnu.org/ and
+    https://launchpad.net/ubuntu/+source/gcc-12
+  - Under permissive licenses, with their notices in their sources: ncurses 6.3 (libtinfo.so.6, MIT style),
+    libffi 3.4.2 (libffi.so.8, MIT), Tcl 8.6.12 (libtcl8.6.so and lib/tcl8.6, Tcl/BSD style) and
+    zlib 1.2.11 (libz.so.1, zlib License).
 
 This project uses Qt under the terms of the LGPLv3, unmodified. The source contains no Qt code. The
 desktop app links Qt dynamically, and a binary release that includes the Qt libraries ships them

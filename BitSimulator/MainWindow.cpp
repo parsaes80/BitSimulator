@@ -993,6 +993,12 @@ QString aboutText(ColorScheme scheme)
                 .arg(licenseLink(u"GPL-3.0.txt"_s, u"GNU GPLv3"_s), licenseLink(u"GPL-2.0.txt"_s, u"GNU GPLv2"_s),
                      licenseLink(u"GCC-Runtime-Library-Exception-3.1.txt"_s, u"GCC Runtime Library Exception"_s));
 #endif
+#if defined(Q_OS_LINUX) && !defined(Q_OS_WASM)
+    text += MainWindow::tr("<li><b>Linux runtime libraries</b> that yosys and ghdl bring along: the GNU C Library (%1), GNU Readline (%2), "
+                           "the GCC runtime (%2 with the %3) and others.</li>")
+                .arg(licenseLink(u"LGPL-2.1.txt"_s, u"GNU LGPL 2.1 or later"_s), licenseLink(u"GPL-3.0.txt"_s, u"GNU GPLv3"_s),
+                     licenseLink(u"GCC-Runtime-Library-Exception-3.1.txt"_s, u"GCC Runtime Library Exception"_s));
+#endif
     text += MainWindow::tr("</ul><p>The %1 lists every part with its version and where its source code is.</p>")
                 .arg(htmlLink(AboutRepository + u"#third-party-software"_s, MainWindow::tr("README")));
     return text;
