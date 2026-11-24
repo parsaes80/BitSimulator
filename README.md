@@ -193,6 +193,10 @@ and open `http://localhost:8765/index.html`. Every push to `main` also builds th
 
 On Linux, `./run_tests.sh` builds and runs all the tests. On any system, configure with `-DBITSIM_BUILD_TESTS=ON` and build the `check` target.
 
+## Releases
+
+Pushing a version tag (`git push origin v3.2`) builds the Windows and Linux zips on GitHub, runs the tests, checks that each zip starts on its own, and attaches both to a draft release for the tag: add the notes and publish it on the releases page (`.github/workflows/release.yml`). The tag must match `project(BitSimulator VERSION ...)` in `CMakeLists.txt`. **Run workflow** on the Actions tab makes the same zips as a test, without a release.
+
 # Third Party Software
 
 

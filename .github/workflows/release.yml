@@ -1,0 +1,169 @@
+# Builds, tests and packages the Windows and Linux zips. A pushed v* tag attaches them to a draft release
+# for that tag (or replaces the zips of its existing release); "Run workflow" only uploads them as artifacts.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:   # a test run: the zips appear under the run's Artifacts, no release is touched
+
+permissions:
+  contents: read
+
+# A newer run for the same tag or branch replaces one that is still going
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: 6.12.0
+
+jobs:
+  # The About dialog shows project(VERSION ...), so a tag must match it (v3.1 needs VERSION 3.1)
+  version:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the tag against CMakeLists.txt
+        run: |
+          version=$(sed -nE 's/^project\(BitSimulator VERSION ([0-9.]+)\)\s*$/\1/p' CMakeLists.txt)
+          if [[ "v$version" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match project(BitSimulator VERSION $version) in CMakeLists.txt"
+            exit 1
+          fi
+
+  windows:
+    needs: version
+    # Runs when the version check passed or was skipped (a "Run workflow" test run)
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set the Qt path
+        run: Add-Content $env:GITHUB_ENV "QT_DIR=C:\Qt\$env:QT_VERSION\msvc2022_64"
+
+      - name: Cache Qt
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt
+          key: qt-windows-${{ env.QT_VERSION }}-msvc2022_64-qtbase-v1
+
+      - name: Install Qt
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: python .github/scripts/install_qt_windows.py $env:QT_VERSION msvc2022_64 C:\Qt qtbase
+
+      - name: Build
+        run: |
+          cmake -S . -B build -A x64 -DBITSIM_BUILD_TESTS=ON "-DCMAKE_PREFIX_PATH=$env:QT_DIR"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build --config Release --parallel
+
+      - name: Test
+        run: |
+          $env:PATH = "$env:QT_DIR\bin;$env:PATH"
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        run: '& ./.github/scripts/package_windows.ps1 -BuildDir build -QtDir $env:QT_DIR -OutDir dist'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BitSimulator_Windows_x64
+          path: dist/BitSimulator_Windows_x64.zip
+          if-no-files-found: error
+
+  linux:
+    needs: version
+    if: ${{ !failure() && !cancelled() }}
+    # The bundled yosys needs glibc 2.38, so the zip runs on Ubuntu 24.04 and newer either way
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set the Qt path
+        run: echo "QT_DIR=$HOME/Qt/$QT_VERSION/gcc_64" >> "$GITHUB_ENV"
+
+      - name: Install build tools
+        # The xcb libraries are what Qt's X11 plugin needs; linuxdeploy copies them into the zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build bison flex patchelf xvfb libgl-dev libegl-dev libfontconfig1 \
+              libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+              libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+
+      - name: Cache Qt
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Qt
+          key: qt-linux-${{ env.QT_VERSION }}-linux_gcc_64-v1
+
+      - name: Install Qt
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: pipx run --spec aqtinstall==3.3.0 aqt install-qt linux desktop $QT_VERSION linux_gcc_64 -O ~/Qt
+
+      - name: Install linuxdeploy
+        # Pinned releases, checked against their SHA-256
+        run: |
+          mkdir -p ~/tools
+          cd ~/tools
+          curl -sSLf -o linuxdeploy-x86_64.AppImage \
+              https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          curl -sSLf -o linuxdeploy-plugin-qt-x86_64.AppImage \
+              https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage
+          sha256sum -c <<'EOF'
+          c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  linuxdeploy-x86_64.AppImage
+          15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724  linuxdeploy-plugin-qt-x86_64.AppImage
+          EOF
+          chmod +x *.AppImage
+          echo "$HOME/tools" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBITSIM_BUILD_TESTS=ON "-DCMAKE_PREFIX_PATH=$QT_DIR"
+          cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: bash .github/scripts/package_linux.sh build "$QT_DIR" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BitSimulator_Linux_x64
+          path: dist/BitSimulator_Linux_x64.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # to create the release and upload the zips
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach the zips to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber
+            echo "Replaced the zips of the existing release $TAG"
+          else
+            gh release create "$TAG" dist/*.zip --draft --title "BitSimulator $TAG" --notes ""
+            echo "Created a draft release for $TAG: add the notes and publish it on the Releases page"
+          fi
