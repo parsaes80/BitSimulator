@@ -33,7 +33,8 @@ else()
         COMMAND ${CMAKE_COMMAND} -E rm -rf ${APP_DIR}/yosys_bundle
         COMMAND cp -r ${THIRD_PARTY_DIR}/yosys_bundle ${APP_DIR}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${THIRD_PARTY_DIR}/sv2v/linux/sv2v ${APP_DIR}/sv2v
-        COMMAND chmod -R a+x ${APP_DIR}/yosys_bundle/bin ${APP_DIR}/sv2v
+        COMMAND chmod -R a+x ${APP_DIR}/yosys_bundle/bin ${APP_DIR}/yosys_bundle/libexec ${APP_DIR}/sv2v
+                ${APP_DIR}/yosys_bundle/lib/ld-linux-x86-64.so.2 ${APP_DIR}/yosys_bundle/lib/yosys-abc
     )
 endif()
 

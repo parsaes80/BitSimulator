@@ -68,7 +68,8 @@ cp -r "$app/yosys_bundle" "$app/licenses" "$stage/"
 cp "$app/sv2v" "$app/dot" "$stage/"
 # The bundles' git files are not part of the app
 find "$stage" \( -name .gitignore -o -name .gitattributes \) -delete
-chmod a+x "$stage/BitSimulator" "$stage/sv2v" "$stage/dot" "$stage"/yosys_bundle/bin/*
+chmod a+x "$stage/BitSimulator" "$stage/sv2v" "$stage/dot" "$stage"/yosys_bundle/{bin,libexec}/* \
+    "$stage"/yosys_bundle/lib/{ld-linux-x86-64.so.2,yosys-abc}
 
 # Nothing may still come from the Qt install
 if ldd "$stage/BitSimulator" "$stage"/plugins/*/*.so | grep -E "not found|$qt"; then
