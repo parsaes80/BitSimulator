@@ -60,5 +60,8 @@ Write-Host "Smoke test passed: the packaged app starts on its own"
 
 $zip = Join-Path $OutDir "$Name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
-Invoke-Tool "7z" @("a", "-tzip", "-mx=9", $zip, $stage) | Out-Null
+# From inside OutDir, so the zip starts at <Name>\ (7-Zip keeps a relative path as given, e.g. dist\<Name>\)
+Push-Location $OutDir
+try { Invoke-Tool "7z" @("a", "-tzip", "-mx=9", "$Name.zip", $Name) | Out-Null }
+finally { Pop-Location }
 Write-Host "Packaged $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
