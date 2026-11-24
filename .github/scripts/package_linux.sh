@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Packages a Release build into <out dir>/<name>.zip: the app, Qt (linuxdeploy), the tools and the licenses
 # Usage: package_linux.sh <build dir> <Qt dir> <out dir> [name]
-# Needs linuxdeploy-x86_64.AppImage and linuxdeploy-plugin-qt-x86_64.AppImage on PATH, patchelf, zip, xvfb-run
+# Needs linuxdeploy-x86_64.AppImage and linuxdeploy-plugin-qt-x86_64.AppImage on PATH, patchelf, zip, xvfb-run, weston
+# On Arch-based systems run it with NO_STRIP=1: linuxdeploy's strip can't read their libraries' .relr.dyn sections
 set -euo pipefail
 
 build="$(realpath "$1")"
