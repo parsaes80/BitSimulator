@@ -102,6 +102,8 @@ smoke_test Wayland env -u DISPLAY WAYLAND_DISPLAY=bitsim-smoke QT_QPA_PLATFORM=w
 kill "$weston_pid" 2>/dev/null || true
 
 mv "$qt.hidden" "$qt"
+# Under set -e a failing mv in the trap would end the script with status 1
+trap 'rm -rf "$work"' EXIT
 # A run can leave a saves folder behind
 rm -rf "$stage/saves"
 
