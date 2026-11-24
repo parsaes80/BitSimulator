@@ -94,7 +94,8 @@ jobs:
         # What Qt's X11 and Wayland plugins need, which linuxdeploy copies into the zip; xvfb and weston run the smoke tests
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build bison flex patchelf xvfb weston libgl-dev libegl-dev libfontconfig1 \
+          # Recommended packages are skipped: weston's pull in video drivers and codecs the smoke test never uses
+          sudo apt-get install -y --no-install-recommends ninja-build bison flex patchelf xvfb weston libgl-dev libegl-dev libfontconfig1 \
               libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
               libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
               libwayland-client0 libwayland-cursor0 libwayland-egl1 libxkbcommon0
